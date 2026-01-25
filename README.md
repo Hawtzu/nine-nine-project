@@ -16,6 +16,10 @@ PR内のコメントで `@claude` とメンションすることで、Claudeが�
 - `@claude バグを修正してください`
 - `@claude コードレビューをお願いします`
 
+## Testing Claude Code Actions
+
+This line was added to test Claude Code Actions.
+
 ## License
 
 MIT

@@ -31,8 +31,20 @@ class Game {
     startGame(mode) {
         this.gameMode = mode;
         this.init();
-        this.setupInitialBoard();
-        this.phase = PHASES.ROLL;
+        this.phase = PHASES.SKILL_SELECTION;
+    }
+
+    selectSkill(playerNum, skill) {
+        const player = playerNum === 1 ? this.player1 : this.player2;
+        if (!player.skillConfirmed) {
+            player.setSpecialSkill(skill);
+        }
+
+        // 両者が選択完了したらゲーム開始
+        if (this.player1.skillConfirmed && this.player2.skillConfirmed) {
+            this.setupInitialBoard();
+            this.phase = PHASES.ROLL;
+        }
     }
 
     setupInitialBoard() {
@@ -303,6 +315,11 @@ class Game {
         const currentPlayer = this.getCurrentPlayer();
         const cost = SKILL_COSTS[type];
 
+        // 氷スキルは持っているプレイヤーのみ使用可能
+        if (type === 'ice' && !currentPlayer.hasSkill(SPECIAL_SKILLS.ICE)) {
+            return false;
+        }
+
         if (cost !== undefined && !currentPlayer.canAfford(cost)) {
             return false;
         }
@@ -391,6 +408,8 @@ class Game {
         switch (this.phase) {
             case PHASES.START_SCREEN:
                 return this.handleStartScreenClick(x, y);
+            case PHASES.SKILL_SELECTION:
+                return this.handleSkillSelectionClick(x, y);
             case PHASES.ROLL:
                 return this.handleRollPhaseClick(x, y);
             case PHASES.MOVE:
@@ -402,6 +421,28 @@ class Game {
             case PHASES.GAME_OVER:
                 return this.handleGameOverClick(x, y);
         }
+    }
+
+    handleSkillSelectionClick(x, y) {
+        // Player 1 panel (left side)
+        if (x >= 20 && x <= PANEL_WIDTH - 20) {
+            // Ice skill button for P1
+            if (y >= 250 && y <= 370 && !this.player1.skillConfirmed) {
+                this.selectSkill(1, SPECIAL_SKILLS.ICE);
+                return true;
+            }
+        }
+
+        // Player 2 panel (right side)
+        if (x >= SCREEN_WIDTH - PANEL_WIDTH + 20 && x <= SCREEN_WIDTH - 20) {
+            // Ice skill button for P2
+            if (y >= 250 && y <= 370 && !this.player2.skillConfirmed) {
+                this.selectSkill(2, SPECIAL_SKILLS.ICE);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     handleStartScreenClick(x, y) {
@@ -472,13 +513,18 @@ class Game {
             this.setPlacementType('bomb');
             return true;
         }
-        // Ice button
-        if (x >= panelX && x <= panelX + 200 && y >= 480 && y <= 530) {
-            this.setPlacementType('ice');
-            return true;
+        // Ice button (only if player has ice skill)
+        const currentPlayer = this.getCurrentPlayer();
+        let drillY = 480;
+        if (currentPlayer.hasSkill(SPECIAL_SKILLS.ICE)) {
+            if (x >= panelX && x <= panelX + 200 && y >= 480 && y <= 530) {
+                this.setPlacementType('ice');
+                return true;
+            }
+            drillY = 540;
         }
         // Drill button
-        if (x >= panelX && x <= panelX + 200 && y >= 540 && y <= 590) {
+        if (x >= panelX && x <= panelX + 200 && y >= drillY && y <= drillY + 50) {
             this.setPlacementType('drill');
             return true;
         }

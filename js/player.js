@@ -39,5 +39,15 @@ class Player {
         this.col = startCol;
         this.points = 0;
         this.specialSkill = null;
+        this.skillConfirmed = false;
+    }
+
+    setSpecialSkill(skill) {
+        this.specialSkill = skill;
+        this.skillConfirmed = true;
+    }
+
+    hasSkill(skill) {
+        return this.specialSkill === skill;
     }
 }

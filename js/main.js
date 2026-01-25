@@ -129,15 +129,25 @@ function drawPhaseUI() {
         ctx.fillStyle = COLORS.BLACK;
         ctx.fillText(`Bomb (${SKILL_COSTS.bomb}pt)`, panelX + 100, 452);
 
-        ctx.fillStyle = COLORS.DRILL;
+        ctx.fillStyle = COLORS.ICE_TILE;
         ctx.fillRect(panelX, 480, 200, 50);
-        if (game.phase === PHASES.DRILL_TARGET) {
+        if (game.placementType === 'ice') {
             ctx.strokeStyle = COLORS.WHITE;
             ctx.lineWidth = 4;
             ctx.strokeRect(panelX, 480, 200, 50);
         }
+        ctx.fillStyle = COLORS.BLACK;
+        ctx.fillText(`Ice (${SKILL_COSTS.ice}pt)`, panelX + 100, 512);
+
+        ctx.fillStyle = COLORS.DRILL;
+        ctx.fillRect(panelX, 540, 200, 50);
+        if (game.phase === PHASES.DRILL_TARGET) {
+            ctx.strokeStyle = COLORS.WHITE;
+            ctx.lineWidth = 4;
+            ctx.strokeRect(panelX, 540, 200, 50);
+        }
         ctx.fillStyle = COLORS.WHITE;
-        ctx.fillText(`Drill (${SKILL_COSTS.drill}pt)`, panelX + 100, 512);
+        ctx.fillText(`Drill (${SKILL_COSTS.drill}pt)`, panelX + 100, 572);
     }
 }
 

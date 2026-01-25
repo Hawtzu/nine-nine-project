@@ -129,8 +129,11 @@ class Renderer {
         // PvP Button
         this.drawButton(SCREEN_WIDTH / 2 - 150, 350, 300, 80, '#009600', 'Player vs Player');
 
-        // PvA Button
-        this.drawButton(SCREEN_WIDTH / 2 - 150, 470, 300, 80, '#969600', 'Player vs AI');
+        // PvA Button (Coming Soon)
+        this.drawButton(SCREEN_WIDTH / 2 - 150, 470, 300, 80, '#666666', 'Player vs AI');
+        this.ctx.fillStyle = '#FFFF00';
+        this.ctx.font = '16px Arial';
+        this.ctx.fillText('Coming Soon', SCREEN_WIDTH / 2, 530);
     }
 
     drawButton(x, y, width, height, color, text) {

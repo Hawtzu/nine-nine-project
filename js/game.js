@@ -411,12 +411,12 @@ class Game {
             this.startGame('pvp');
             return true;
         }
-        // PvA button
-        if (x >= SCREEN_WIDTH / 2 - 150 && x <= SCREEN_WIDTH / 2 + 150 &&
-            y >= 470 && y <= 550) {
-            this.startGame('pva');
-            return true;
-        }
+        // PvA button (disabled - Coming Soon)
+        // if (x >= SCREEN_WIDTH / 2 - 150 && x <= SCREEN_WIDTH / 2 + 150 &&
+        //     y >= 470 && y <= 550) {
+        //     this.startGame('pva');
+        //     return true;
+        // }
         return false;
     }
 
@@ -472,8 +472,13 @@ class Game {
             this.setPlacementType('bomb');
             return true;
         }
-        // Drill button
+        // Ice button
         if (x >= panelX && x <= panelX + 200 && y >= 480 && y <= 530) {
+            this.setPlacementType('ice');
+            return true;
+        }
+        // Drill button
+        if (x >= panelX && x <= panelX + 200 && y >= 540 && y <= 590) {
             this.setPlacementType('drill');
             return true;
         }

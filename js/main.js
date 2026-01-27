@@ -35,6 +35,10 @@ function render() {
             renderer.drawStartScreen();
             break;
 
+        case PHASES.SKILL_SELECTION:
+            renderer.drawSkillSelection(game.player1, game.player2);
+            break;
+
         case PHASES.ROLL:
         case PHASES.MOVE:
         case PHASES.PLACE:
@@ -129,25 +133,30 @@ function drawPhaseUI() {
         ctx.fillStyle = COLORS.BLACK;
         ctx.fillText(`Bomb (${SKILL_COSTS.bomb}pt)`, panelX + 100, 452);
 
-        ctx.fillStyle = COLORS.ICE_TILE;
-        ctx.fillRect(panelX, 480, 200, 50);
-        if (game.placementType === 'ice') {
-            ctx.strokeStyle = COLORS.WHITE;
-            ctx.lineWidth = 4;
-            ctx.strokeRect(panelX, 480, 200, 50);
+        // Ice button (only if player has ice skill)
+        let drillY = 480;
+        if (currentPlayer.hasSkill(SPECIAL_SKILLS.ICE)) {
+            ctx.fillStyle = COLORS.ICE_TILE;
+            ctx.fillRect(panelX, 480, 200, 50);
+            if (game.placementType === 'ice') {
+                ctx.strokeStyle = COLORS.WHITE;
+                ctx.lineWidth = 4;
+                ctx.strokeRect(panelX, 480, 200, 50);
+            }
+            ctx.fillStyle = COLORS.BLACK;
+            ctx.fillText(`Ice (${SKILL_COSTS.ice}pt)`, panelX + 100, 512);
+            drillY = 540;
         }
-        ctx.fillStyle = COLORS.BLACK;
-        ctx.fillText(`Ice (${SKILL_COSTS.ice}pt)`, panelX + 100, 512);
 
         ctx.fillStyle = COLORS.DRILL;
-        ctx.fillRect(panelX, 540, 200, 50);
+        ctx.fillRect(panelX, drillY, 200, 50);
         if (game.phase === PHASES.DRILL_TARGET) {
             ctx.strokeStyle = COLORS.WHITE;
             ctx.lineWidth = 4;
-            ctx.strokeRect(panelX, 540, 200, 50);
+            ctx.strokeRect(panelX, drillY, 200, 50);
         }
         ctx.fillStyle = COLORS.WHITE;
-        ctx.fillText(`Drill (${SKILL_COSTS.drill}pt)`, panelX + 100, 572);
+        ctx.fillText(`Drill (${SKILL_COSTS.drill}pt)`, panelX + 100, drillY + 32);
     }
 }
 

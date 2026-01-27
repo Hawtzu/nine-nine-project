@@ -50,6 +50,11 @@ const PHASES = {
     REPLAY: 'replay'
 };
 
+// Special Skills
+const SPECIAL_SKILLS = {
+    ICE: 'ice_skill'
+};
+
 // Skill Costs
 const SKILL_COSTS = {
     recovery: 100,

@@ -170,4 +170,73 @@ class Renderer {
         // Restart button
         this.drawButton(SCREEN_WIDTH / 2 - 110, SCREEN_HEIGHT / 2 + 50, 220, 70, '#009600', 'Main Menu');
     }
+
+    drawSkillSelection(player1, player2) {
+        this.clear();
+
+        // Title
+        this.ctx.fillStyle = COLORS.WHITE;
+        this.ctx.font = 'bold 36px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('Select Special Skill', SCREEN_WIDTH / 2, 50);
+
+        // Player 1 panel (left)
+        this.drawSkillPanel(player1, 20, COLORS.P1_PANEL_BG);
+
+        // Player 2 panel (right)
+        this.drawSkillPanel(player2, SCREEN_WIDTH - PANEL_WIDTH + 20, COLORS.P2_PANEL_BG);
+
+        // Center info
+        this.ctx.fillStyle = COLORS.WHITE;
+        this.ctx.font = '20px Arial';
+        this.ctx.textAlign = 'center';
+        if (player1.skillConfirmed && player2.skillConfirmed) {
+            this.ctx.fillText('Starting game...', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+        } else {
+            this.ctx.fillText('Both players must select a skill', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+        }
+    }
+
+    drawSkillPanel(player, panelX, bgColor) {
+        // Panel background
+        this.ctx.fillStyle = bgColor;
+        this.ctx.fillRect(panelX - 20, 80, PANEL_WIDTH, SCREEN_HEIGHT - 100);
+
+        // Player name
+        this.ctx.fillStyle = COLORS.WHITE;
+        this.ctx.font = 'bold 28px Arial';
+        this.ctx.textAlign = 'left';
+        this.ctx.fillText(`Player ${player.playerNum}`, panelX, 130);
+
+        if (player.skillConfirmed) {
+            // Show "Ready!" if skill selected
+            this.ctx.fillStyle = '#00FF00';
+            this.ctx.font = 'bold 32px Arial';
+            this.ctx.fillText('Ready!', panelX, 200);
+
+            this.ctx.fillStyle = COLORS.WHITE;
+            this.ctx.font = '18px Arial';
+            this.ctx.fillText('Skill: Ice', panelX, 240);
+        } else {
+            // Show skill selection
+            this.ctx.fillStyle = COLORS.WHITE;
+            this.ctx.font = '18px Arial';
+            this.ctx.fillText('Choose your special skill:', panelX, 200);
+
+            // Ice skill button
+            this.ctx.fillStyle = COLORS.ICE_TILE;
+            this.ctx.fillRect(panelX, 250, PANEL_WIDTH - 40, 120);
+            this.ctx.strokeStyle = COLORS.WHITE;
+            this.ctx.lineWidth = 3;
+            this.ctx.strokeRect(panelX, 250, PANEL_WIDTH - 40, 120);
+
+            this.ctx.fillStyle = COLORS.BLACK;
+            this.ctx.font = 'bold 24px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('Ice Skill', panelX + (PANEL_WIDTH - 40) / 2, 300);
+
+            this.ctx.font = '16px Arial';
+            this.ctx.fillText('Place ice tiles', panelX + (PANEL_WIDTH - 40) / 2, 340);
+        }
+    }
 }

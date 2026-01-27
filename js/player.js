@@ -6,6 +6,7 @@ class Player {
         this.col = startCol;
         this.points = 0;
         this.specialSkill = null;
+        this.skillConfirmed = false;
         this.color = playerNum === 1 ? COLORS.P1 : COLORS.P2;
     }
 
@@ -39,5 +40,15 @@ class Player {
         this.col = startCol;
         this.points = 0;
         this.specialSkill = null;
+        this.skillConfirmed = false;
+    }
+
+    setSpecialSkill(skill) {
+        this.specialSkill = skill;
+        this.skillConfirmed = true;
+    }
+
+    hasSkill(skill) {
+        return this.specialSkill === skill;
     }
 }

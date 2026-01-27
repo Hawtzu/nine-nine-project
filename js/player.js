@@ -6,6 +6,7 @@ class Player {
         this.col = startCol;
         this.points = 0;
         this.specialSkill = null;
+        this.skillConfirmed = false;
         this.color = playerNum === 1 ? COLORS.P1 : COLORS.P2;
     }
 

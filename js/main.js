@@ -51,8 +51,14 @@ function render() {
 
             // Draw highlights
             if (game.phase === PHASES.MOVE) {
-                renderer.drawHighlights(game.movableTiles, COLORS.MOVE_HIGHLIGHT);
-                renderer.drawHighlights(game.fallTriggerTiles, COLORS.FALL_HIGHLIGHT);
+                const crossMovable = game.movableTiles.filter(t => t.directionType === DIRECTION_TYPE.CROSS);
+                const diagMovable = game.movableTiles.filter(t => t.directionType === DIRECTION_TYPE.DIAGONAL);
+                renderer.drawHighlights(crossMovable, COLORS.MOVE_HIGHLIGHT);
+                renderer.drawHighlights(diagMovable, COLORS.DIAGONAL_MOVE_HIGHLIGHT);
+                const crossFall = game.fallTriggerTiles.filter(t => t.directionType === DIRECTION_TYPE.CROSS);
+                const diagFall = game.fallTriggerTiles.filter(t => t.directionType === DIRECTION_TYPE.DIAGONAL);
+                renderer.drawHighlights(crossFall, COLORS.FALL_HIGHLIGHT);
+                renderer.drawHighlights(diagFall, COLORS.DIAGONAL_FALL_HIGHLIGHT);
             } else if (game.phase === PHASES.PLACE) {
                 renderer.drawHighlights(game.placeableTiles, COLORS.PLACE_HIGHLIGHT);
             } else if (game.phase === PHASES.DRILL_TARGET) {

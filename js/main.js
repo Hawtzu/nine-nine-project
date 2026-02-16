@@ -91,79 +91,280 @@ function drawPhaseUI() {
     const panelX = game.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
 
     if (game.phase === PHASES.ROLL) {
-        // Draw roll button
-        renderer.drawButton(panelX, 300, 200, 60, '#00C800', 'Roll Dice');
-    } else if (game.phase === PHASES.MOVE) {
-        // Draw dice result
-        ctx.fillStyle = '#FFFF00';
-        ctx.font = '24px Arial';
-        ctx.textAlign = 'left';
-        ctx.fillText(`Dice Roll: ${game.diceRoll}`, panelX, 260);
-
-        ctx.fillStyle = COLORS.WHITE;
-        ctx.font = '18px Arial';
-        ctx.fillText('Click a highlighted tile to move', panelX, 300);
-    } else if (game.phase === PHASES.PLACE || game.phase === PHASES.DRILL_TARGET) {
         const currentPlayer = game.getCurrentPlayer();
 
-        // Draw placement buttons
-        ctx.fillStyle = COLORS.STONE;
-        ctx.fillRect(panelX, 300, 200, 50);
-        if (game.placementType === 'stone' && game.phase === PHASES.PLACE) {
-            ctx.strokeStyle = COLORS.WHITE;
-            ctx.lineWidth = 4;
-            ctx.strokeRect(panelX, 300, 200, 50);
-        }
-        ctx.fillStyle = COLORS.WHITE;
-        ctx.font = '20px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('Place Stone', panelX + 100, 332);
+        // NEXT preview
+        ctx.fillStyle = '#AAAAAA';
+        ctx.font = '13px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('NEXT', panelX, 150);
+        drawDiceVisualSmall(ctx, panelX + 30, 185, game.diceQueue[1], false);
+        drawDiceVisualSmall(ctx, panelX + 95, 187, game.diceQueue[2], true);
 
-        ctx.fillStyle = COLORS.RECOVERY_TILE;
-        ctx.fillRect(panelX, 360, 200, 50);
-        if (game.placementType === 'recovery') {
-            ctx.strokeStyle = COLORS.WHITE;
-            ctx.lineWidth = 4;
-            ctx.strokeRect(panelX, 360, 200, 50);
-        }
-        ctx.fillStyle = COLORS.BLACK;
-        ctx.fillText(`Recovery (${SKILL_COSTS.recovery}pt)`, panelX + 100, 392);
+        // Current dice
+        ctx.fillStyle = '#AAAAAA';
+        ctx.font = '13px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('CURRENT', panelX, 225);
+        drawDiceVisual(ctx, panelX + 50, 270, game.diceQueue[0]);
 
-        ctx.fillStyle = COLORS.BOMB_TILE;
-        ctx.fillRect(panelX, 420, 200, 50);
-        if (game.placementType === 'bomb') {
-            ctx.strokeStyle = COLORS.WHITE;
-            ctx.lineWidth = 4;
-            ctx.strokeRect(panelX, 420, 200, 50);
+        // Stock display
+        if (currentPlayer.hasStock()) {
+            ctx.fillStyle = '#FFD700';
+            ctx.font = '13px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('STOCK', panelX + 130, 225);
+            drawDiceVisualSmall(ctx, panelX + 155, 270, currentPlayer.stockedDice, false);
         }
-        ctx.fillStyle = COLORS.BLACK;
-        ctx.fillText(`Bomb (${SKILL_COSTS.bomb}pt)`, panelX + 100, 452);
+
+        // Buttons
+        if (currentPlayer.hasStock()) {
+            renderer.drawButton(panelX, 320, 200, 50, '#DAA520', `Use Stock`);
+            renderer.drawButton(panelX, 378, 200, 50, '#00C800', 'Roll Dice');
+        } else {
+            renderer.drawButton(panelX, 320, 200, 50, '#00C800', 'Roll Dice');
+            renderer.drawButton(panelX, 378, 200, 50, '#B8860B', 'Stock');
+        }
+    } else if (game.phase === PHASES.MOVE) {
+        // Draw dice visual
+        drawDiceVisual(ctx, panelX + 100, 310, game.diceRoll);
+    } else if (game.phase === PHASES.PLACE || game.phase === PHASES.DRILL_TARGET) {
+        const currentPlayer = game.getCurrentPlayer();
+        const points = currentPlayer.points;
+
+        // Label
+        ctx.fillStyle = '#AAAAAA';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('ACTIONS', panelX, 290);
+
+        // Stone button (always available, free)
+        drawSkillButton(ctx, panelX, 300, 200, 50, {
+            name: 'Stone',
+            color: COLORS.STONE,
+            textColor: COLORS.WHITE,
+            cost: 0,
+            isSelected: game.placementType === 'stone' && game.phase === PHASES.PLACE,
+            isAffordable: true
+        });
+
+        // Recovery button
+        drawSkillButton(ctx, panelX, 358, 200, 50, {
+            name: 'Recovery',
+            color: COLORS.RECOVERY_TILE,
+            textColor: COLORS.BLACK,
+            cost: SKILL_COSTS.recovery,
+            isSelected: game.placementType === 'recovery',
+            isAffordable: points >= SKILL_COSTS.recovery
+        });
+
+        // Dynamic skill buttons (Ice/Bomb based on selected skill)
+        let nextY = 416;
 
         // Ice button (only if player has ice skill)
-        let drillY = 480;
         if (currentPlayer.hasSkill(SPECIAL_SKILLS.ICE)) {
-            ctx.fillStyle = COLORS.ICE_TILE;
-            ctx.fillRect(panelX, 480, 200, 50);
-            if (game.placementType === 'ice') {
-                ctx.strokeStyle = COLORS.WHITE;
-                ctx.lineWidth = 4;
-                ctx.strokeRect(panelX, 480, 200, 50);
-            }
-            ctx.fillStyle = COLORS.BLACK;
-            ctx.fillText(`Ice (${SKILL_COSTS.ice}pt)`, panelX + 100, 512);
-            drillY = 540;
+            drawSkillButton(ctx, panelX, nextY, 200, 50, {
+                name: 'Ice',
+                color: COLORS.ICE_TILE,
+                textColor: COLORS.BLACK,
+                cost: SKILL_COSTS.ice,
+                isSelected: game.placementType === 'ice',
+                isAffordable: points >= SKILL_COSTS.ice
+            });
+            nextY += 58;
         }
 
-        ctx.fillStyle = COLORS.DRILL;
-        ctx.fillRect(panelX, drillY, 200, 50);
-        if (game.phase === PHASES.DRILL_TARGET) {
-            ctx.strokeStyle = COLORS.WHITE;
-            ctx.lineWidth = 4;
-            ctx.strokeRect(panelX, drillY, 200, 50);
+        // Bomb button (only if player has bomb skill)
+        if (currentPlayer.hasSkill(SPECIAL_SKILLS.BOMB)) {
+            drawSkillButton(ctx, panelX, nextY, 200, 50, {
+                name: 'Bomb',
+                color: COLORS.BOMB_TILE,
+                textColor: COLORS.BLACK,
+                cost: SKILL_COSTS.bomb,
+                isSelected: game.placementType === 'bomb',
+                isAffordable: points >= SKILL_COSTS.bomb
+            });
+            nextY += 58;
         }
-        ctx.fillStyle = COLORS.WHITE;
-        ctx.fillText(`Drill (${SKILL_COSTS.drill}pt)`, panelX + 100, drillY + 32);
+
+        // Drill button
+        drawSkillButton(ctx, panelX, nextY, 200, 50, {
+            name: 'Drill',
+            color: COLORS.DRILL,
+            textColor: COLORS.WHITE,
+            cost: SKILL_COSTS.drill,
+            isSelected: game.phase === PHASES.DRILL_TARGET,
+            isAffordable: points >= SKILL_COSTS.drill
+        });
     }
+}
+
+function drawDiceVisual(ctx, centerX, centerY, value) {
+    const size = 70;
+    const x = centerX - size / 2;
+    const y = centerY - size / 2;
+    const radius = 10;
+    const dotRadius = 7;
+
+    ctx.save();
+
+    // Dice body with rounded corners
+    ctx.fillStyle = '#EEEEEE';
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + size - radius, y);
+    ctx.arcTo(x + size, y, x + size, y + radius, radius);
+    ctx.lineTo(x + size, y + size - radius);
+    ctx.arcTo(x + size, y + size, x + size - radius, y + size, radius);
+    ctx.lineTo(x + radius, y + size);
+    ctx.arcTo(x, y + size, x, y + size - radius, radius);
+    ctx.lineTo(x, y + radius);
+    ctx.arcTo(x, y, x + radius, y, radius);
+    ctx.closePath();
+    ctx.fill();
+
+    // Dice border shadow
+    ctx.strokeStyle = '#999999';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Draw dots based on value
+    ctx.fillStyle = '#222222';
+    const cx = centerX;
+    const cy = centerY;
+    const offset = 18;
+
+    if (value === 1) {
+        drawDot(ctx, cx, cy, dotRadius);
+    } else if (value === 2) {
+        drawDot(ctx, cx - offset, cy - offset, dotRadius);
+        drawDot(ctx, cx + offset, cy + offset, dotRadius);
+    } else if (value === 3) {
+        drawDot(ctx, cx - offset, cy - offset, dotRadius);
+        drawDot(ctx, cx, cy, dotRadius);
+        drawDot(ctx, cx + offset, cy + offset, dotRadius);
+    }
+
+    ctx.restore();
+}
+
+function drawDiceVisualSmall(ctx, centerX, centerY, value, isSmaller) {
+    const size = isSmaller ? 40 : 50;
+    const x = centerX - size / 2;
+    const y = centerY - size / 2;
+    const radius = 6;
+    const dotRadius = isSmaller ? 4 : 5;
+
+    ctx.save();
+    ctx.globalAlpha = isSmaller ? 0.6 : 0.8;
+
+    ctx.fillStyle = '#DDDDDD';
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + size - radius, y);
+    ctx.arcTo(x + size, y, x + size, y + radius, radius);
+    ctx.lineTo(x + size, y + size - radius);
+    ctx.arcTo(x + size, y + size, x + size - radius, y + size, radius);
+    ctx.lineTo(x + radius, y + size);
+    ctx.arcTo(x, y + size, x, y + size - radius, radius);
+    ctx.lineTo(x, y + radius);
+    ctx.arcTo(x, y, x + radius, y, radius);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = '#999999';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = '#222222';
+    const offset = size * 0.26;
+    if (value === 1) {
+        drawDot(ctx, centerX, centerY, dotRadius);
+    } else if (value === 2) {
+        drawDot(ctx, centerX - offset, centerY - offset, dotRadius);
+        drawDot(ctx, centerX + offset, centerY + offset, dotRadius);
+    } else if (value === 3) {
+        drawDot(ctx, centerX - offset, centerY - offset, dotRadius);
+        drawDot(ctx, centerX, centerY, dotRadius);
+        drawDot(ctx, centerX + offset, centerY + offset, dotRadius);
+    }
+
+    ctx.restore();
+}
+
+function drawDot(ctx, x, y, radius) {
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function drawSkillButton(ctx, x, y, width, height, opts) {
+    const { name, color, textColor, cost, isSelected, isAffordable } = opts;
+
+    ctx.save();
+
+    // Dim if not affordable
+    if (!isAffordable && cost > 0) {
+        ctx.globalAlpha = 0.35;
+    }
+
+    // Button background
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, width, height);
+
+    // Icon circle
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.beginPath();
+    ctx.arc(x + 25, y + height / 2, 15, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Icon inner dot
+    ctx.fillStyle = color === COLORS.STONE ? '#B0B0B0' : 'rgba(255, 255, 255, 0.7)';
+    ctx.beginPath();
+    ctx.arc(x + 25, y + height / 2, 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.globalAlpha = 1.0;
+
+    // Skill name
+    ctx.fillStyle = !isAffordable && cost > 0 ? '#666666' : textColor;
+    ctx.font = 'bold 18px Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name, x + 48, y + height / 2 - (cost > 0 ? 6 : 0));
+
+    // Cost text (small, below name)
+    if (cost > 0) {
+        ctx.fillStyle = !isAffordable ? '#993333' : '#FFD700';
+        ctx.font = '13px Arial';
+        ctx.fillText(`${cost} pt`, x + 48, y + height / 2 + 12);
+    }
+
+    // Selected highlight (glow border)
+    if (isSelected) {
+        ctx.strokeStyle = '#FFD700';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#FFD700';
+        ctx.shadowBlur = 8;
+        ctx.strokeRect(x, y, width, height);
+        ctx.shadowBlur = 0;
+    }
+
+    // "Not enough" indicator
+    if (!isAffordable && cost > 0) {
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.15)';
+        ctx.fillRect(x, y, width, height);
+
+        // Strikethrough line
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x + 5, y + height / 2);
+        ctx.lineTo(x + width - 5, y + height / 2);
+        ctx.stroke();
+    }
+
+    ctx.restore();
 }
 
 // Start when DOM is loaded

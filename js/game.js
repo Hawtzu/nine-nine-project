@@ -16,6 +16,11 @@ class Game {
         this.winner = null;
         this.winReason = '';
         this.lastMoveDirectionType = DIRECTION_TYPE.CROSS;
+        this.diceQueue = [];
+    }
+
+    generateDiceValue() {
+        return Math.floor(Math.random() * 3) + 1;
     }
 
     init() {
@@ -27,6 +32,11 @@ class Game {
         this.winner = null;
         this.winReason = '';
         this.lastMoveDirectionType = DIRECTION_TYPE.CROSS;
+        this.diceQueue = [
+            this.generateDiceValue(),
+            this.generateDiceValue(),
+            this.generateDiceValue()
+        ];
         this.clearHighlights();
     }
 
@@ -140,7 +150,28 @@ class Game {
     }
 
     rollDice() {
-        this.diceRoll = Math.floor(Math.random() * 3) + 1; // 1-3
+        this.diceRoll = this.diceQueue.shift();
+        this.diceQueue.push(this.generateDiceValue());
+        this.findMovableTiles();
+        if (this.movableTiles.length === 0 && this.fallTriggerTiles.length === 0) {
+            this.gameOver(this.currentTurn === 1 ? 2 : 1, 'is blocked and cannot move!');
+        } else {
+            this.phase = PHASES.MOVE;
+        }
+    }
+
+    stockCurrentDice() {
+        const currentPlayer = this.getCurrentPlayer();
+        const diceValue = this.diceQueue.shift();
+        currentPlayer.stockDice(diceValue);
+        this.diceQueue.push(this.generateDiceValue());
+        // ストック後も通常通りロールして移動する
+        this.rollDice();
+    }
+
+    useStockedDice() {
+        const currentPlayer = this.getCurrentPlayer();
+        this.diceRoll = currentPlayer.useStock();
         this.findMovableTiles();
         if (this.movableTiles.length === 0 && this.fallTriggerTiles.length === 0) {
             this.gameOver(this.currentTurn === 1 ? 2 : 1, 'is blocked and cannot move!');
@@ -232,10 +263,16 @@ class Game {
         const currentPlayer = this.getCurrentPlayer();
         const tile = this.board.getTile(row, col);
 
-        // Check for bomb
+        // Check for bomb - only kills players who didn't place it
         if (tile === MARKERS.BOMB) {
-            this.gameOver(this.currentTurn === 1 ? 2 : 1, 'stepped on a bomb!');
-            return;
+            const bombOwner = this.board.getBombOwner(row, col);
+            if (bombOwner !== currentPlayer.playerNum) {
+                // Stepped on opponent's bomb → lose
+                this.gameOver(this.currentTurn === 1 ? 2 : 1, 'stepped on a bomb!');
+                return;
+            }
+            // Own bomb → safe, remove the bomb
+            this.board.setTile(row, col, MARKERS.EMPTY);
         }
 
         // Save direction type from the selected move tile
@@ -297,12 +334,17 @@ class Game {
             this.board.setTile(row, col, MARKERS.STONE);
             // TODO: Check figure bonus
             this.endTurn();
+        } else if (this.placementType === 'bomb') {
+            const cost = SKILL_COSTS.bomb;
+            if (currentPlayer.deductPoints(cost)) {
+                this.board.setBomb(row, col, currentPlayer.playerNum);
+                this.endTurn();
+            }
         } else {
             const cost = SKILL_COSTS[this.placementType];
             if (currentPlayer.deductPoints(cost)) {
                 const markerMap = {
                     recovery: MARKERS.RECOVERY,
-                    bomb: MARKERS.BOMB,
                     ice: MARKERS.ICE
                 };
                 this.board.setTile(row, col, markerMap[this.placementType]);
@@ -317,6 +359,11 @@ class Game {
 
         // 氷スキルは持っているプレイヤーのみ使用可能
         if (type === 'ice' && !currentPlayer.hasSkill(SPECIAL_SKILLS.ICE)) {
+            return false;
+        }
+
+        // 爆弾スキルは持っているプレイヤーのみ使用可能
+        if (type === 'bomb' && !currentPlayer.hasSkill(SPECIAL_SKILLS.BOMB)) {
             return false;
         }
 
@@ -421,19 +468,33 @@ class Game {
     handleSkillSelectionClick(x, y) {
         // Player 1 panel (left side)
         if (x >= 20 && x <= PANEL_WIDTH - 20) {
-            // Ice skill button for P1
-            if (y >= 250 && y <= 370 && !this.player1.skillConfirmed) {
-                this.selectSkill(1, SPECIAL_SKILLS.ICE);
-                return true;
+            if (!this.player1.skillConfirmed) {
+                // Ice skill button (Y: 250-370)
+                if (y >= 250 && y <= 370) {
+                    this.selectSkill(1, SPECIAL_SKILLS.ICE);
+                    return true;
+                }
+                // Bomb skill button (Y: 390-510)
+                if (y >= 390 && y <= 510) {
+                    this.selectSkill(1, SPECIAL_SKILLS.BOMB);
+                    return true;
+                }
             }
         }
 
         // Player 2 panel (right side)
         if (x >= SCREEN_WIDTH - PANEL_WIDTH + 20 && x <= SCREEN_WIDTH - 20) {
-            // Ice skill button for P2
-            if (y >= 250 && y <= 370 && !this.player2.skillConfirmed) {
-                this.selectSkill(2, SPECIAL_SKILLS.ICE);
-                return true;
+            if (!this.player2.skillConfirmed) {
+                // Ice skill button (Y: 250-370)
+                if (y >= 250 && y <= 370) {
+                    this.selectSkill(2, SPECIAL_SKILLS.ICE);
+                    return true;
+                }
+                // Bomb skill button (Y: 390-510)
+                if (y >= 390 && y <= 510) {
+                    this.selectSkill(2, SPECIAL_SKILLS.BOMB);
+                    return true;
+                }
             }
         }
 
@@ -458,10 +519,30 @@ class Game {
 
     handleRollPhaseClick(x, y) {
         const panelX = this.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
-        // Roll button area (approximate)
-        if (x >= panelX && x <= panelX + 200 && y >= 300 && y <= 360) {
-            this.rollDice();
-            return true;
+        const currentPlayer = this.getCurrentPlayer();
+
+        if (currentPlayer.hasStock()) {
+            // Use Stock button (Y: 320-370)
+            if (x >= panelX && x <= panelX + 200 && y >= 320 && y <= 370) {
+                this.useStockedDice();
+                return true;
+            }
+            // Roll Dice button (Y: 378-428)
+            if (x >= panelX && x <= panelX + 200 && y >= 378 && y <= 428) {
+                this.rollDice();
+                return true;
+            }
+        } else {
+            // Roll Dice button (Y: 320-370)
+            if (x >= panelX && x <= panelX + 200 && y >= 320 && y <= 370) {
+                this.rollDice();
+                return true;
+            }
+            // Stock button (Y: 378-428)
+            if (x >= panelX && x <= panelX + 200 && y >= 378 && y <= 428) {
+                this.stockCurrentDice();
+                return true;
+            }
         }
         return false;
     }
@@ -492,34 +573,42 @@ class Game {
     handlePlacePhaseClick(x, y) {
         // Check placement type buttons first
         const panelX = this.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
+        const currentPlayer = this.getCurrentPlayer();
 
-        // Stone button
+        // Stone button (Y: 300-350)
         if (x >= panelX && x <= panelX + 200 && y >= 300 && y <= 350) {
             this.setPlacementType('stone');
             return true;
         }
-        // Recovery button
-        if (x >= panelX && x <= panelX + 200 && y >= 360 && y <= 410) {
+        // Recovery button (Y: 358-408)
+        if (x >= panelX && x <= panelX + 200 && y >= 358 && y <= 408) {
             this.setPlacementType('recovery');
             return true;
         }
-        // Bomb button
-        if (x >= panelX && x <= panelX + 200 && y >= 420 && y <= 470) {
-            this.setPlacementType('bomb');
-            return true;
-        }
+
+        // Dynamic skill buttons (Ice/Bomb) + Drill
+        let nextY = 416;
+
         // Ice button (only if player has ice skill)
-        const currentPlayer = this.getCurrentPlayer();
-        let drillY = 480;
         if (currentPlayer.hasSkill(SPECIAL_SKILLS.ICE)) {
-            if (x >= panelX && x <= panelX + 200 && y >= 480 && y <= 530) {
+            if (x >= panelX && x <= panelX + 200 && y >= nextY && y <= nextY + 50) {
                 this.setPlacementType('ice');
                 return true;
             }
-            drillY = 540;
+            nextY += 58;
         }
+
+        // Bomb button (only if player has bomb skill)
+        if (currentPlayer.hasSkill(SPECIAL_SKILLS.BOMB)) {
+            if (x >= panelX && x <= panelX + 200 && y >= nextY && y <= nextY + 50) {
+                this.setPlacementType('bomb');
+                return true;
+            }
+            nextY += 58;
+        }
+
         // Drill button
-        if (x >= panelX && x <= panelX + 200 && y >= drillY && y <= drillY + 50) {
+        if (x >= panelX && x <= panelX + 200 && y >= nextY && y <= nextY + 50) {
             this.setPlacementType('drill');
             return true;
         }

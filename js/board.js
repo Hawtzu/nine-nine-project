@@ -3,6 +3,7 @@ class Board {
     constructor(size = BOARD_SIZE) {
         this.size = size;
         this.tiles = this.createEmptyBoard();
+        this.bombOwners = {}; // key: "row,col" -> playerNum
     }
 
     createEmptyBoard() {
@@ -31,11 +32,25 @@ class Board {
         return false;
     }
 
+    setBomb(row, col, playerNum) {
+        if (this.isValidPosition(row, col)) {
+            this.tiles[row][col] = MARKERS.BOMB;
+            this.bombOwners[`${row},${col}`] = playerNum;
+            return true;
+        }
+        return false;
+    }
+
+    getBombOwner(row, col) {
+        return this.bombOwners[`${row},${col}`] || null;
+    }
+
     isValidPosition(row, col) {
         return row >= 0 && row < this.size && col >= 0 && col < this.size;
     }
 
     reset() {
         this.tiles = this.createEmptyBoard();
+        this.bombOwners = {};
     }
 }

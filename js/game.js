@@ -15,6 +15,7 @@ class Game {
         this.drillTargetTiles = [];
         this.winner = null;
         this.winReason = '';
+        this.lastMoveDirectionType = DIRECTION_TYPE.CROSS;
     }
 
     init() {
@@ -25,6 +26,7 @@ class Game {
         this.diceRoll = 0;
         this.winner = null;
         this.winReason = '';
+        this.lastMoveDirectionType = DIRECTION_TYPE.CROSS;
         this.clearHighlights();
     }
 
@@ -156,14 +158,12 @@ class Game {
         const playerPos = currentPlayer.getPosition();
         const otherPos = otherPlayer.getPosition();
 
-        const directions = [
-            { dr: 0, dc: 1 },
-            { dr: 0, dc: -1 },
-            { dr: 1, dc: 0 },
-            { dr: -1, dc: 0 }
+        const allDirections = [
+            ...CROSS_DIRECTIONS.map(d => ({ ...d, type: DIRECTION_TYPE.CROSS })),
+            ...DIAGONAL_DIRECTIONS.map(d => ({ ...d, type: DIRECTION_TYPE.DIAGONAL }))
         ];
 
-        for (const dir of directions) {
+        for (const dir of allDirections) {
             let steps = this.diceRoll;
             let currentPos = { row: playerPos.row, col: playerPos.col };
             let finalDest = null;
@@ -194,7 +194,7 @@ class Game {
                     break;
                 }
 
-                finalDest = { row: nextPos.row, col: nextPos.col };
+                finalDest = { row: nextPos.row, col: nextPos.col, directionType: dir.type };
                 currentPos = nextPos;
 
                 // Ice tile extends movement
@@ -213,7 +213,7 @@ class Game {
             }
         }
 
-        // Remove duplicates
+        // Remove duplicates (first hit wins)
         this.movableTiles = this.removeDuplicatePositions(this.movableTiles);
         this.fallTriggerTiles = this.removeDuplicatePositions(this.fallTriggerTiles);
     }
@@ -238,6 +238,11 @@ class Game {
             return;
         }
 
+        // Save direction type from the selected move tile
+        const moveTile = this.movableTiles.find(t => t.row === row && t.col === col)
+                      || this.fallTriggerTiles.find(t => t.row === row && t.col === col);
+        this.lastMoveDirectionType = (moveTile && moveTile.directionType) || DIRECTION_TYPE.CROSS;
+
         currentPlayer.moveTo(row, col);
 
         // Recovery tile bonus
@@ -258,12 +263,7 @@ class Game {
         const playerPos = currentPlayer.getPosition();
         const otherPos = otherPlayer.getPosition();
 
-        const directions = [
-            { dr: 0, dc: 1 },
-            { dr: 0, dc: -1 },
-            { dr: 1, dc: 0 },
-            { dr: -1, dc: 0 }
-        ];
+        const directions = CROSS_DIRECTIONS;
 
         for (const dir of directions) {
             const r = playerPos.row + dir.dr;
@@ -342,12 +342,7 @@ class Game {
         const currentPlayer = this.getCurrentPlayer();
         const playerPos = currentPlayer.getPosition();
 
-        const directions = [
-            { dr: 0, dc: 1 },
-            { dr: 0, dc: -1 },
-            { dr: 1, dc: 0 },
-            { dr: -1, dc: 0 }
-        ];
+        const directions = CROSS_DIRECTIONS;
 
         for (const dir of directions) {
             const r = playerPos.row + dir.dr;

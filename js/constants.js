@@ -23,7 +23,9 @@ const COLORS = {
     ICE_TILE: '#ADD8E6',
     DRILL: '#DC143C',
     MOVE_HIGHLIGHT: 'rgba(255, 255, 0, 0.5)',
+    DIAGONAL_MOVE_HIGHLIGHT: 'rgba(0, 255, 100, 0.5)',
     FALL_HIGHLIGHT: 'rgba(255, 0, 0, 0.5)',
+    DIAGONAL_FALL_HIGHLIGHT: 'rgba(200, 0, 50, 0.5)',
     PLACE_HIGHLIGHT: 'rgba(0, 255, 255, 0.5)',
     DRILL_TARGET_HIGHLIGHT: 'rgba(255, 0, 255, 0.7)',
     FIGURE_BONUS_HIGHLIGHT: 'rgba(255, 215, 0, 0.8)'
@@ -62,3 +64,24 @@ const SKILL_COSTS = {
     drill: 200,
     ice: 50
 };
+
+// Direction Types
+const DIRECTION_TYPE = {
+    CROSS: 'cross',
+    DIAGONAL: 'diagonal'
+};
+
+// Direction Sets
+const CROSS_DIRECTIONS = [
+    { dr: 0, dc: 1 },
+    { dr: 0, dc: -1 },
+    { dr: 1, dc: 0 },
+    { dr: -1, dc: 0 }
+];
+
+const DIAGONAL_DIRECTIONS = [
+    { dr: -1, dc: -1 },
+    { dr: -1, dc: 1 },
+    { dr: 1, dc: -1 },
+    { dr: 1, dc: 1 }
+];

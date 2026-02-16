@@ -104,14 +104,49 @@ class Renderer {
         this.ctx.font = 'bold 32px Arial';
         this.ctx.textAlign = 'left';
         this.ctx.fillText(
-            `Player ${player.playerNum}${isCurrentTurn ? ' (Turn)' : ''}`,
+            `Player ${player.playerNum}${isCurrentTurn ? ' ★' : ''}`,
             panelX,
             70
         );
 
-        // Points
-        this.ctx.font = '24px Arial';
-        this.ctx.fillText(`Points: ${player.points}`, panelX, 130);
+        // Points bar
+        const barX = panelX;
+        const barY = 90;
+        const barWidth = PANEL_WIDTH - 40;
+        const barHeight = 28;
+        const maxPoints = 500;
+        const fillRatio = Math.min(player.points / maxPoints, 1.0);
+
+        // Bar background
+        this.ctx.fillStyle = '#333333';
+        this.ctx.fillRect(barX, barY, barWidth, barHeight);
+
+        // Bar fill with gradient
+        if (fillRatio > 0) {
+            const gradient = this.ctx.createLinearGradient(barX, barY, barX + barWidth * fillRatio, barY);
+            if (player.playerNum === 1) {
+                gradient.addColorStop(0, '#0050CC');
+                gradient.addColorStop(1, '#3399FF');
+            } else {
+                gradient.addColorStop(0, '#CC2020');
+                gradient.addColorStop(1, '#FF6666');
+            }
+            this.ctx.fillStyle = gradient;
+            this.ctx.fillRect(barX, barY, barWidth * fillRatio, barHeight);
+        }
+
+        // Bar border
+        this.ctx.strokeStyle = '#888888';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(barX, barY, barWidth, barHeight);
+
+        // Points text on bar
+        this.ctx.fillStyle = COLORS.WHITE;
+        this.ctx.font = 'bold 16px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(`${player.points} pt`, barX + barWidth / 2, barY + barHeight / 2);
+        this.ctx.textBaseline = 'alphabetic';
     }
 
     drawStartScreen() {
@@ -216,27 +251,48 @@ class Renderer {
 
             this.ctx.fillStyle = COLORS.WHITE;
             this.ctx.font = '18px Arial';
-            this.ctx.fillText('Skill: Ice', panelX, 240);
+            const skillName = player.specialSkill === SPECIAL_SKILLS.ICE ? 'Ice' : 'Bomb';
+            this.ctx.fillText(`Skill: ${skillName}`, panelX, 240);
         } else {
             // Show skill selection
             this.ctx.fillStyle = COLORS.WHITE;
             this.ctx.font = '18px Arial';
             this.ctx.fillText('Choose your special skill:', panelX, 200);
 
-            // Ice skill button
+            const btnWidth = PANEL_WIDTH - 40;
+            const centerX = panelX + btnWidth / 2;
+
+            // Ice skill button (Y: 250-370)
             this.ctx.fillStyle = COLORS.ICE_TILE;
-            this.ctx.fillRect(panelX, 250, PANEL_WIDTH - 40, 120);
+            this.ctx.fillRect(panelX, 250, btnWidth, 120);
             this.ctx.strokeStyle = COLORS.WHITE;
             this.ctx.lineWidth = 3;
-            this.ctx.strokeRect(panelX, 250, PANEL_WIDTH - 40, 120);
+            this.ctx.strokeRect(panelX, 250, btnWidth, 120);
 
             this.ctx.fillStyle = COLORS.BLACK;
             this.ctx.font = 'bold 24px Arial';
             this.ctx.textAlign = 'center';
-            this.ctx.fillText('Ice Skill', panelX + (PANEL_WIDTH - 40) / 2, 300);
+            this.ctx.fillText('Ice Skill', centerX, 295);
 
-            this.ctx.font = '16px Arial';
-            this.ctx.fillText('Place ice tiles', panelX + (PANEL_WIDTH - 40) / 2, 340);
+            this.ctx.font = '14px Arial';
+            this.ctx.fillText('Place ice tiles that', centerX, 325);
+            this.ctx.fillText('extend movement', centerX, 345);
+
+            // Bomb skill button (Y: 390-510)
+            this.ctx.fillStyle = COLORS.BOMB_TILE;
+            this.ctx.fillRect(panelX, 390, btnWidth, 120);
+            this.ctx.strokeStyle = COLORS.WHITE;
+            this.ctx.lineWidth = 3;
+            this.ctx.strokeRect(panelX, 390, btnWidth, 120);
+
+            this.ctx.fillStyle = COLORS.BLACK;
+            this.ctx.font = 'bold 24px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('Bomb Skill', centerX, 435);
+
+            this.ctx.font = '14px Arial';
+            this.ctx.fillText('Place bombs that defeat', centerX, 465);
+            this.ctx.fillText('opponents who step on them', centerX, 485);
         }
     }
 }

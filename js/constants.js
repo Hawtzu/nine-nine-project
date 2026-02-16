@@ -54,7 +54,8 @@ const PHASES = {
 
 // Special Skills
 const SPECIAL_SKILLS = {
-    ICE: 'ice_skill'
+    ICE: 'ice_skill',
+    BOMB: 'bomb_skill'
 };
 
 // Skill Costs

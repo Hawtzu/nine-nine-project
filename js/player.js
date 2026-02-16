@@ -7,6 +7,7 @@ class Player {
         this.points = 0;
         this.specialSkill = null;
         this.skillConfirmed = false;
+        this.stockedDice = null;
         this.color = playerNum === 1 ? COLORS.P1 : COLORS.P2;
     }
 
@@ -41,6 +42,21 @@ class Player {
         this.points = 0;
         this.specialSkill = null;
         this.skillConfirmed = false;
+        this.stockedDice = null;
+    }
+
+    stockDice(value) {
+        this.stockedDice = value;
+    }
+
+    useStock() {
+        const value = this.stockedDice;
+        this.stockedDice = null;
+        return value;
+    }
+
+    hasStock() {
+        return this.stockedDice !== null;
     }
 
     setSpecialSkill(skill) {

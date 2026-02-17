@@ -16,6 +16,7 @@ class Game {
         this.winner = null;
         this.winReason = '';
         this.lastMoveDirectionType = DIRECTION_TYPE.CROSS;
+        this.moveMode = DIRECTION_TYPE.CROSS;
         this.diceQueue = [];
     }
 
@@ -32,6 +33,7 @@ class Game {
         this.winner = null;
         this.winReason = '';
         this.lastMoveDirectionType = DIRECTION_TYPE.CROSS;
+        this.moveMode = DIRECTION_TYPE.CROSS;
         this.diceQueue = [
             this.generateDiceValue(),
             this.generateDiceValue(),
@@ -149,11 +151,37 @@ class Game {
         return Math.abs(pos1.row - pos2.row) + Math.abs(pos1.col - pos2.col);
     }
 
+    hasAnyMovableTile() {
+        // 十字・斜め両方を確認して、どちらかで移動可能かチェック
+        const savedMode = this.moveMode;
+
+        this.moveMode = DIRECTION_TYPE.CROSS;
+        this.findMovableTiles();
+        const crossOk = this.movableTiles.length > 0 || this.fallTriggerTiles.length > 0;
+
+        if (!crossOk) {
+            this.moveMode = DIRECTION_TYPE.DIAGONAL;
+            this.findMovableTiles();
+            const diagOk = this.movableTiles.length > 0 || this.fallTriggerTiles.length > 0;
+
+            if (!diagOk) {
+                this.moveMode = savedMode;
+                this.findMovableTiles();
+                return false;
+            }
+        }
+
+        // 元のモードに戻してハイライトを再計算
+        this.moveMode = savedMode;
+        this.findMovableTiles();
+        return true;
+    }
+
     rollDice() {
+        this.moveMode = DIRECTION_TYPE.CROSS;
         this.diceRoll = this.diceQueue.shift();
         this.diceQueue.push(this.generateDiceValue());
-        this.findMovableTiles();
-        if (this.movableTiles.length === 0 && this.fallTriggerTiles.length === 0) {
+        if (!this.hasAnyMovableTile()) {
             this.gameOver(this.currentTurn === 1 ? 2 : 1, 'is blocked and cannot move!');
         } else {
             this.phase = PHASES.MOVE;
@@ -170,10 +198,10 @@ class Game {
     }
 
     useStockedDice() {
+        this.moveMode = DIRECTION_TYPE.CROSS;
         const currentPlayer = this.getCurrentPlayer();
         this.diceRoll = currentPlayer.useStock();
-        this.findMovableTiles();
-        if (this.movableTiles.length === 0 && this.fallTriggerTiles.length === 0) {
+        if (!this.hasAnyMovableTile()) {
             this.gameOver(this.currentTurn === 1 ? 2 : 1, 'is blocked and cannot move!');
         } else {
             this.phase = PHASES.MOVE;
@@ -189,10 +217,9 @@ class Game {
         const playerPos = currentPlayer.getPosition();
         const otherPos = otherPlayer.getPosition();
 
-        const allDirections = [
-            ...CROSS_DIRECTIONS.map(d => ({ ...d, type: DIRECTION_TYPE.CROSS })),
-            ...DIAGONAL_DIRECTIONS.map(d => ({ ...d, type: DIRECTION_TYPE.DIAGONAL }))
-        ];
+        const allDirections = this.moveMode === DIRECTION_TYPE.DIAGONAL
+            ? DIAGONAL_DIRECTIONS.map(d => ({ ...d, type: DIRECTION_TYPE.DIAGONAL }))
+            : CROSS_DIRECTIONS.map(d => ({ ...d, type: DIRECTION_TYPE.CROSS }));
 
         for (const dir of allDirections) {
             let steps = this.diceRoll;
@@ -249,6 +276,22 @@ class Game {
         this.fallTriggerTiles = this.removeDuplicatePositions(this.fallTriggerTiles);
     }
 
+    toggleMoveMode() {
+        const currentPlayer = this.getCurrentPlayer();
+        if (this.moveMode === DIRECTION_TYPE.CROSS) {
+            // 斜めモードに切替: ポイント不足なら切替不可
+            if (!currentPlayer.canAfford(SKILL_COSTS.diagonal_move)) {
+                return false;
+            }
+            this.moveMode = DIRECTION_TYPE.DIAGONAL;
+        } else {
+            this.moveMode = DIRECTION_TYPE.CROSS;
+        }
+        this.findMovableTiles();
+        // 切替後に移動先がない場合はゲームオーバーチェック不要（元に戻せるため）
+        return true;
+    }
+
     removeDuplicatePositions(positions) {
         const seen = new Set();
         return positions.filter(pos => {
@@ -281,6 +324,11 @@ class Game {
         this.lastMoveDirectionType = (moveTile && moveTile.directionType) || DIRECTION_TYPE.CROSS;
 
         currentPlayer.moveTo(row, col);
+
+        // 斜め移動コスト
+        if (this.moveMode === DIRECTION_TYPE.DIAGONAL) {
+            currentPlayer.deductPoints(SKILL_COSTS.diagonal_move);
+        }
 
         // Recovery tile bonus
         if (tile === MARKERS.RECOVERY) {
@@ -522,14 +570,14 @@ class Game {
         const currentPlayer = this.getCurrentPlayer();
 
         if (currentPlayer.hasStock()) {
-            // Use Stock button (Y: 320-370)
+            // Roll Dice button (Y: 320-370)
             if (x >= panelX && x <= panelX + 200 && y >= 320 && y <= 370) {
-                this.useStockedDice();
+                this.rollDice();
                 return true;
             }
-            // Roll Dice button (Y: 378-428)
+            // Use Stock button (Y: 378-428)
             if (x >= panelX && x <= panelX + 200 && y >= 378 && y <= 428) {
-                this.rollDice();
+                this.useStockedDice();
                 return true;
             }
         } else {
@@ -550,6 +598,14 @@ class Game {
     handleMovePhaseClick(x, y) {
         const clickedCell = this.getCellFromCoords(x, y);
         if (!clickedCell) return false;
+
+        // 自分のコマクリックで移動モード切替
+        const currentPlayer = this.getCurrentPlayer();
+        const playerPos = currentPlayer.getPosition();
+        if (clickedCell.row === playerPos.row && clickedCell.col === playerPos.col) {
+            this.toggleMoveMode();
+            return true;
+        }
 
         // Check fall trigger tiles
         for (const tile of this.fallTriggerTiles) {

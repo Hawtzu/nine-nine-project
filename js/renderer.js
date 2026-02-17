@@ -56,11 +56,12 @@ class Renderer {
     }
 
     drawHighlights(tiles, color) {
-        this.ctx.fillStyle = color;
+        this.ctx.strokeStyle = color;
+        this.ctx.lineWidth = 3;
         for (const tile of tiles) {
             const x = tile.col * CELL_SIZE + BOARD_OFFSET_X;
             const y = tile.row * CELL_SIZE + BOARD_OFFSET_Y;
-            this.ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+            this.ctx.strokeRect(x + 1.5, y + 1.5, CELL_SIZE - 3, CELL_SIZE - 3);
         }
     }
 

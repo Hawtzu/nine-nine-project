@@ -22,12 +22,12 @@ const COLORS = {
     BOMB_TILE: '#FF8000',
     ICE_TILE: '#ADD8E6',
     DRILL: '#DC143C',
-    MOVE_HIGHLIGHT: 'rgba(255, 255, 0, 0.5)',
-    DIAGONAL_MOVE_HIGHLIGHT: 'rgba(0, 255, 100, 0.5)',
-    FALL_HIGHLIGHT: 'rgba(255, 0, 0, 0.5)',
-    DIAGONAL_FALL_HIGHLIGHT: 'rgba(200, 0, 50, 0.5)',
-    PLACE_HIGHLIGHT: 'rgba(0, 255, 255, 0.5)',
-    DRILL_TARGET_HIGHLIGHT: 'rgba(255, 0, 255, 0.7)',
+    MOVE_HIGHLIGHT: 'rgba(255, 255, 0, 0.85)',
+    DIAGONAL_MOVE_HIGHLIGHT: 'rgba(0, 255, 100, 0.85)',
+    FALL_HIGHLIGHT: 'rgba(255, 0, 0, 0.85)',
+    DIAGONAL_FALL_HIGHLIGHT: 'rgba(200, 0, 50, 0.85)',
+    PLACE_HIGHLIGHT: 'rgba(0, 255, 255, 0.85)',
+    DRILL_TARGET_HIGHLIGHT: 'rgba(255, 0, 255, 0.9)',
     FIGURE_BONUS_HIGHLIGHT: 'rgba(255, 215, 0, 0.8)'
 };
 
@@ -63,7 +63,8 @@ const SKILL_COSTS = {
     recovery: 100,
     bomb: 50,
     drill: 200,
-    ice: 50
+    ice: 50,
+    diagonal_move: 10
 };
 
 // Direction Types

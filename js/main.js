@@ -51,14 +51,13 @@ function render() {
 
             // Draw highlights
             if (game.phase === PHASES.MOVE) {
-                const crossMovable = game.movableTiles.filter(t => t.directionType === DIRECTION_TYPE.CROSS);
-                const diagMovable = game.movableTiles.filter(t => t.directionType === DIRECTION_TYPE.DIAGONAL);
-                renderer.drawHighlights(crossMovable, COLORS.MOVE_HIGHLIGHT);
-                renderer.drawHighlights(diagMovable, COLORS.DIAGONAL_MOVE_HIGHLIGHT);
-                const crossFall = game.fallTriggerTiles.filter(t => t.directionType === DIRECTION_TYPE.CROSS);
-                const diagFall = game.fallTriggerTiles.filter(t => t.directionType === DIRECTION_TYPE.DIAGONAL);
-                renderer.drawHighlights(crossFall, COLORS.FALL_HIGHLIGHT);
-                renderer.drawHighlights(diagFall, COLORS.DIAGONAL_FALL_HIGHLIGHT);
+                if (game.moveMode === DIRECTION_TYPE.DIAGONAL) {
+                    renderer.drawHighlights(game.movableTiles, COLORS.DIAGONAL_MOVE_HIGHLIGHT);
+                    renderer.drawHighlights(game.fallTriggerTiles, COLORS.DIAGONAL_FALL_HIGHLIGHT);
+                } else {
+                    renderer.drawHighlights(game.movableTiles, COLORS.MOVE_HIGHLIGHT);
+                    renderer.drawHighlights(game.fallTriggerTiles, COLORS.FALL_HIGHLIGHT);
+                }
             } else if (game.phase === PHASES.PLACE) {
                 renderer.drawHighlights(game.placeableTiles, COLORS.PLACE_HIGHLIGHT);
             } else if (game.phase === PHASES.DRILL_TARGET) {
@@ -86,9 +85,37 @@ function render() {
     }
 }
 
+function drawOpponentDiceInfo(ctx) {
+    const opponentPanelX = game.currentTurn === 1 ? SCREEN_WIDTH - PANEL_WIDTH + 40 : 40;
+    const otherPlayer = game.getOtherPlayer();
+
+    // NEXT preview
+    ctx.fillStyle = '#AAAAAA';
+    ctx.font = '13px Arial';
+    ctx.textAlign = 'left';
+    ctx.fillText('NEXT', opponentPanelX, 150);
+    drawDiceVisualSmall(ctx, opponentPanelX + 30, 185, game.diceQueue[1], false);
+    drawDiceVisualSmall(ctx, opponentPanelX + 95, 187, game.diceQueue[2], true);
+
+    // Stock display
+    if (otherPlayer.hasStock()) {
+        ctx.fillStyle = '#FFD700';
+        ctx.font = '13px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('STOCK', opponentPanelX, 225);
+        drawDiceVisualSmall(ctx, opponentPanelX + 30, 260, otherPlayer.stockedDice, false);
+    }
+}
+
 function drawPhaseUI() {
     const ctx = renderer.ctx;
     const panelX = game.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
+
+    // 相手パネルにダイス情報を常に表示
+    if (game.phase === PHASES.ROLL || game.phase === PHASES.MOVE ||
+        game.phase === PHASES.PLACE || game.phase === PHASES.DRILL_TARGET) {
+        drawOpponentDiceInfo(ctx);
+    }
 
     if (game.phase === PHASES.ROLL) {
         const currentPlayer = game.getCurrentPlayer();
@@ -119,8 +146,8 @@ function drawPhaseUI() {
 
         // Buttons
         if (currentPlayer.hasStock()) {
-            renderer.drawButton(panelX, 320, 200, 50, '#DAA520', `Use Stock`);
-            renderer.drawButton(panelX, 378, 200, 50, '#00C800', 'Roll Dice');
+            renderer.drawButton(panelX, 320, 200, 50, '#00C800', 'Roll Dice');
+            renderer.drawButton(panelX, 378, 200, 50, '#DAA520', 'Use Stock');
         } else {
             renderer.drawButton(panelX, 320, 200, 50, '#00C800', 'Roll Dice');
             renderer.drawButton(panelX, 378, 200, 50, '#B8860B', 'Stock');
@@ -128,6 +155,28 @@ function drawPhaseUI() {
     } else if (game.phase === PHASES.MOVE) {
         // Draw dice visual
         drawDiceVisual(ctx, panelX + 100, 310, game.diceRoll);
+
+        // Move mode indicator
+        const currentPlayer = game.getCurrentPlayer();
+        ctx.textAlign = 'center';
+        if (game.moveMode === DIRECTION_TYPE.DIAGONAL) {
+            ctx.fillStyle = COLORS.DIAGONAL_MOVE_HIGHLIGHT;
+            ctx.font = 'bold 16px Arial';
+            ctx.fillText('Diagonal Mode (-10pt)', panelX + 100, 380);
+            ctx.fillStyle = '#AAAAAA';
+            ctx.font = '12px Arial';
+            ctx.fillText('Click piece to switch back', panelX + 100, 400);
+        } else {
+            ctx.fillStyle = '#AAAAAA';
+            ctx.font = '12px Arial';
+            if (currentPlayer.canAfford(SKILL_COSTS.diagonal_move)) {
+                ctx.fillText('Click piece for diagonal (-10pt)', panelX + 100, 380);
+            } else {
+                ctx.fillStyle = '#666666';
+                ctx.fillText('Not enough pts for diagonal', panelX + 100, 380);
+            }
+        }
+        ctx.textAlign = 'left';
     } else if (game.phase === PHASES.PLACE || game.phase === PHASES.DRILL_TARGET) {
         const currentPlayer = game.getCurrentPlayer();
         const points = currentPlayer.points;

@@ -150,7 +150,14 @@ function drawPhaseUI() {
             renderer.drawButton(panelX, 378, 200, 50, '#DAA520', 'Use Stock');
         } else {
             renderer.drawButton(panelX, 320, 200, 50, '#00C800', 'Roll Dice');
-            renderer.drawButton(panelX, 378, 200, 50, '#B8860B', 'Stock');
+            const canStock = currentPlayer.canAfford(SKILL_COSTS.stock);
+            if (canStock) {
+                renderer.drawButton(panelX, 378, 200, 50, '#B8860B', `Stock (-${SKILL_COSTS.stock}pt)`);
+            } else {
+                ctx.globalAlpha = 0.35;
+                renderer.drawButton(panelX, 378, 200, 50, '#555555', `Stock (-${SKILL_COSTS.stock}pt)`);
+                ctx.globalAlpha = 1.0;
+            }
         }
     } else if (game.phase === PHASES.MOVE) {
         // Draw dice visual

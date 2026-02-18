@@ -64,7 +64,8 @@ const SKILL_COSTS = {
     bomb: 50,
     drill: 200,
     ice: 50,
-    diagonal_move: 10
+    diagonal_move: 10,
+    stock: 20
 };
 
 // Direction Types

@@ -89,7 +89,7 @@ class Game {
         if (playerNum === 1) {
             for (let r = 0; r < BOARD_SIZE; r++) {
                 for (let c = 0; c < Math.floor(BOARD_SIZE / 2) - 1; c++) {
-                    if (this.manhattanDistance(playerPos, { row: r, col: c }) > 3) {
+                    if (this.chebyshevDistance(playerPos, { row: r, col: c }) > 3) {
                         zone.push({ row: r, col: c });
                     }
                 }
@@ -97,7 +97,7 @@ class Game {
         } else {
             for (let r = 0; r < BOARD_SIZE; r++) {
                 for (let c = Math.floor(BOARD_SIZE / 2) + 2; c < BOARD_SIZE; c++) {
-                    if (this.manhattanDistance(playerPos, { row: r, col: c }) > 3) {
+                    if (this.chebyshevDistance(playerPos, { row: r, col: c }) > 3) {
                         zone.push({ row: r, col: c });
                     }
                 }
@@ -151,6 +151,10 @@ class Game {
         return Math.abs(pos1.row - pos2.row) + Math.abs(pos1.col - pos2.col);
     }
 
+    chebyshevDistance(pos1, pos2) {
+        return Math.max(Math.abs(pos1.row - pos2.row), Math.abs(pos1.col - pos2.col));
+    }
+
     hasAnyMovableTile() {
         // 十字・斜め両方を確認して、どちらかで移動可能かチェック
         const savedMode = this.moveMode;
@@ -190,11 +194,16 @@ class Game {
 
     stockCurrentDice() {
         const currentPlayer = this.getCurrentPlayer();
+        if (!currentPlayer.canAfford(SKILL_COSTS.stock)) {
+            return false;
+        }
+        currentPlayer.deductPoints(SKILL_COSTS.stock);
         const diceValue = this.diceQueue.shift();
         currentPlayer.stockDice(diceValue);
         this.diceQueue.push(this.generateDiceValue());
         // ストック後も通常通りロールして移動する
         this.rollDice();
+        return true;
     }
 
     useStockedDice() {
@@ -330,9 +339,10 @@ class Game {
             currentPlayer.deductPoints(SKILL_COSTS.diagonal_move);
         }
 
-        // Recovery tile bonus
+        // Recovery tile bonus (one-time: consume tile)
         if (tile === MARKERS.RECOVERY) {
-            currentPlayer.addPoints(20);
+            currentPlayer.addPoints(100);
+            this.board.setTile(row, col, MARKERS.EMPTY);
         }
 
         this.phase = PHASES.PLACE;
@@ -586,8 +596,9 @@ class Game {
                 this.rollDice();
                 return true;
             }
-            // Stock button (Y: 378-428)
+            // Stock button (Y: 378-428) - requires enough points
             if (x >= panelX && x <= panelX + 200 && y >= 378 && y <= 428) {
+                if (!currentPlayer.canAfford(SKILL_COSTS.stock)) return false;
                 this.stockCurrentDice();
                 return true;
             }

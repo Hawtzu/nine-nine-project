@@ -8,6 +8,8 @@ class Player {
         this.specialSkill = null;
         this.skillConfirmed = false;
         this.stockedDice = null;
+        this.dominationTurnsLeft = 0;
+        this.diceQueue = [];
         this.color = playerNum === 1 ? COLORS.P1 : COLORS.P2;
     }
 
@@ -43,6 +45,18 @@ class Player {
         this.specialSkill = null;
         this.skillConfirmed = false;
         this.stockedDice = null;
+        this.dominationTurnsLeft = 0;
+        this.diceQueue = [];
+    }
+
+    initDiceQueue(generateFn) {
+        this.diceQueue = [generateFn(), generateFn(), generateFn()];
+    }
+
+    shiftDiceQueue(generateFn) {
+        const value = this.diceQueue.shift();
+        this.diceQueue.push(generateFn());
+        return value;
     }
 
     stockDice(value) {
@@ -66,5 +80,9 @@ class Player {
 
     hasSkill(skill) {
         return this.specialSkill === skill;
+    }
+
+    isDominated() {
+        return this.dominationTurnsLeft > 0;
     }
 }

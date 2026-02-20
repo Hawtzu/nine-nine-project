@@ -13,11 +13,15 @@ class Game {
         this.fallTriggerTiles = [];
         this.placeableTiles = [];
         this.drillTargetTiles = [];
+        this.skillTargetTiles = [];
+        this.activeSkillType = null;
         this.winner = null;
         this.winReason = '';
         this.lastMoveDirectionType = DIRECTION_TYPE.CROSS;
         this.moveMode = DIRECTION_TYPE.CROSS;
-        this.diceQueue = [];
+        this.sniperAnimating = false;
+        this.sniperAnimStart = 0;
+        this.hoveredSkill = null; // skill key hovered in selection screen
     }
 
     generateDiceValue() {
@@ -34,11 +38,14 @@ class Game {
         this.winReason = '';
         this.lastMoveDirectionType = DIRECTION_TYPE.CROSS;
         this.moveMode = DIRECTION_TYPE.CROSS;
-        this.diceQueue = [
-            this.generateDiceValue(),
-            this.generateDiceValue(),
-            this.generateDiceValue()
-        ];
+        this.drillForSurvival = false;
+        this.skillTargetTiles = [];
+        this.activeSkillType = null;
+        this.sniperAnimating = false;
+        this.sniperAnimStart = 0;
+        const gen = () => this.generateDiceValue();
+        this.player1.initDiceQueue(gen);
+        this.player2.initDiceQueue(gen);
         this.clearHighlights();
     }
 
@@ -54,7 +61,6 @@ class Game {
             player.setSpecialSkill(skill);
         }
 
-        // 両者が選択完了したらゲーム開始
         if (this.player1.skillConfirmed && this.player2.skillConfirmed) {
             this.setupInitialBoard();
             this.phase = PHASES.ROLL;
@@ -62,12 +68,11 @@ class Game {
     }
 
     setupInitialBoard() {
-        // Place recovery tiles (fountains) for each player
+        // Place fountain tiles (one-time +100pt pickup)
         const p1FountainPos = this.findValidFountainPosition(1);
         const p2FountainPos = this.findValidFountainPosition(2);
-
-        this.board.setTile(p1FountainPos.row, p1FountainPos.col, MARKERS.RECOVERY);
-        this.board.setTile(p2FountainPos.row, p2FountainPos.col, MARKERS.RECOVERY);
+        this.board.setTile(p1FountainPos.row, p1FountainPos.col, MARKERS.FOUNTAIN);
+        this.board.setTile(p2FountainPos.row, p2FountainPos.col, MARKERS.FOUNTAIN);
 
         // Place 3 random stones
         const bannedPositions = this.getBannedPositions(p1FountainPos, p2FountainPos);
@@ -75,11 +80,7 @@ class Game {
         for (const pos of stonePositions) {
             this.board.setTile(pos.row, pos.col, MARKERS.STONE);
         }
-
-        // Determine first player based on fountain distance
-        const dist1 = this.manhattanDistance(this.player1.getPosition(), p1FountainPos);
-        const dist2 = this.manhattanDistance(this.player2.getPosition(), p2FountainPos);
-        this.currentTurn = dist1 > dist2 ? 1 : dist2 > dist1 ? 2 : Math.random() < 0.5 ? 1 : 2;
+        this.currentTurn = Math.random() < 0.5 ? 1 : 2;
     }
 
     findValidFountainPosition(playerNum) {
@@ -123,7 +124,6 @@ class Game {
                 }
             }
         }
-
         return banned;
     }
 
@@ -156,7 +156,6 @@ class Game {
     }
 
     hasAnyMovableTile() {
-        // 十字・斜め両方を確認して、どちらかで移動可能かチェック
         const savedMode = this.moveMode;
 
         this.moveMode = DIRECTION_TYPE.CROSS;
@@ -175,7 +174,6 @@ class Game {
             }
         }
 
-        // 元のモードに戻してハイライトを再計算
         this.moveMode = savedMode;
         this.findMovableTiles();
         return true;
@@ -183,8 +181,8 @@ class Game {
 
     rollDice() {
         this.moveMode = DIRECTION_TYPE.CROSS;
-        this.diceRoll = this.diceQueue.shift();
-        this.diceQueue.push(this.generateDiceValue());
+        const currentPlayer = this.getCurrentPlayer();
+        this.diceRoll = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
         if (!this.hasAnyMovableTile()) {
             this.gameOver(this.currentTurn === 1 ? 2 : 1, 'is blocked and cannot move!');
         } else {
@@ -198,10 +196,8 @@ class Game {
             return false;
         }
         currentPlayer.deductPoints(SKILL_COSTS.stock);
-        const diceValue = this.diceQueue.shift();
+        const diceValue = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
         currentPlayer.stockDice(diceValue);
-        this.diceQueue.push(this.generateDiceValue());
-        // ストック後も通常通りロールして移動する
         this.rollDice();
         return true;
     }
@@ -209,7 +205,10 @@ class Game {
     useStockedDice() {
         this.moveMode = DIRECTION_TYPE.CROSS;
         const currentPlayer = this.getCurrentPlayer();
-        this.diceRoll = currentPlayer.useStock();
+        // CURRENTをStock値に置き換え、ストック消費
+        currentPlayer.diceQueue[0] = currentPlayer.useStock();
+        // そのCURRENTでRoll（shiftしてMOVEへ）
+        this.diceRoll = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
         if (!this.hasAnyMovableTile()) {
             this.gameOver(this.currentTurn === 1 ? 2 : 1, 'is blocked and cannot move!');
         } else {
@@ -243,7 +242,6 @@ class Game {
                     col: currentPos.col + dir.dc
                 };
 
-                // Check if out of bounds
                 if (!this.board.isValidPosition(nextPos.row, nextPos.col)) {
                     if (finalDest) {
                         this.fallTriggerTiles.push(finalDest);
@@ -251,7 +249,6 @@ class Game {
                     break;
                 }
 
-                // Check for obstacles
                 const tile = this.board.getTile(nextPos.row, nextPos.col);
                 if (tile === MARKERS.STONE ||
                     (nextPos.row === otherPos.row && nextPos.col === otherPos.col)) {
@@ -264,7 +261,6 @@ class Game {
                 finalDest = { row: nextPos.row, col: nextPos.col, directionType: dir.type };
                 currentPos = nextPos;
 
-                // Ice tile extends movement
                 const iceKey = `${nextPos.row},${nextPos.col}`;
                 if (tile === MARKERS.ICE && !visitedIce.has(iceKey)) {
                     steps++;
@@ -274,13 +270,11 @@ class Game {
                 step++;
             }
 
-            // If we completed all steps without hitting anything
             if (step > steps && finalDest) {
                 this.movableTiles.push(finalDest);
             }
         }
 
-        // Remove duplicates (first hit wins)
         this.movableTiles = this.removeDuplicatePositions(this.movableTiles);
         this.fallTriggerTiles = this.removeDuplicatePositions(this.fallTriggerTiles);
     }
@@ -288,7 +282,6 @@ class Game {
     toggleMoveMode() {
         const currentPlayer = this.getCurrentPlayer();
         if (this.moveMode === DIRECTION_TYPE.CROSS) {
-            // 斜めモードに切替: ポイント不足なら切替不可
             if (!currentPlayer.canAfford(SKILL_COSTS.diagonal_move)) {
                 return false;
             }
@@ -297,7 +290,6 @@ class Game {
             this.moveMode = DIRECTION_TYPE.CROSS;
         }
         this.findMovableTiles();
-        // 切替後に移動先がない場合はゲームオーバーチェック不要（元に戻せるため）
         return true;
     }
 
@@ -315,33 +307,29 @@ class Game {
         const currentPlayer = this.getCurrentPlayer();
         const tile = this.board.getTile(row, col);
 
-        // Check for bomb - only kills players who didn't place it
         if (tile === MARKERS.BOMB) {
             const bombOwner = this.board.getBombOwner(row, col);
             if (bombOwner !== currentPlayer.playerNum) {
-                // Stepped on opponent's bomb → lose
                 this.gameOver(this.currentTurn === 1 ? 2 : 1, 'stepped on a bomb!');
                 return;
             }
-            // Own bomb → safe, remove the bomb
             this.board.setTile(row, col, MARKERS.EMPTY);
         }
 
-        // Save direction type from the selected move tile
         const moveTile = this.movableTiles.find(t => t.row === row && t.col === col)
                       || this.fallTriggerTiles.find(t => t.row === row && t.col === col);
         this.lastMoveDirectionType = (moveTile && moveTile.directionType) || DIRECTION_TYPE.CROSS;
 
         currentPlayer.moveTo(row, col);
 
-        // 斜め移動コスト
         if (this.moveMode === DIRECTION_TYPE.DIAGONAL) {
             currentPlayer.deductPoints(SKILL_COSTS.diagonal_move);
         }
 
-        // Recovery tile bonus (one-time: consume tile)
-        if (tile === MARKERS.RECOVERY) {
-            currentPlayer.addPoints(100);
+        // Fountain tile bonus (one-time: consume tile)
+        const landedTile = this.board.getTile(row, col);
+        if (landedTile === MARKERS.FOUNTAIN) {
+            currentPlayer.addPoints(GAME_SETTINGS.fountainPickup);
             this.board.setTile(row, col, MARKERS.EMPTY);
         }
 
@@ -349,6 +337,21 @@ class Game {
         this.placementType = 'stone';
         this.clearHighlights();
         this.findPlaceableTiles();
+    }
+
+    canUseDrillToSurvive() {
+        const currentPlayer = this.getCurrentPlayer();
+        if (currentPlayer.isDominated()) return false;
+        if (!currentPlayer.canAfford(SKILL_COSTS.drill)) return false;
+        const playerPos = currentPlayer.getPosition();
+        for (const dir of CROSS_DIRECTIONS) {
+            const r = playerPos.row + dir.dr;
+            const c = playerPos.col + dir.dc;
+            if (this.board.isValidPosition(r, c) && this.board.getTile(r, c) === MARKERS.STONE) {
+                return true;
+            }
+        }
+        return false;
     }
 
     findPlaceableTiles() {
@@ -373,7 +376,7 @@ class Game {
                 if (tile !== MARKERS.STONE) {
                     this.placeableTiles.push({ row: r, col: c });
                 }
-            } else if (['recovery', 'bomb', 'ice'].includes(this.placementType)) {
+            } else if (['bomb', 'ice'].includes(this.placementType)) {
                 if (tile === MARKERS.EMPTY) {
                     this.placeableTiles.push({ row: r, col: c });
                 }
@@ -381,7 +384,13 @@ class Game {
         }
 
         if (this.placeableTiles.length === 0 && this.winner === null) {
-            this.gameOver(this.currentTurn === 1 ? 2 : 1, 'has no place to put an object!');
+            if (this.canUseDrillToSurvive()) {
+                this.drillForSurvival = true;
+                this.phase = PHASES.DRILL_TARGET;
+                this.findDrillTargets();
+            } else {
+                this.gameOver(this.currentTurn === 1 ? 2 : 1, 'has no place to put an object!');
+            }
         }
     }
 
@@ -390,22 +399,15 @@ class Game {
 
         if (this.placementType === 'stone') {
             this.board.setTile(row, col, MARKERS.STONE);
-            // TODO: Check figure bonus
             this.endTurn();
         } else if (this.placementType === 'bomb') {
-            const cost = SKILL_COSTS.bomb;
-            if (currentPlayer.deductPoints(cost)) {
+            if (currentPlayer.deductPoints(SKILL_COSTS.bomb)) {
                 this.board.setBomb(row, col, currentPlayer.playerNum);
                 this.endTurn();
             }
-        } else {
-            const cost = SKILL_COSTS[this.placementType];
-            if (currentPlayer.deductPoints(cost)) {
-                const markerMap = {
-                    recovery: MARKERS.RECOVERY,
-                    ice: MARKERS.ICE
-                };
-                this.board.setTile(row, col, markerMap[this.placementType]);
+        } else if (this.placementType === 'ice') {
+            if (currentPlayer.deductPoints(SKILL_COSTS.ice)) {
+                this.board.setTile(row, col, MARKERS.ICE);
                 this.endTurn();
             }
         }
@@ -415,16 +417,6 @@ class Game {
         const currentPlayer = this.getCurrentPlayer();
         const cost = SKILL_COSTS[type];
 
-        // 氷スキルは持っているプレイヤーのみ使用可能
-        if (type === 'ice' && !currentPlayer.hasSkill(SPECIAL_SKILLS.ICE)) {
-            return false;
-        }
-
-        // 爆弾スキルは持っているプレイヤーのみ使用可能
-        if (type === 'bomb' && !currentPlayer.hasSkill(SPECIAL_SKILLS.BOMB)) {
-            return false;
-        }
-
         if (cost !== undefined && !currentPlayer.canAfford(cost)) {
             return false;
         }
@@ -432,8 +424,14 @@ class Game {
         this.placementType = type;
 
         if (type === 'drill') {
-            this.phase = PHASES.DRILL_TARGET;
             this.findDrillTargets();
+            if (this.drillTargetTiles.length === 0) {
+                this.phase = PHASES.PLACE;
+                this.placementType = 'stone';
+                this.findPlaceableTiles();
+                return false;
+            }
+            this.phase = PHASES.DRILL_TARGET;
         } else {
             this.phase = PHASES.PLACE;
             this.findPlaceableTiles();
@@ -464,16 +462,245 @@ class Game {
         const currentPlayer = this.getCurrentPlayer();
         if (currentPlayer.deductPoints(SKILL_COSTS.drill)) {
             this.board.setTile(row, col, MARKERS.EMPTY);
+            if (this.drillForSurvival) {
+                this.drillForSurvival = false;
+            }
             this.endTurn();
         }
     }
 
+    // --- Skill System ---
+
+    getSkillKey(specialSkill) {
+        const info = SKILL_INFO[specialSkill];
+        return info ? info.costKey : null;
+    }
+
+    activateSkill() {
+        const currentPlayer = this.getCurrentPlayer();
+        const skill = currentPlayer.specialSkill;
+
+        if (currentPlayer.isDominated()) return false;
+
+        switch (skill) {
+            case SPECIAL_SKILLS.ICE:
+                return this.setPlacementType('ice');
+            case SPECIAL_SKILLS.BOMB:
+                return this.setPlacementType('bomb');
+            case SPECIAL_SKILLS.DOMINATION:
+                return this.useDomination();
+            case SPECIAL_SKILLS.SNIPER:
+                return this.activateSniper();
+            case SPECIAL_SKILLS.HITOKIRI:
+                return this.activateHitokiri();
+            case SPECIAL_SKILLS.SURIASHI:
+                return this.activateSuriashi();
+            case SPECIAL_SKILLS.METEOR:
+                return this.activateMeteor();
+            case SPECIAL_SKILLS.MOMONGA:
+                return this.activateMomonga();
+        }
+        return false;
+    }
+
+    useDomination() {
+        const currentPlayer = this.getCurrentPlayer();
+        if (!currentPlayer.canAfford(SKILL_COSTS.domination)) return false;
+        currentPlayer.deductPoints(SKILL_COSTS.domination);
+        const otherPlayer = this.getOtherPlayer();
+        otherPlayer.dominationTurnsLeft = 3;
+        this.endTurn();
+        return true;
+    }
+
+    checkSniperCondition() {
+        const currentPlayer = this.getCurrentPlayer();
+        const otherPlayer = this.getOtherPlayer();
+        const pPos = currentPlayer.getPosition();
+        const oPos = otherPlayer.getPosition();
+
+        const dr = oPos.row - pPos.row;
+        const dc = oPos.col - pPos.col;
+
+        // Must be on same row, col, or diagonal
+        if (dr !== 0 && dc !== 0 && Math.abs(dr) !== Math.abs(dc)) return false;
+
+        const dist = Math.max(Math.abs(dr), Math.abs(dc));
+        if (dist < 4) return false;
+
+        // Check for stone obstacles in line of sight
+        const stepR = dr === 0 ? 0 : dr / Math.abs(dr);
+        const stepC = dc === 0 ? 0 : dc / Math.abs(dc);
+        for (let i = 1; i < dist; i++) {
+            const r = pPos.row + stepR * i;
+            const c = pPos.col + stepC * i;
+            if (this.board.getTile(r, c) === MARKERS.STONE) return false;
+        }
+        return true;
+    }
+
+    activateSniper() {
+        const currentPlayer = this.getCurrentPlayer();
+        if (!currentPlayer.canAfford(SKILL_COSTS.sniper)) return false;
+        if (!this.checkSniperCondition()) return false;
+        currentPlayer.deductPoints(SKILL_COSTS.sniper);
+        // Start sniper animation instead of immediate game over
+        this.sniperAnimating = true;
+        this.sniperAnimStart = Date.now();
+        return true;
+    }
+
+    checkHitokiriCondition() {
+        const currentPlayer = this.getCurrentPlayer();
+        const otherPlayer = this.getOtherPlayer();
+        const pPos = currentPlayer.getPosition();
+        const oPos = otherPlayer.getPosition();
+
+        for (const dir of CROSS_DIRECTIONS) {
+            if (pPos.row + dir.dr === oPos.row && pPos.col + dir.dc === oPos.col) return true;
+        }
+        return false;
+    }
+
+    activateHitokiri() {
+        const currentPlayer = this.getCurrentPlayer();
+        if (!currentPlayer.canAfford(SKILL_COSTS.hitokiri)) return false;
+        if (!this.checkHitokiriCondition()) return false;
+        currentPlayer.deductPoints(SKILL_COSTS.hitokiri);
+        this.gameOver(this.currentTurn, 'slashed the opponent!');
+        return true;
+    }
+
+    activateSuriashi() {
+        const currentPlayer = this.getCurrentPlayer();
+        if (!currentPlayer.canAfford(SKILL_COSTS.suriashi)) return false;
+
+        const pPos = currentPlayer.getPosition();
+        const oPos = this.getOtherPlayer().getPosition();
+        this.skillTargetTiles = [];
+
+        for (const dir of DIAGONAL_DIRECTIONS) {
+            const r = pPos.row + dir.dr;
+            const c = pPos.col + dir.dc;
+            if (!this.board.isValidPosition(r, c)) continue;
+            if (r === oPos.row && c === oPos.col) continue;
+            if (this.board.getTile(r, c) === MARKERS.STONE) continue;
+            this.skillTargetTiles.push({ row: r, col: c });
+        }
+        if (this.skillTargetTiles.length === 0) return false;
+        this.activeSkillType = SPECIAL_SKILLS.SURIASHI;
+        this.phase = PHASES.SKILL_TARGET;
+        return true;
+    }
+
+    executeSuriashi(row, col) {
+        const currentPlayer = this.getCurrentPlayer();
+        currentPlayer.deductPoints(SKILL_COSTS.suriashi);
+        currentPlayer.moveTo(row, col);
+        this.endTurn();
+    }
+
+    activateMeteor() {
+        const currentPlayer = this.getCurrentPlayer();
+        if (!currentPlayer.canAfford(SKILL_COSTS.meteor)) return false;
+
+        const oPos = this.getOtherPlayer().getPosition();
+        const pPos = currentPlayer.getPosition();
+        this.skillTargetTiles = [];
+
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                if (this.board.getTile(r, c) !== MARKERS.EMPTY) continue;
+                if (r === oPos.row && c === oPos.col) continue;
+                if (r === pPos.row && c === pPos.col) continue;
+                this.skillTargetTiles.push({ row: r, col: c });
+            }
+        }
+        if (this.skillTargetTiles.length === 0) return false;
+        this.activeSkillType = SPECIAL_SKILLS.METEOR;
+        this.phase = PHASES.SKILL_TARGET;
+        return true;
+    }
+
+    executeMeteor(row, col) {
+        const currentPlayer = this.getCurrentPlayer();
+        currentPlayer.deductPoints(SKILL_COSTS.meteor);
+        this.board.setTile(row, col, MARKERS.STONE);
+        this.endTurn();
+    }
+
+    findNearestStones() {
+        const pPos = this.getCurrentPlayer().getPosition();
+        let minDist = Infinity;
+        const stones = [];
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                if (this.board.getTile(r, c) === MARKERS.STONE) {
+                    const dist = this.manhattanDistance(pPos, { row: r, col: c });
+                    if (dist < minDist) {
+                        minDist = dist;
+                        stones.length = 0;
+                        stones.push({ row: r, col: c });
+                    } else if (dist === minDist) {
+                        stones.push({ row: r, col: c });
+                    }
+                }
+            }
+        }
+        return stones;
+    }
+
+    activateMomonga() {
+        const currentPlayer = this.getCurrentPlayer();
+        if (!currentPlayer.canAfford(SKILL_COSTS.momonga)) return false;
+
+        const nearestStones = this.findNearestStones();
+        if (nearestStones.length === 0) return false;
+
+        const oPos = this.getOtherPlayer().getPosition();
+        const pPos = currentPlayer.getPosition();
+        this.skillTargetTiles = [];
+        const seen = new Set();
+
+        for (const stone of nearestStones) {
+            for (const dir of CROSS_DIRECTIONS) {
+                const r = stone.row + dir.dr;
+                const c = stone.col + dir.dc;
+                const key = `${r},${c}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                if (!this.board.isValidPosition(r, c)) continue;
+                if (r === oPos.row && c === oPos.col) continue;
+                if (r === pPos.row && c === pPos.col) continue;
+                if (this.board.getTile(r, c) === MARKERS.STONE) continue;
+                this.skillTargetTiles.push({ row: r, col: c });
+            }
+        }
+        if (this.skillTargetTiles.length === 0) return false;
+        this.activeSkillType = SPECIAL_SKILLS.MOMONGA;
+        this.phase = PHASES.SKILL_TARGET;
+        return true;
+    }
+
+    executeMomonga(row, col) {
+        const currentPlayer = this.getCurrentPlayer();
+        currentPlayer.deductPoints(SKILL_COSTS.momonga);
+        currentPlayer.moveTo(row, col);
+        this.endTurn();
+    }
+
+    // --- Turn Management ---
+
     endTurn() {
-        const oldTurn = this.currentTurn;
+        const oldPlayer = this.getCurrentPlayer();
+        if (oldPlayer.dominationTurnsLeft > 0) {
+            oldPlayer.dominationTurnsLeft--;
+        }
+
         this.currentTurn = this.currentTurn === 1 ? 2 : 1;
 
-        // Turn start bonus
-        this.getCurrentPlayer().addPoints(10);
+        const newPlayer = this.getCurrentPlayer();
+        newPlayer.addPoints(GAME_SETTINGS.turnBonus);
 
         this.phase = PHASES.ROLL;
         this.diceRoll = 0;
@@ -485,6 +712,8 @@ class Game {
         this.fallTriggerTiles = [];
         this.placeableTiles = [];
         this.drillTargetTiles = [];
+        this.skillTargetTiles = [];
+        this.activeSkillType = null;
     }
 
     gameOver(winner, reason) {
@@ -504,10 +733,14 @@ class Game {
         return this.currentTurn === 1 ? this.player2 : this.player1;
     }
 
+    // --- Click Handlers ---
+
     handleClick(x, y) {
         switch (this.phase) {
             case PHASES.START_SCREEN:
                 return this.handleStartScreenClick(x, y);
+            case PHASES.SETTINGS:
+                return this.handleSettingsClick(x, y);
             case PHASES.SKILL_SELECTION:
                 return this.handleSkillSelectionClick(x, y);
             case PHASES.ROLL:
@@ -518,39 +751,39 @@ class Game {
                 return this.handlePlacePhaseClick(x, y);
             case PHASES.DRILL_TARGET:
                 return this.handleDrillPhaseClick(x, y);
+            case PHASES.SKILL_TARGET:
+                return this.handleSkillTargetClick(x, y);
             case PHASES.GAME_OVER:
                 return this.handleGameOverClick(x, y);
         }
     }
 
     handleSkillSelectionClick(x, y) {
+        const btnWidth = 115, btnHeight = 90, gapX = 10, gapY = 8, startY = 210;
+
         // Player 1 panel (left side)
-        if (x >= 20 && x <= PANEL_WIDTH - 20) {
-            if (!this.player1.skillConfirmed) {
-                // Ice skill button (Y: 250-370)
-                if (y >= 250 && y <= 370) {
-                    this.selectSkill(1, SPECIAL_SKILLS.ICE);
-                    return true;
-                }
-                // Bomb skill button (Y: 390-510)
-                if (y >= 390 && y <= 510) {
-                    this.selectSkill(1, SPECIAL_SKILLS.BOMB);
+        if (!this.player1.skillConfirmed) {
+            const panelX = 20;
+            for (let i = 0; i < SKILL_ORDER.length; i++) {
+                const row = Math.floor(i / 2), col = i % 2;
+                const bx = panelX + col * (btnWidth + gapX);
+                const by = startY + row * (btnHeight + gapY);
+                if (x >= bx && x <= bx + btnWidth && y >= by && y <= by + btnHeight) {
+                    this.selectSkill(1, SKILL_ORDER[i]);
                     return true;
                 }
             }
         }
 
         // Player 2 panel (right side)
-        if (x >= SCREEN_WIDTH - PANEL_WIDTH + 20 && x <= SCREEN_WIDTH - 20) {
-            if (!this.player2.skillConfirmed) {
-                // Ice skill button (Y: 250-370)
-                if (y >= 250 && y <= 370) {
-                    this.selectSkill(2, SPECIAL_SKILLS.ICE);
-                    return true;
-                }
-                // Bomb skill button (Y: 390-510)
-                if (y >= 390 && y <= 510) {
-                    this.selectSkill(2, SPECIAL_SKILLS.BOMB);
+        if (!this.player2.skillConfirmed) {
+            const panelX = SCREEN_WIDTH - PANEL_WIDTH + 20;
+            for (let i = 0; i < SKILL_ORDER.length; i++) {
+                const row = Math.floor(i / 2), col = i % 2;
+                const bx = panelX + col * (btnWidth + gapX);
+                const by = startY + row * (btnHeight + gapY);
+                if (x >= bx && x <= bx + btnWidth && y >= by && y <= by + btnHeight) {
+                    this.selectSkill(2, SKILL_ORDER[i]);
                     return true;
                 }
             }
@@ -566,38 +799,59 @@ class Game {
             this.startGame('pvp');
             return true;
         }
-        // PvA button (disabled - Coming Soon)
-        // if (x >= SCREEN_WIDTH / 2 - 150 && x <= SCREEN_WIDTH / 2 + 150 &&
-        //     y >= 470 && y <= 550) {
-        //     this.startGame('pva');
-        //     return true;
-        // }
+        // Developer Settings gear icon
+        if (x >= SCREEN_WIDTH / 2 + 187 && x <= SCREEN_WIDTH / 2 + 223 &&
+            y >= 372 && y <= 408) {
+            this.phase = PHASES.SETTINGS;
+            return true;
+        }
+        return false;
+    }
+
+    handleSettingsClick(x, y) {
+        if (x >= 30 && x <= 180 && y >= 15 && y <= 65) {
+            this.phase = PHASES.START_SCREEN;
+            return true;
+        }
+        if (x >= SCREEN_WIDTH - 220 && x <= SCREEN_WIDTH - 30 && y >= 15 && y <= 65) {
+            if (typeof settings !== 'undefined') {
+                settings.resetAll();
+            }
+            return true;
+        }
         return false;
     }
 
     handleRollPhaseClick(x, y) {
         const panelX = this.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
         const currentPlayer = this.getCurrentPlayer();
+        const isDominated = currentPlayer.isDominated();
 
-        if (currentPlayer.hasStock()) {
-            // Roll Dice button (Y: 320-370)
-            if (x >= panelX && x <= panelX + 200 && y >= 320 && y <= 370) {
+        if (isDominated) {
+            // Domination: only Roll Dice is available
+            if (x >= panelX && x <= panelX + 200 && y >= 350 && y <= 400) {
                 this.rollDice();
                 return true;
             }
-            // Use Stock button (Y: 378-428)
-            if (x >= panelX && x <= panelX + 200 && y >= 378 && y <= 428) {
+        } else if (currentPlayer.hasStock()) {
+            // Roll Dice button (Y: 350-400)
+            if (x >= panelX && x <= panelX + 200 && y >= 350 && y <= 400) {
+                this.rollDice();
+                return true;
+            }
+            // Use Stock button (Y: 408-458)
+            if (x >= panelX && x <= panelX + 200 && y >= 408 && y <= 458) {
                 this.useStockedDice();
                 return true;
             }
         } else {
-            // Roll Dice button (Y: 320-370)
-            if (x >= panelX && x <= panelX + 200 && y >= 320 && y <= 370) {
+            // Roll Dice button (Y: 350-400)
+            if (x >= panelX && x <= panelX + 200 && y >= 350 && y <= 400) {
                 this.rollDice();
                 return true;
             }
-            // Stock button (Y: 378-428) - requires enough points
-            if (x >= panelX && x <= panelX + 200 && y >= 378 && y <= 428) {
+            // Stock button (Y: 408-458)
+            if (x >= panelX && x <= panelX + 200 && y >= 408 && y <= 458) {
                 if (!currentPlayer.canAfford(SKILL_COSTS.stock)) return false;
                 this.stockCurrentDice();
                 return true;
@@ -610,7 +864,6 @@ class Game {
         const clickedCell = this.getCellFromCoords(x, y);
         if (!clickedCell) return false;
 
-        // 自分のコマクリックで移動モード切替
         const currentPlayer = this.getCurrentPlayer();
         const playerPos = currentPlayer.getPosition();
         if (clickedCell.row === playerPos.row && clickedCell.col === playerPos.col) {
@@ -618,7 +871,6 @@ class Game {
             return true;
         }
 
-        // Check fall trigger tiles
         for (const tile of this.fallTriggerTiles) {
             if (tile.row === clickedCell.row && tile.col === clickedCell.col) {
                 this.gameOver(this.currentTurn === 1 ? 2 : 1, 'fell off the cliff!');
@@ -626,7 +878,6 @@ class Game {
             }
         }
 
-        // Check movable tiles
         for (const tile of this.movableTiles) {
             if (tile.row === clickedCell.row && tile.col === clickedCell.col) {
                 this.movePlayer(clickedCell.row, clickedCell.col);
@@ -638,49 +889,26 @@ class Game {
     }
 
     handlePlacePhaseClick(x, y) {
-        // Check placement type buttons first
         const panelX = this.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
-        const currentPlayer = this.getCurrentPlayer();
 
-        // Stone button (Y: 300-350)
-        if (x >= panelX && x <= panelX + 200 && y >= 300 && y <= 350) {
+        // Stone button (Y: 330-380)
+        if (x >= panelX && x <= panelX + 200 && y >= 330 && y <= 380) {
             this.setPlacementType('stone');
             return true;
         }
-        // Recovery button (Y: 358-408)
-        if (x >= panelX && x <= panelX + 200 && y >= 358 && y <= 408) {
-            this.setPlacementType('recovery');
+        // Skill button (Y: 388-438)
+        if (x >= panelX && x <= panelX + 200 && y >= 388 && y <= 438) {
+            this.activateSkill();
             return true;
         }
-
-        // Dynamic skill buttons (Ice/Bomb) + Drill
-        let nextY = 416;
-
-        // Ice button (only if player has ice skill)
-        if (currentPlayer.hasSkill(SPECIAL_SKILLS.ICE)) {
-            if (x >= panelX && x <= panelX + 200 && y >= nextY && y <= nextY + 50) {
-                this.setPlacementType('ice');
-                return true;
-            }
-            nextY += 58;
-        }
-
-        // Bomb button (only if player has bomb skill)
-        if (currentPlayer.hasSkill(SPECIAL_SKILLS.BOMB)) {
-            if (x >= panelX && x <= panelX + 200 && y >= nextY && y <= nextY + 50) {
-                this.setPlacementType('bomb');
-                return true;
-            }
-            nextY += 58;
-        }
-
-        // Drill button
-        if (x >= panelX && x <= panelX + 200 && y >= nextY && y <= nextY + 50) {
+        // Drill button (Y: 446-496)
+        if (x >= panelX && x <= panelX + 200 && y >= 446 && y <= 496) {
+            if (this.getCurrentPlayer().isDominated()) return false;
             this.setPlacementType('drill');
             return true;
         }
 
-        // Check board click
+        // Board click
         const clickedCell = this.getCellFromCoords(x, y);
         if (!clickedCell) return false;
 
@@ -695,6 +923,26 @@ class Game {
     }
 
     handleDrillPhaseClick(x, y) {
+        const panelX = this.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
+
+        // Stone button (Y: 330-380)
+        if (x >= panelX && x <= panelX + 200 && y >= 330 && y <= 380) {
+            this.drillForSurvival = false;
+            this.setPlacementType('stone');
+            return true;
+        }
+        // Skill button (Y: 388-438)
+        if (x >= panelX && x <= panelX + 200 && y >= 388 && y <= 438) {
+            this.drillForSurvival = false;
+            this.activateSkill();
+            return true;
+        }
+        // Drill button (Y: 446-496) — already in drill mode
+        if (x >= panelX && x <= panelX + 200 && y >= 446 && y <= 496) {
+            return true;
+        }
+
+        // Board click for drill targets
         const clickedCell = this.getCellFromCoords(x, y);
         if (!clickedCell) return false;
 
@@ -708,8 +956,44 @@ class Game {
         return false;
     }
 
+    handleSkillTargetClick(x, y) {
+        const panelX = this.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
+
+        // Stone button (Y: 330-380) — cancel skill target
+        if (x >= panelX && x <= panelX + 200 && y >= 330 && y <= 380) {
+            this.activeSkillType = null;
+            this.skillTargetTiles = [];
+            this.phase = PHASES.PLACE;
+            this.placementType = 'stone';
+            this.findPlaceableTiles();
+            return true;
+        }
+
+        // Board click
+        const clickedCell = this.getCellFromCoords(x, y);
+        if (!clickedCell) return false;
+
+        for (const tile of this.skillTargetTiles) {
+            if (tile.row === clickedCell.row && tile.col === clickedCell.col) {
+                switch (this.activeSkillType) {
+                    case SPECIAL_SKILLS.SURIASHI:
+                        this.executeSuriashi(tile.row, tile.col);
+                        break;
+                    case SPECIAL_SKILLS.METEOR:
+                        this.executeMeteor(tile.row, tile.col);
+                        break;
+                    case SPECIAL_SKILLS.MOMONGA:
+                        this.executeMomonga(tile.row, tile.col);
+                        break;
+                }
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     handleGameOverClick(x, y) {
-        // Main Menu button
         if (x >= SCREEN_WIDTH / 2 - 110 && x <= SCREEN_WIDTH / 2 + 110 &&
             y >= SCREEN_HEIGHT / 2 + 50 && y <= SCREEN_HEIGHT / 2 + 120) {
             this.phase = PHASES.START_SCREEN;

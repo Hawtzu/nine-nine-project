@@ -4,16 +4,21 @@ class Player {
         this.playerNum = playerNum;
         this.row = startRow;
         this.col = startCol;
+        this.prevRow = startRow;
+        this.prevCol = startCol;
         this.points = 0;
         this.specialSkill = null;
         this.skillConfirmed = false;
         this.stockedDice = null;
         this.dominationTurnsLeft = 0;
         this.diceQueue = [];
+        this.checkpointPos = null; // { row, col } or null
         this.color = playerNum === 1 ? COLORS.P1 : COLORS.P2;
     }
 
     moveTo(row, col) {
+        this.prevRow = this.row;
+        this.prevCol = this.col;
         this.row = row;
         this.col = col;
     }
@@ -41,12 +46,15 @@ class Player {
     reset(startRow, startCol) {
         this.row = startRow;
         this.col = startCol;
+        this.prevRow = startRow;
+        this.prevCol = startCol;
         this.points = 0;
         this.specialSkill = null;
         this.skillConfirmed = false;
         this.stockedDice = null;
         this.dominationTurnsLeft = 0;
         this.diceQueue = [];
+        this.checkpointPos = null;
     }
 
     initDiceQueue(generateFn) {
@@ -84,5 +92,17 @@ class Player {
 
     isDominated() {
         return this.dominationTurnsLeft > 0;
+    }
+
+    setCheckpoint(row, col) {
+        this.checkpointPos = { row, col };
+    }
+
+    getCheckpoint() {
+        return this.checkpointPos;
+    }
+
+    hasCheckpoint() {
+        return this.checkpointPos !== null;
     }
 }

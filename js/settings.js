@@ -111,6 +111,46 @@ const SETTINGS_CONFIG = [
         defaultValue: 50
     },
     {
+        key: 'warp',
+        label: 'Warp Hole Cost',
+        target: 'SKILL_COSTS',
+        prop: 'warp',
+        min: 0,
+        max: 500,
+        step: 10,
+        defaultValue: 100
+    },
+    {
+        key: 'checkpoint',
+        label: 'Check Point Cost',
+        target: 'SKILL_COSTS',
+        prop: 'checkpoint',
+        min: 0,
+        max: 500,
+        step: 10,
+        defaultValue: 100
+    },
+    {
+        key: 'kamakura',
+        label: 'Kamakura Cost',
+        target: 'SKILL_COSTS',
+        prop: 'kamakura',
+        min: 0,
+        max: 500,
+        step: 10,
+        defaultValue: 50
+    },
+    {
+        key: 'swamp',
+        label: 'Swamp Cost',
+        target: 'SKILL_COSTS',
+        prop: 'swamp',
+        min: 0,
+        max: 500,
+        step: 10,
+        defaultValue: 20
+    },
+    {
         key: 'fountain_pickup',
         label: 'Fountain Pickup',
         target: 'GAME_SETTINGS',

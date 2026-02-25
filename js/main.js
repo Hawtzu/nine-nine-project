@@ -2,12 +2,14 @@
 let game;
 let renderer;
 let settings;
+let animManager;
 
 function init() {
     const canvas = document.getElementById('game-canvas');
     renderer = new Renderer(canvas);
     game = new Game();
     settings = new Settings();
+    animManager = new AnimationManager();
 
     // Add event listeners
     canvas.addEventListener('click', handleClick);
@@ -36,6 +38,13 @@ function handleMouseMove(event) {
         settings.handleMouseMove(x, y);
     } else if (game.phase === PHASES.SKILL_SELECTION) {
         updateSkillHover(x, y);
+    } else if (game.phase === PHASES.SKILL_TARGET && game.activeSkillType === SPECIAL_SKILLS.KAMAKURA) {
+        const cell = game.getCellFromCoords(x, y);
+        if (cell) {
+            game.updateKamakuraHover(cell.row, cell.col);
+        } else {
+            game.hoveredKamakuraIndex = null;
+        }
     }
 }
 
@@ -52,12 +61,14 @@ function handleClick(event) {
     game.handleClick(x, y);
 }
 
-function gameLoop() {
-    render();
+function gameLoop(timestamp) {
+    const now = timestamp || performance.now();
+    animManager.update(now);
+    render(now);
     requestAnimationFrame(gameLoop);
 }
 
-function render() {
+function render(now) {
     renderer.clear();
 
     switch (game.phase) {
@@ -81,16 +92,35 @@ function render() {
             }
             break;
 
+        case PHASES.ANIMATING:
+            // Draw panels and board
+            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase);
+            renderer.drawBoard(game.board, now);
+            renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
+
+            // Draw trails and ripples UNDER players
+            renderer.drawTrails(animManager.trails, now);
+            renderer.drawRipples(animManager.ripples, now);
+
+            // Draw players at animated positions
+            const p1AnimPos = animManager.getDisplayPosition(1, game.player1);
+            const p2AnimPos = animManager.getDisplayPosition(2, game.player2);
+            renderer.drawPlayer(game.player1, p1AnimPos, now);
+            renderer.drawPlayer(game.player2, p2AnimPos, now);
+            break;
+
         case PHASES.ROLL:
         case PHASES.MOVE:
         case PHASES.PLACE:
         case PHASES.DRILL_TARGET:
         case PHASES.SKILL_TARGET:
+        case PHASES.WARP_SELECT:
             // Draw panels
             renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase);
 
             // Draw board
-            renderer.drawBoard(game.board);
+            renderer.drawBoard(game.board, now);
+            renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
 
             // Draw highlights
             if (game.phase === PHASES.MOVE) {
@@ -106,19 +136,34 @@ function render() {
             } else if (game.phase === PHASES.DRILL_TARGET) {
                 renderer.drawHighlights(game.drillTargetTiles, COLORS.DRILL_TARGET_HIGHLIGHT);
             } else if (game.phase === PHASES.SKILL_TARGET) {
-                renderer.drawHighlights(game.skillTargetTiles, COLORS.SKILL_TARGET_HIGHLIGHT);
+                if (game.activeSkillType === SPECIAL_SKILLS.KAMAKURA) {
+                    renderer.drawKamakuraHighlights(
+                        game.kamakuraPatterns,
+                        game.hoveredKamakuraIndex,
+                        COLORS.SKILL_TARGET_HIGHLIGHT,
+                        COLORS.KAMAKURA_PATTERN_HIGHLIGHT
+                    );
+                } else {
+                    renderer.drawHighlights(game.skillTargetTiles, COLORS.SKILL_TARGET_HIGHLIGHT);
+                }
+            } else if (game.phase === PHASES.WARP_SELECT) {
+                renderer.drawHighlights(game.warpSelectTiles, COLORS.WARP_SELECT_HIGHLIGHT);
             }
 
-            // Draw players
-            renderer.drawPlayer(game.player1);
-            renderer.drawPlayer(game.player2);
+            // Draw remaining ripples/trails from recent animations
+            renderer.drawTrails(animManager.trails, now);
+            renderer.drawRipples(animManager.ripples, now);
+
+            // Draw players with pulse animation
+            renderer.drawPlayer(game.player1, null, now);
+            renderer.drawPlayer(game.player2, null, now);
 
             // Draw roll button or dice result
             drawPhaseUI();
 
             // Sniper animation overlay
             if (game.sniperAnimating) {
-                const elapsed = Date.now() - game.sniperAnimStart;
+                const elapsed = now - game.sniperAnimStart;
                 const otherPlayer = game.getOtherPlayer();
                 renderer.drawSniperTarget(otherPlayer);
 
@@ -133,9 +178,10 @@ function render() {
         case PHASES.GAME_OVER:
             // Draw the game state first
             renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase);
-            renderer.drawBoard(game.board);
-            renderer.drawPlayer(game.player1);
-            renderer.drawPlayer(game.player2);
+            renderer.drawBoard(game.board, now);
+            renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
+            renderer.drawPlayer(game.player1, null, now);
+            renderer.drawPlayer(game.player2, null, now);
 
             // Draw game over overlay
             renderer.drawGameOver(game.winner, game.winReason);
@@ -145,14 +191,14 @@ function render() {
 
 function drawPlayerDicePanel(ctx, panelX, player) {
     // CURRENT dice
-    ctx.fillStyle = '#AAAAAA';
+    ctx.fillStyle = '#888899';
     ctx.font = '13px Arial';
     ctx.textAlign = 'left';
     ctx.fillText('CURRENT', panelX, 180);
     drawDiceVisualSmall(ctx, panelX + 30, 215, player.diceQueue[0], false);
 
     // NEXT preview (2 dice)
-    ctx.fillStyle = '#AAAAAA';
+    ctx.fillStyle = '#888899';
     ctx.font = '13px Arial';
     ctx.textAlign = 'left';
     ctx.fillText('NEXT', panelX + 100, 180);
@@ -177,7 +223,7 @@ function drawPhaseUI() {
     // Show both players' dice panels in all active phases
     if (game.phase === PHASES.ROLL || game.phase === PHASES.MOVE ||
         game.phase === PHASES.PLACE || game.phase === PHASES.DRILL_TARGET ||
-        game.phase === PHASES.SKILL_TARGET) {
+        game.phase === PHASES.SKILL_TARGET || game.phase === PHASES.WARP_SELECT) {
         drawPlayerDicePanel(ctx, panelX, game.getCurrentPlayer());
         drawPlayerDicePanel(ctx, opponentPanelX, game.getOtherPlayer());
     }
@@ -188,22 +234,21 @@ function drawPhaseUI() {
 
         // Buttons
         if (isDominated) {
-            // Domination: only Roll Dice available, stock locked
-            renderer.drawButton(panelX, 350, 200, 50, '#00C800', 'Roll Dice');
+            renderer.drawButton(panelX, 350, 200, 50, '#006400', 'Roll Dice');
             ctx.globalAlpha = 0.35;
-            renderer.drawButton(panelX, 408, 200, 50, '#555555', 'Locked');
+            renderer.drawButton(panelX, 408, 200, 50, '#333344', 'Locked');
             ctx.globalAlpha = 1.0;
         } else if (currentPlayer.hasStock()) {
-            renderer.drawButton(panelX, 350, 200, 50, '#00C800', 'Roll Dice');
-            renderer.drawButton(panelX, 408, 200, 50, '#DAA520', 'Use Stock');
+            renderer.drawButton(panelX, 350, 200, 50, '#006400', 'Roll Dice');
+            renderer.drawButton(panelX, 408, 200, 50, '#8B6914', 'Use Stock');
         } else {
-            renderer.drawButton(panelX, 350, 200, 50, '#00C800', 'Roll Dice');
+            renderer.drawButton(panelX, 350, 200, 50, '#006400', 'Roll Dice');
             const canStock = currentPlayer.canAfford(SKILL_COSTS.stock);
             if (canStock) {
-                renderer.drawButton(panelX, 408, 200, 50, '#B8860B', `Stock (-${SKILL_COSTS.stock}pt)`);
+                renderer.drawButton(panelX, 408, 200, 50, '#665500', `Stock (-${SKILL_COSTS.stock}pt)`);
             } else {
                 ctx.globalAlpha = 0.35;
-                renderer.drawButton(panelX, 408, 200, 50, '#555555', `Stock (-${SKILL_COSTS.stock}pt)`);
+                renderer.drawButton(panelX, 408, 200, 50, '#333344', `Stock (-${SKILL_COSTS.stock}pt)`);
                 ctx.globalAlpha = 1.0;
             }
         }
@@ -218,19 +263,27 @@ function drawPhaseUI() {
             ctx.fillStyle = COLORS.DIAGONAL_MOVE_HIGHLIGHT;
             ctx.font = 'bold 16px Arial';
             ctx.fillText('Diagonal Mode (-10pt)', panelX + 100, 410);
-            ctx.fillStyle = '#AAAAAA';
+            ctx.fillStyle = '#888899';
             ctx.font = '12px Arial';
             ctx.fillText('Click piece to switch back', panelX + 100, 430);
         } else {
-            ctx.fillStyle = '#AAAAAA';
+            ctx.fillStyle = '#888899';
             ctx.font = '12px Arial';
             if (currentPlayer.canAfford(SKILL_COSTS.diagonal_move)) {
                 ctx.fillText('Click piece for diagonal (-10pt)', panelX + 100, 410);
             } else {
-                ctx.fillStyle = '#666666';
+                ctx.fillStyle = '#555566';
                 ctx.fillText('Not enough pts for diagonal', panelX + 100, 410);
             }
         }
+        ctx.textAlign = 'left';
+    } else if (game.phase === PHASES.WARP_SELECT) {
+        ctx.fillStyle = COLORS.WARP_SELECT_HIGHLIGHT;
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Select Warp Destination', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 30);
+        ctx.textBaseline = 'alphabetic';
         ctx.textAlign = 'left';
     } else if (game.phase === PHASES.PLACE || game.phase === PHASES.DRILL_TARGET || game.phase === PHASES.SKILL_TARGET) {
 
@@ -239,7 +292,7 @@ function drawPhaseUI() {
         const isDominated = currentPlayer.isDominated();
 
         // Label
-        ctx.fillStyle = '#AAAAAA';
+        ctx.fillStyle = '#888899';
         ctx.font = '14px Arial';
         ctx.textAlign = 'left';
         ctx.fillText('ACTIONS', panelX, 320);
@@ -260,11 +313,11 @@ function drawPhaseUI() {
             const skillCost = SKILL_COSTS[skillInfo.costKey];
             drawSkillButton(ctx, panelX, 388, 200, 50, {
                 name: skillInfo.name,
-                color: isDominated ? '#555555' : skillInfo.color,
-                textColor: isDominated ? '#999999' : skillInfo.textColor,
+                color: isDominated ? '#333344' : skillInfo.color,
+                textColor: isDominated ? '#666677' : skillInfo.textColor,
                 cost: skillCost,
                 isSelected: game.phase === PHASES.SKILL_TARGET ||
-                            ['ice', 'bomb'].includes(game.placementType),
+                            ['ice', 'bomb', 'swamp', 'warp'].includes(game.placementType),
                 isAffordable: !isDominated && points >= skillCost
             });
         }
@@ -272,8 +325,8 @@ function drawPhaseUI() {
         // Drill button (Y: 446-496)
         drawSkillButton(ctx, panelX, 446, 200, 50, {
             name: 'Drill',
-            color: isDominated ? '#555555' : COLORS.DRILL,
-            textColor: isDominated ? '#999999' : COLORS.WHITE,
+            color: isDominated ? '#333344' : COLORS.DRILL,
+            textColor: isDominated ? '#666677' : COLORS.WHITE,
             cost: SKILL_COSTS.drill,
             isSelected: game.phase === PHASES.DRILL_TARGET,
             isAffordable: !isDominated && points >= SKILL_COSTS.drill
@@ -290,8 +343,8 @@ function drawDiceVisual(ctx, centerX, centerY, value) {
 
     ctx.save();
 
-    // Dice body with rounded corners
-    ctx.fillStyle = '#EEEEEE';
+    // Dice body with rounded corners (dark theme)
+    ctx.fillStyle = '#1A1A2E';
     ctx.beginPath();
     ctx.moveTo(x + radius, y);
     ctx.lineTo(x + size - radius, y);
@@ -305,13 +358,13 @@ function drawDiceVisual(ctx, centerX, centerY, value) {
     ctx.closePath();
     ctx.fill();
 
-    // Dice border shadow
-    ctx.strokeStyle = '#999999';
+    // Dice border
+    ctx.strokeStyle = '#444466';
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Draw dots based on value
-    ctx.fillStyle = '#222222';
+    // Draw dots (bright on dark)
+    ctx.fillStyle = '#CCCCDD';
     const cx = centerX;
     const cy = centerY;
     const offset = 18;
@@ -340,7 +393,7 @@ function drawDiceVisualSmall(ctx, centerX, centerY, value, isSmaller) {
     ctx.save();
     ctx.globalAlpha = isSmaller ? 0.6 : 0.8;
 
-    ctx.fillStyle = '#DDDDDD';
+    ctx.fillStyle = '#1A1A2E';
     ctx.beginPath();
     ctx.moveTo(x + radius, y);
     ctx.lineTo(x + size - radius, y);
@@ -354,11 +407,11 @@ function drawDiceVisualSmall(ctx, centerX, centerY, value, isSmaller) {
     ctx.closePath();
     ctx.fill();
 
-    ctx.strokeStyle = '#999999';
+    ctx.strokeStyle = '#444466';
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    ctx.fillStyle = '#222222';
+    ctx.fillStyle = '#CCCCDD';
     const offset = size * 0.26;
     if (value === 1) {
         drawDot(ctx, centerX, centerY, dotRadius);
@@ -428,13 +481,13 @@ function drawSkillButton(ctx, x, y, width, height, opts) {
     ctx.fillRect(x, y, width, height);
 
     // Icon circle
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
     ctx.beginPath();
     ctx.arc(x + 25, y + height / 2, 15, 0, Math.PI * 2);
     ctx.fill();
 
     // Icon inner dot
-    ctx.fillStyle = color === COLORS.STONE ? '#B0B0B0' : 'rgba(255, 255, 255, 0.7)';
+    ctx.fillStyle = color === COLORS.STONE ? '#555566' : 'rgba(255, 255, 255, 0.5)';
     ctx.beginPath();
     ctx.arc(x + 25, y + height / 2, 8, 0, Math.PI * 2);
     ctx.fill();
@@ -442,7 +495,7 @@ function drawSkillButton(ctx, x, y, width, height, opts) {
     ctx.globalAlpha = 1.0;
 
     // Skill name
-    ctx.fillStyle = !isAffordable && cost > 0 ? '#666666' : textColor;
+    ctx.fillStyle = !isAffordable && cost > 0 ? '#555566' : textColor;
     ctx.font = 'bold 18px Arial';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
@@ -450,7 +503,7 @@ function drawSkillButton(ctx, x, y, width, height, opts) {
 
     // Cost text (small, below name)
     if (cost > 0) {
-        ctx.fillStyle = !isAffordable ? '#993333' : '#FFD700';
+        ctx.fillStyle = !isAffordable ? '#662222' : '#FFD700';
         ctx.font = '13px Arial';
         ctx.fillText(`${cost} pt`, x + 48, y + height / 2 + 12);
     }
@@ -467,11 +520,11 @@ function drawSkillButton(ctx, x, y, width, height, opts) {
 
     // "Not enough" indicator
     if (!isAffordable && cost > 0) {
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.15)';
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
         ctx.fillRect(x, y, width, height);
 
         // Strikethrough line
-        ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.2)';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(x + 5, y + height / 2);

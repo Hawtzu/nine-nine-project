@@ -14,6 +14,7 @@ class Game {
         this.placeableTiles = [];
         this.drillTargetTiles = [];
         this.skillTargetTiles = [];
+        this.warpSelectTiles = [];
         this.activeSkillType = null;
         this.winner = null;
         this.winReason = '';
@@ -22,6 +23,10 @@ class Game {
         this.sniperAnimating = false;
         this.sniperAnimStart = 0;
         this.hoveredSkill = null; // skill key hovered in selection screen
+        this.kamakuraPatterns = [];       // [{middle:{row,col}, stones:[{row,col},...]}]
+        this.hoveredKamakuraIndex = null; // index of hovered pattern
+        this.pendingMoveRow = -1;
+        this.pendingMoveCol = -1;
     }
 
     generateDiceValue() {
@@ -43,6 +48,11 @@ class Game {
         this.activeSkillType = null;
         this.sniperAnimating = false;
         this.sniperAnimStart = 0;
+        this.kamakuraPatterns = [];
+        this.hoveredKamakuraIndex = null;
+        if (typeof animManager !== 'undefined' && animManager) {
+            animManager.reset();
+        }
         const gen = () => this.generateDiceValue();
         this.player1.initDiceQueue(gen);
         this.player2.initDiceQueue(gen);
@@ -233,7 +243,7 @@ class Game {
             let steps = this.diceRoll;
             let currentPos = { row: playerPos.row, col: playerPos.col };
             let finalDest = null;
-            const visitedIce = new Set();
+            const visitedTiles = new Set();
             let step = 1;
 
             while (step <= steps) {
@@ -250,7 +260,7 @@ class Game {
                 }
 
                 const tile = this.board.getTile(nextPos.row, nextPos.col);
-                if (tile === MARKERS.STONE ||
+                if (tile === MARKERS.STONE || tile === MARKERS.SNOW ||
                     (nextPos.row === otherPos.row && nextPos.col === otherPos.col)) {
                     if (finalDest) {
                         this.movableTiles.push(finalDest);
@@ -261,10 +271,21 @@ class Game {
                 finalDest = { row: nextPos.row, col: nextPos.col, directionType: dir.type };
                 currentPos = nextPos;
 
-                const iceKey = `${nextPos.row},${nextPos.col}`;
-                if (tile === MARKERS.ICE && !visitedIce.has(iceKey)) {
+                // Warp hole: stop movement here, add as destination
+                if (tile === MARKERS.WARP) {
+                    this.movableTiles.push(finalDest);
+                    finalDest = null;
+                    break;
+                }
+
+                const tileKey = `${nextPos.row},${nextPos.col}`;
+                if (tile === MARKERS.ICE && !visitedTiles.has(tileKey)) {
                     steps++;
-                    visitedIce.add(iceKey);
+                    visitedTiles.add(tileKey);
+                }
+                if (tile === MARKERS.SWAMP && !visitedTiles.has(tileKey)) {
+                    steps = Math.max(step, steps - 1);
+                    visitedTiles.add(tileKey);
                 }
 
                 step++;
@@ -320,17 +341,46 @@ class Game {
                       || this.fallTriggerTiles.find(t => t.row === row && t.col === col);
         this.lastMoveDirectionType = (moveTile && moveTile.directionType) || DIRECTION_TYPE.CROSS;
 
+        const fromRow = currentPlayer.row;
+        const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
 
         if (this.moveMode === DIRECTION_TYPE.DIAGONAL) {
             currentPlayer.deductPoints(SKILL_COSTS.diagonal_move);
         }
 
+        // Start movement animation
+        this.pendingMoveRow = row;
+        this.pendingMoveCol = col;
+        animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, row, col, 'move');
+        this.phase = PHASES.ANIMATING;
+        animManager.playerAnims[currentPlayer.playerNum].onComplete = () => {
+            this.completeMoveAfterAnim();
+        };
+    }
+
+    completeMoveAfterAnim() {
+        const currentPlayer = this.getCurrentPlayer();
+        const row = this.pendingMoveRow;
+        const col = this.pendingMoveCol;
+
         // Fountain tile bonus (one-time: consume tile)
         const landedTile = this.board.getTile(row, col);
         if (landedTile === MARKERS.FOUNTAIN) {
             currentPlayer.addPoints(GAME_SETTINGS.fountainPickup);
             this.board.setTile(row, col, MARKERS.EMPTY);
+        }
+
+        // Warp hole effect: teleport to another warp hole
+        if (landedTile === MARKERS.WARP) {
+            const otherWarps = this.getOtherWarpHoles(row, col);
+            if (otherWarps.length > 0) {
+                this.clearHighlights();
+                this.warpSelectTiles = otherWarps;
+                this.phase = PHASES.WARP_SELECT;
+                return;
+            }
+            // No other warp holes → fall through to normal PLACE
         }
 
         this.phase = PHASES.PLACE;
@@ -373,10 +423,10 @@ class Game {
             const tile = this.board.getTile(r, c);
 
             if (this.placementType === 'stone') {
-                if (tile !== MARKERS.STONE) {
+                if (tile !== MARKERS.STONE && tile !== MARKERS.SNOW) {
                     this.placeableTiles.push({ row: r, col: c });
                 }
-            } else if (['bomb', 'ice'].includes(this.placementType)) {
+            } else if (['bomb', 'ice', 'swamp', 'warp'].includes(this.placementType)) {
                 if (tile === MARKERS.EMPTY) {
                     this.placeableTiles.push({ row: r, col: c });
                 }
@@ -398,6 +448,19 @@ class Game {
         const currentPlayer = this.getCurrentPlayer();
 
         if (this.placementType === 'stone') {
+            // Destroy checkpoint if stone is placed on it
+            if (this.board.getTile(row, col) === MARKERS.CHECKPOINT) {
+                const owner = this.board.getCheckpointOwner(row, col);
+                if (owner) {
+                    const ownerPlayer = owner === 1 ? this.player1 : this.player2;
+                    ownerPlayer.checkpointPos = null;
+                }
+                delete this.board.checkpointOwners[`${row},${col}`];
+            }
+            // Destroy snow if stone is placed on it
+            if (this.board.getTile(row, col) === MARKERS.SNOW) {
+                delete this.board.snowTurnsLeft[`${row},${col}`];
+            }
             this.board.setTile(row, col, MARKERS.STONE);
             this.endTurn();
         } else if (this.placementType === 'bomb') {
@@ -408,6 +471,16 @@ class Game {
         } else if (this.placementType === 'ice') {
             if (currentPlayer.deductPoints(SKILL_COSTS.ice)) {
                 this.board.setTile(row, col, MARKERS.ICE);
+                this.endTurn();
+            }
+        } else if (this.placementType === 'swamp') {
+            if (currentPlayer.deductPoints(SKILL_COSTS.swamp)) {
+                this.board.setTile(row, col, MARKERS.SWAMP);
+                this.endTurn();
+            }
+        } else if (this.placementType === 'warp') {
+            if (currentPlayer.deductPoints(SKILL_COSTS.warp)) {
+                this.board.setTile(row, col, MARKERS.WARP);
                 this.endTurn();
             }
         }
@@ -499,6 +572,14 @@ class Game {
                 return this.activateMeteor();
             case SPECIAL_SKILLS.MOMONGA:
                 return this.activateMomonga();
+            case SPECIAL_SKILLS.SWAMP:
+                return this.setPlacementType('swamp');
+            case SPECIAL_SKILLS.WARP:
+                return this.setPlacementType('warp');
+            case SPECIAL_SKILLS.CHECKPOINT:
+                return this.useCheckpoint();
+            case SPECIAL_SKILLS.KAMAKURA:
+                return this.activateKamakura();
         }
         return false;
     }
@@ -511,6 +592,113 @@ class Game {
         otherPlayer.dominationTurnsLeft = 3;
         this.endTurn();
         return true;
+    }
+
+    useCheckpoint() {
+        const currentPlayer = this.getCurrentPlayer();
+        if (!currentPlayer.canAfford(SKILL_COSTS.checkpoint)) return false;
+
+        if (currentPlayer.hasCheckpoint()) {
+            // --- Teleport mode ---
+            const cp = currentPlayer.getCheckpoint();
+            const otherPos = this.getOtherPlayer().getPosition();
+            // Cannot teleport if opponent is on checkpoint
+            if (cp.row === otherPos.row && cp.col === otherPos.col) return false;
+            currentPlayer.deductPoints(SKILL_COSTS.checkpoint);
+            const fromRow = currentPlayer.row;
+            const fromCol = currentPlayer.col;
+            currentPlayer.moveTo(cp.row, cp.col);
+            animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, cp.row, cp.col, 'teleport');
+            this.phase = PHASES.ANIMATING;
+            animManager.playerAnims[currentPlayer.playerNum].onComplete = () => {
+                this.endTurn();
+            };
+        } else {
+            // --- Place mode ---
+            const pos = currentPlayer.getPosition();
+            currentPlayer.deductPoints(SKILL_COSTS.checkpoint);
+            this.board.setCheckpoint(pos.row, pos.col, currentPlayer.playerNum);
+            currentPlayer.setCheckpoint(pos.row, pos.col);
+            // Destroy surrounding 8-direction stones
+            const allDirs = [...CROSS_DIRECTIONS, ...DIAGONAL_DIRECTIONS];
+            for (const dir of allDirs) {
+                const r = pos.row + dir.dr;
+                const c = pos.col + dir.dc;
+                if (this.board.isValidPosition(r, c) &&
+                    this.board.getTile(r, c) === MARKERS.STONE) {
+                    this.board.setTile(r, c, MARKERS.EMPTY);
+                }
+            }
+            this.endTurn();
+        }
+        return true;
+    }
+
+    findKamakuraPatterns() {
+        const pPos = this.getCurrentPlayer().getPosition();
+        const patterns = [];
+        for (const pattern of KAMAKURA_PATTERNS) {
+            let allStones = true;
+            const stonePositions = [];
+            for (const offset of pattern.stones) {
+                const r = pPos.row + offset.dr;
+                const c = pPos.col + offset.dc;
+                if (!this.board.isValidPosition(r, c) ||
+                    this.board.getTile(r, c) !== MARKERS.STONE) {
+                    allStones = false;
+                    break;
+                }
+                stonePositions.push({ row: r, col: c });
+            }
+            if (allStones) {
+                patterns.push({
+                    middle: { row: pPos.row + pattern.middle.dr, col: pPos.col + pattern.middle.dc },
+                    stones: stonePositions
+                });
+            }
+        }
+        return patterns;
+    }
+
+    activateKamakura() {
+        const currentPlayer = this.getCurrentPlayer();
+        if (!currentPlayer.canAfford(SKILL_COSTS.kamakura)) return false;
+        const patterns = this.findKamakuraPatterns();
+        if (patterns.length === 0) return false;
+        this.kamakuraPatterns = patterns;
+        this.hoveredKamakuraIndex = null;
+        this.skillTargetTiles = patterns.map(p => ({ row: p.middle.row, col: p.middle.col }));
+        this.activeSkillType = SPECIAL_SKILLS.KAMAKURA;
+        this.phase = PHASES.SKILL_TARGET;
+        return true;
+    }
+
+    executeKamakura(row, col) {
+        const currentPlayer = this.getCurrentPlayer();
+        currentPlayer.deductPoints(SKILL_COSTS.kamakura);
+        const pattern = this.kamakuraPatterns.find(
+            p => p.middle.row === row && p.middle.col === col
+        );
+        if (pattern) {
+            for (const s of pattern.stones) {
+                this.board.setSnow(s.row, s.col, 2);
+            }
+        }
+        this.kamakuraPatterns = [];
+        this.hoveredKamakuraIndex = null;
+        this.endTurn();
+    }
+
+    updateKamakuraHover(row, col) {
+        if (this.activeSkillType !== SPECIAL_SKILLS.KAMAKURA) return;
+        this.hoveredKamakuraIndex = null;
+        for (let i = 0; i < this.kamakuraPatterns.length; i++) {
+            const p = this.kamakuraPatterns[i];
+            if (p.middle.row === row && p.middle.col === col) {
+                this.hoveredKamakuraIndex = i;
+                return;
+            }
+        }
     }
 
     checkSniperCondition() {
@@ -534,7 +722,8 @@ class Game {
         for (let i = 1; i < dist; i++) {
             const r = pPos.row + stepR * i;
             const c = pPos.col + stepC * i;
-            if (this.board.getTile(r, c) === MARKERS.STONE) return false;
+            const t = this.board.getTile(r, c);
+            if (t === MARKERS.STONE || t === MARKERS.SNOW) return false;
         }
         return true;
     }
@@ -546,7 +735,7 @@ class Game {
         currentPlayer.deductPoints(SKILL_COSTS.sniper);
         // Start sniper animation instead of immediate game over
         this.sniperAnimating = true;
-        this.sniperAnimStart = Date.now();
+        this.sniperAnimStart = performance.now();
         return true;
     }
 
@@ -584,7 +773,8 @@ class Game {
             const c = pPos.col + dir.dc;
             if (!this.board.isValidPosition(r, c)) continue;
             if (r === oPos.row && c === oPos.col) continue;
-            if (this.board.getTile(r, c) === MARKERS.STONE) continue;
+            const st = this.board.getTile(r, c);
+            if (st === MARKERS.STONE || st === MARKERS.SNOW) continue;
             this.skillTargetTiles.push({ row: r, col: c });
         }
         if (this.skillTargetTiles.length === 0) return false;
@@ -596,8 +786,14 @@ class Game {
     executeSuriashi(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         currentPlayer.deductPoints(SKILL_COSTS.suriashi);
+        const fromRow = currentPlayer.row;
+        const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
-        this.endTurn();
+        animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, row, col, 'move');
+        this.phase = PHASES.ANIMATING;
+        animManager.playerAnims[currentPlayer.playerNum].onComplete = () => {
+            this.endTurn();
+        };
     }
 
     activateMeteor() {
@@ -672,7 +868,8 @@ class Game {
                 if (!this.board.isValidPosition(r, c)) continue;
                 if (r === oPos.row && c === oPos.col) continue;
                 if (r === pPos.row && c === pPos.col) continue;
-                if (this.board.getTile(r, c) === MARKERS.STONE) continue;
+                const mt = this.board.getTile(r, c);
+                if (mt === MARKERS.STONE || mt === MARKERS.SNOW) continue;
                 this.skillTargetTiles.push({ row: r, col: c });
             }
         }
@@ -685,8 +882,14 @@ class Game {
     executeMomonga(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         currentPlayer.deductPoints(SKILL_COSTS.momonga);
+        const fromRow = currentPlayer.row;
+        const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
-        this.endTurn();
+        animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, row, col, 'move');
+        this.phase = PHASES.ANIMATING;
+        animManager.playerAnims[currentPlayer.playerNum].onComplete = () => {
+            this.endTurn();
+        };
     }
 
     // --- Turn Management ---
@@ -696,6 +899,9 @@ class Game {
         if (oldPlayer.dominationTurnsLeft > 0) {
             oldPlayer.dominationTurnsLeft--;
         }
+
+        // Tick snow timers
+        this.board.tickSnow();
 
         this.currentTurn = this.currentTurn === 1 ? 2 : 1;
 
@@ -707,13 +913,58 @@ class Game {
         this.clearHighlights();
     }
 
+    getOtherWarpHoles(currentRow, currentCol) {
+        const otherPos = this.getOtherPlayer().getPosition();
+        const warpHoles = [];
+        for (let r = 0; r < this.board.size; r++) {
+            for (let c = 0; c < this.board.size; c++) {
+                if (this.board.getTile(r, c) === MARKERS.WARP &&
+                    !(r === currentRow && c === currentCol) &&
+                    !(r === otherPos.row && c === otherPos.col)) {
+                    warpHoles.push({ row: r, col: c });
+                }
+            }
+        }
+        return warpHoles;
+    }
+
+    completeWarp(row, col) {
+        const currentPlayer = this.getCurrentPlayer();
+        const fromRow = currentPlayer.row;
+        const fromCol = currentPlayer.col;
+        currentPlayer.moveTo(row, col);
+        animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, row, col, 'teleport');
+        this.phase = PHASES.ANIMATING;
+        animManager.playerAnims[currentPlayer.playerNum].onComplete = () => {
+            this.phase = PHASES.PLACE;
+            this.placementType = 'stone';
+            this.clearHighlights();
+            this.findPlaceableTiles();
+        };
+    }
+
+    handleWarpSelectClick(x, y) {
+        const clickedCell = this.getCellFromCoords(x, y);
+        if (!clickedCell) return false;
+        for (const tile of this.warpSelectTiles) {
+            if (tile.row === clickedCell.row && tile.col === clickedCell.col) {
+                this.completeWarp(tile.row, tile.col);
+                return true;
+            }
+        }
+        return false;
+    }
+
     clearHighlights() {
         this.movableTiles = [];
         this.fallTriggerTiles = [];
         this.placeableTiles = [];
         this.drillTargetTiles = [];
         this.skillTargetTiles = [];
+        this.warpSelectTiles = [];
         this.activeSkillType = null;
+        this.kamakuraPatterns = [];
+        this.hoveredKamakuraIndex = null;
     }
 
     gameOver(winner, reason) {
@@ -736,6 +987,9 @@ class Game {
     // --- Click Handlers ---
 
     handleClick(x, y) {
+        // Block input during animation
+        if (this.phase === PHASES.ANIMATING) return false;
+
         switch (this.phase) {
             case PHASES.START_SCREEN:
                 return this.handleStartScreenClick(x, y);
@@ -753,6 +1007,8 @@ class Game {
                 return this.handleDrillPhaseClick(x, y);
             case PHASES.SKILL_TARGET:
                 return this.handleSkillTargetClick(x, y);
+            case PHASES.WARP_SELECT:
+                return this.handleWarpSelectClick(x, y);
             case PHASES.GAME_OVER:
                 return this.handleGameOverClick(x, y);
         }
@@ -984,6 +1240,9 @@ class Game {
                         break;
                     case SPECIAL_SKILLS.MOMONGA:
                         this.executeMomonga(tile.row, tile.col);
+                        break;
+                    case SPECIAL_SKILLS.KAMAKURA:
+                        this.executeKamakura(tile.row, tile.col);
                         break;
                 }
                 return true;

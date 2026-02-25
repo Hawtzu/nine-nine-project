@@ -50,6 +50,9 @@ class Game {
         this.sniperAnimStart = 0;
         this.kamakuraPatterns = [];
         this.hoveredKamakuraIndex = null;
+        if (typeof animManager !== 'undefined' && animManager) {
+            animManager.reset();
+        }
         const gen = () => this.generateDiceValue();
         this.player1.initDiceQueue(gen);
         this.player2.initDiceQueue(gen);
@@ -732,7 +735,7 @@ class Game {
         currentPlayer.deductPoints(SKILL_COSTS.sniper);
         // Start sniper animation instead of immediate game over
         this.sniperAnimating = true;
-        this.sniperAnimStart = Date.now();
+        this.sniperAnimStart = performance.now();
         return true;
     }
 

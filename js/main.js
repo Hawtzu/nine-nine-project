@@ -163,7 +163,7 @@ function render(now) {
 
             // Sniper animation overlay
             if (game.sniperAnimating) {
-                const elapsed = Date.now() - game.sniperAnimStart;
+                const elapsed = now - game.sniperAnimStart;
                 const otherPlayer = game.getOtherPlayer();
                 renderer.drawSniperTarget(otherPlayer);
 

@@ -329,13 +329,32 @@ class ComPlayer {
             return;
         }
 
-        // Advanced: strategic stock with phase awareness
+        // Advanced: compare stock vs current dice by move scoring
         if (hasStock) {
-            if (player.stockedDice >= currentDice) {
+            const stockVal = player.stockedDice;
+            const currentVal = currentDice;
+            const myPos = player.getPosition();
+            const oppPos = game.player1.getPosition();
+            const board = game.board;
+
+            const stockMoves = this.simulateMovableTiles(myPos, stockVal, board, oppPos, false)
+                .filter(t => !t.isFallTrigger);
+            const currentMoves = this.simulateMovableTiles(myPos, currentVal, board, oppPos, false)
+                .filter(t => !t.isFallTrigger);
+
+            const stockBest = stockMoves.length > 0
+                ? Math.max(...stockMoves.map(t => this.scoreMoveTile(t))) : -Infinity;
+            const currentBest = currentMoves.length > 0
+                ? Math.max(...currentMoves.map(t => this.scoreMoveTile(t))) : -Infinity;
+
+            // Use stock if it gives better moves, or if current dice has no safe moves
+            if (stockBest >= currentBest || currentMoves.length === 0) {
                 this.game.useStockedDice();
-                this.scheduleMoveDirect();
-                return;
+            } else {
+                this.game.rollDice();
             }
+            this.scheduleMoveDirect();
+            return;
         }
 
         if (!hasStock && currentDice === 1 &&
@@ -373,15 +392,21 @@ class ComPlayer {
             const crossSafe = crossTiles.filter(t => !fallSet.has(`${t.row},${t.col}`));
 
             if (crossSafe.length === 0) {
-                game.toggleMoveMode();
+                const toggled = game.toggleMoveMode();
+                // If toggle failed (can't afford), stay in cross mode with fall triggers
+                if (!toggled) {
+                    // Will use fall triggers as candidates below
+                }
             } else if (this.isAdvanced()) {
                 const crossBest = this.scoreMoves(crossTiles);
-                game.toggleMoveMode();
-                const diagTiles = [...game.movableTiles];
-                const diagBest = this.scoreMoves(diagTiles);
-                // Diagonal needs to be significantly better to justify 10pt cost
-                if (diagBest <= crossBest + 25) {
-                    game.toggleMoveMode(); // switch back to cross
+                const toggled = game.toggleMoveMode();
+                if (toggled) {
+                    const diagTiles = [...game.movableTiles];
+                    const diagBest = this.scoreMoves(diagTiles);
+                    // Diagonal needs to be significantly better to justify 10pt cost
+                    if (diagBest <= crossBest + 25) {
+                        game.toggleMoveMode(); // switch back to cross
+                    }
                 }
             }
         }
@@ -389,8 +414,22 @@ class ComPlayer {
         // Filter fall triggers
         const fallSet = new Set(game.fallTriggerTiles.map(t => `${t.row},${t.col}`));
         const safeTiles = game.movableTiles.filter(t => !fallSet.has(`${t.row},${t.col}`));
-        const candidates = safeTiles.length > 0 ? safeTiles : game.movableTiles;
-        if (candidates.length === 0) return;
+        let candidates = safeTiles.length > 0 ? safeTiles : game.movableTiles;
+
+        // Freeze prevention: if candidates is empty, recover
+        if (candidates.length === 0) {
+            // If stuck in diagonal mode, revert to cross
+            if (game.moveMode === DIRECTION_TYPE.DIAGONAL) {
+                game.toggleMoveMode(); // back to cross, refunds points
+            }
+            // Include fall triggers as last resort
+            const allTiles = game.movableTiles.concat(game.fallTriggerTiles);
+            if (allTiles.length > 0) {
+                candidates = allTiles;
+            } else {
+                return; // Truly no moves (shouldn't happen after rollDice check)
+            }
+        }
 
         // Advanced: use fountain plan if in fountain rush
         if (this.isAdvanced()) {
@@ -614,7 +653,17 @@ class ComPlayer {
         if (game.placeableTiles.length === 0) {
             if (game.phase === PHASES.DRILL_TARGET) {
                 this.executeAfterDelay(() => this.decideDrillTarget(), 'DRILL');
+                return;
             }
+            // No placeable tiles — try drill as last resort
+            if (!player.isDominated() && player.canAfford(SKILL_COSTS.drill)) {
+                game.setPlacementType('drill');
+                if (game.phase === PHASES.DRILL_TARGET) {
+                    this.executeAfterDelay(() => this.decideDrillTarget(), 'DRILL');
+                    return;
+                }
+            }
+            // Game should have triggered game over via canUseDrillToSurvive already
             return;
         }
 

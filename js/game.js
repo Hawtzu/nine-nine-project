@@ -6,7 +6,9 @@ class Game {
         this.player2 = null;
         this.currentTurn = 1;
         this.phase = PHASES.START_SCREEN;
-        this.gameMode = null; // 'pvp' or 'pva'
+        this.gameMode = null; // 'pvp' or 'com'
+        this.comDifficulty = null;
+        this.showDifficultySelect = false;
         this.diceRoll = 0;
         this.placementType = 'stone';
         this.movableTiles = [];
@@ -50,8 +52,12 @@ class Game {
         this.sniperAnimStart = 0;
         this.kamakuraPatterns = [];
         this.hoveredKamakuraIndex = null;
+        this.showDifficultySelect = false;
         if (typeof animManager !== 'undefined' && animManager) {
             animManager.reset();
+        }
+        if (typeof comPlayer !== 'undefined' && comPlayer) {
+            comPlayer.reset();
         }
         const gen = () => this.generateDiceValue();
         this.player1.initDiceQueue(gen);
@@ -63,6 +69,11 @@ class Game {
         this.gameMode = mode;
         this.init();
         this.phase = PHASES.SKILL_SELECTION;
+        // In COM mode, trigger COM's skill selection after a delay
+        if (mode === 'com' && typeof comPlayer !== 'undefined' && comPlayer) {
+            comPlayer.difficulty = this.comDifficulty || COM_DIFFICULTY.NORMAL;
+            comPlayer.executeAfterDelay(() => comPlayer.decideSkillSelection(), 'SKILL_SELECTION');
+        }
     }
 
     selectSkill(playerNum, skill) {
@@ -74,6 +85,10 @@ class Game {
         if (this.player1.skillConfirmed && this.player2.skillConfirmed) {
             this.setupInitialBoard();
             this.phase = PHASES.ROLL;
+            // If COM goes first, trigger COM turn
+            if (this.gameMode === 'com' && this.currentTurn === 2) {
+                comPlayer.startTurn();
+            }
         }
     }
 
@@ -378,6 +393,10 @@ class Game {
                 this.clearHighlights();
                 this.warpSelectTiles = otherWarps;
                 this.phase = PHASES.WARP_SELECT;
+                // Trigger COM warp decision
+                if (this.gameMode === 'com' && this.currentTurn === 2 && !this.winner) {
+                    comPlayer.executeAfterDelay(() => comPlayer.decideWarpSelect(), 'WARP');
+                }
                 return;
             }
             // No other warp holes → fall through to normal PLACE
@@ -387,6 +406,11 @@ class Game {
         this.placementType = 'stone';
         this.clearHighlights();
         this.findPlaceableTiles();
+
+        // Trigger COM place decision
+        if (this.gameMode === 'com' && this.currentTurn === 2 && !this.winner) {
+            comPlayer.executeAfterDelay(() => comPlayer.decidePlacePhase(), 'PLACE');
+        }
     }
 
     canUseDrillToSurvive() {
@@ -911,6 +935,11 @@ class Game {
         this.phase = PHASES.ROLL;
         this.diceRoll = 0;
         this.clearHighlights();
+
+        // Trigger COM turn
+        if (this.gameMode === 'com' && this.currentTurn === 2 && !this.winner) {
+            comPlayer.startTurn();
+        }
     }
 
     getOtherWarpHoles(currentRow, currentCol) {
@@ -971,8 +1000,13 @@ class Game {
         if (this.winner === null) {
             const loser = winner === 1 ? 2 : 1;
             this.winner = winner;
-            this.winReason = `Player ${loser} ${reason}`;
+            const loserLabel = (this.gameMode === 'com' && loser === 2) ? 'COM' : `Player ${loser}`;
+            this.winReason = `${loserLabel} ${reason}`;
             this.phase = PHASES.GAME_OVER;
+            // Cancel any pending COM actions
+            if (typeof comPlayer !== 'undefined' && comPlayer) {
+                comPlayer.cancelPending();
+            }
         }
     }
 
@@ -989,6 +1023,15 @@ class Game {
     handleClick(x, y) {
         // Block input during animation
         if (this.phase === PHASES.ANIMATING) return false;
+
+        // Block clicks during COM's turn (except menus)
+        if (this.gameMode === 'com' && this.currentTurn === 2 &&
+            this.phase !== PHASES.START_SCREEN &&
+            this.phase !== PHASES.GAME_OVER &&
+            this.phase !== PHASES.SETTINGS &&
+            this.phase !== PHASES.SKILL_SELECTION) {
+            return false;
+        }
 
         switch (this.phase) {
             case PHASES.START_SCREEN:
@@ -1031,8 +1074,8 @@ class Game {
             }
         }
 
-        // Player 2 panel (right side)
-        if (!this.player2.skillConfirmed) {
+        // Player 2 panel (right side) — skip in COM mode
+        if (!this.player2.skillConfirmed && this.gameMode !== 'com') {
             const panelX = SCREEN_WIDTH - PANEL_WIDTH + 20;
             for (let i = 0; i < SKILL_ORDER.length; i++) {
                 const row = Math.floor(i / 2), col = i % 2;
@@ -1049,15 +1092,48 @@ class Game {
     }
 
     handleStartScreenClick(x, y) {
+        const cx = SCREEN_WIDTH / 2;
+
         // PvP button
-        if (x >= SCREEN_WIDTH / 2 - 150 && x <= SCREEN_WIDTH / 2 + 150 &&
-            y >= 350 && y <= 430) {
+        if (x >= cx - 150 && x <= cx + 150 && y >= 350 && y <= 430) {
+            this.showDifficultySelect = false;
             this.startGame('pvp');
             return true;
         }
+
+        // COM button
+        if (x >= cx - 150 && x <= cx + 150 && y >= 470 && y <= 550) {
+            this.showDifficultySelect = true;
+            return true;
+        }
+
+        // Difficulty buttons (shown when showDifficultySelect is true)
+        if (this.showDifficultySelect) {
+            const btnW = 90, btnH = 50, gap = 10;
+            const startX = cx - (btnW * 3 + gap * 2) / 2;
+            const btnY = 560;
+
+            if (y >= btnY && y <= btnY + btnH) {
+                if (x >= startX && x <= startX + btnW) {
+                    this.comDifficulty = COM_DIFFICULTY.EASY;
+                    this.startGame('com');
+                    return true;
+                }
+                if (x >= startX + btnW + gap && x <= startX + 2 * btnW + gap) {
+                    this.comDifficulty = COM_DIFFICULTY.NORMAL;
+                    this.startGame('com');
+                    return true;
+                }
+                if (x >= startX + 2 * (btnW + gap) && x <= startX + 3 * btnW + 2 * gap) {
+                    this.comDifficulty = COM_DIFFICULTY.HARD;
+                    this.startGame('com');
+                    return true;
+                }
+            }
+        }
+
         // Developer Settings gear icon
-        if (x >= SCREEN_WIDTH / 2 + 187 && x <= SCREEN_WIDTH / 2 + 223 &&
-            y >= 372 && y <= 408) {
+        if (x >= cx + 187 && x <= cx + 223 && y >= 372 && y <= 408) {
             this.phase = PHASES.SETTINGS;
             return true;
         }

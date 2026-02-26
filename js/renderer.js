@@ -391,7 +391,7 @@ class Renderer {
 
     // --- Panels ---
 
-    drawPanels(player1, player2, currentTurn, phase) {
+    drawPanels(player1, player2, currentTurn, phase, gameMode) {
         // Player 1 panel (left)
         this.ctx.fillStyle = COLORS.P1_PANEL_BG;
         this.ctx.fillRect(0, 0, PANEL_WIDTH, SCREEN_HEIGHT);
@@ -401,19 +401,20 @@ class Renderer {
         this.ctx.fillRect(SCREEN_WIDTH - PANEL_WIDTH, 0, PANEL_WIDTH, SCREEN_HEIGHT);
 
         // Draw player info
-        this.drawPlayerInfo(player1, 20, currentTurn === 1, phase);
-        this.drawPlayerInfo(player2, SCREEN_WIDTH - PANEL_WIDTH + 20, currentTurn === 2, phase);
+        this.drawPlayerInfo(player1, 20, currentTurn === 1, phase, gameMode);
+        this.drawPlayerInfo(player2, SCREEN_WIDTH - PANEL_WIDTH + 20, currentTurn === 2, phase, gameMode);
     }
 
-    drawPlayerInfo(player, panelX, isCurrentTurn, phase) {
+    drawPlayerInfo(player, panelX, isCurrentTurn, phase, gameMode) {
         const textColor = COLORS.WHITE;
 
-        // Player name
+        // Player name (show "COM" for P2 in COM mode)
+        const label = (gameMode === 'com' && player.playerNum === 2) ? 'COM' : `Player ${player.playerNum}`;
         this.ctx.fillStyle = textColor;
         this.ctx.font = 'bold 32px Arial';
         this.ctx.textAlign = 'left';
         this.ctx.fillText(
-            `Player ${player.playerNum}${isCurrentTurn ? ' \u2605' : ''}`,
+            `${label}${isCurrentTurn ? ' \u2605' : ''}`,
             panelX,
             70
         );
@@ -511,7 +512,7 @@ class Renderer {
 
     // --- Start Screen ---
 
-    drawStartScreen() {
+    drawStartScreen(showDifficultySelect) {
         this.clear();
 
         this.ctx.fillStyle = COLORS.WHITE;
@@ -525,14 +526,49 @@ class Renderer {
         // PvP Button
         this.drawButton(SCREEN_WIDTH / 2 - 150, 350, 300, 80, '#006400', 'Player vs Player');
 
-        // PvA Button (Coming Soon)
-        this.drawButton(SCREEN_WIDTH / 2 - 150, 470, 300, 80, '#333333', 'Player vs AI');
-        this.ctx.fillStyle = '#FFFF00';
-        this.ctx.font = '16px Arial';
-        this.ctx.fillText('Coming Soon', SCREEN_WIDTH / 2, 530);
+        // COM Button (active)
+        this.drawButton(SCREEN_WIDTH / 2 - 150, 470, 300, 80, '#00224A', 'Player vs COM');
+
+        // Difficulty selector (shown when COM button clicked)
+        if (showDifficultySelect) {
+            this.drawDifficultySelector();
+        }
 
         // Developer Settings gear icon
         this.drawGearIcon(SCREEN_WIDTH / 2 + 205, 390, 18);
+    }
+
+    drawDifficultySelector() {
+        const cx = SCREEN_WIDTH / 2;
+        const btnW = 90, btnH = 50, gap = 10;
+        const startX = cx - (btnW * 3 + gap * 2) / 2;
+        const y = 560;
+
+        // Label
+        this.ctx.fillStyle = '#AAAACC';
+        this.ctx.font = '16px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('Select Difficulty', cx, y - 8);
+
+        // Easy
+        this.drawButton(startX, y, btnW, btnH, '#1A4A1A', 'Easy');
+        // Normal
+        this.drawButton(startX + btnW + gap, y, btnW, btnH, '#4A3A0A', 'Normal');
+        // Hard
+        this.drawButton(startX + 2 * (btnW + gap), y, btnW, btnH, '#4A0A0A', 'Hard');
+    }
+
+    drawComThinking(now) {
+        const ctx = this.ctx;
+        // Pulsing dots animation
+        const dots = '.'.repeat(Math.floor((now / 500) % 4));
+        const panelCenterX = SCREEN_WIDTH - PANEL_WIDTH / 2;
+
+        ctx.fillStyle = '#FFD700';
+        ctx.font = 'bold 18px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`COM thinking${dots}`, panelCenterX, SCREEN_HEIGHT - 30);
     }
 
     drawButton(x, y, width, height, color, text) {
@@ -552,14 +588,15 @@ class Renderer {
 
     // --- Game Over ---
 
-    drawGameOver(winner, reason) {
+    drawGameOver(winner, reason, gameMode) {
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
         this.ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
+        const winnerLabel = (gameMode === 'com' && winner === 2) ? 'COM' : `Player ${winner}`;
         this.ctx.fillStyle = '#FFD700';
         this.ctx.font = 'bold 48px Arial';
         this.ctx.textAlign = 'center';
-        this.ctx.fillText(`Player ${winner} Wins!`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 60);
+        this.ctx.fillText(`${winnerLabel} Wins!`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 60);
 
         this.ctx.fillStyle = COLORS.WHITE;
         this.ctx.font = '24px Arial';
@@ -570,7 +607,7 @@ class Renderer {
 
     // --- Skill Selection ---
 
-    drawSkillSelection(player1, player2) {
+    drawSkillSelection(player1, player2, gameMode) {
         this.clear();
 
         this.ctx.fillStyle = COLORS.WHITE;
@@ -578,8 +615,8 @@ class Renderer {
         this.ctx.textAlign = 'center';
         this.ctx.fillText('Select Special Skill', SCREEN_WIDTH / 2, 50);
 
-        this.drawSkillPanel(player1, 20, COLORS.P1_PANEL_BG);
-        this.drawSkillPanel(player2, SCREEN_WIDTH - PANEL_WIDTH + 20, COLORS.P2_PANEL_BG);
+        this.drawSkillPanel(player1, 20, COLORS.P1_PANEL_BG, gameMode);
+        this.drawSkillPanel(player2, SCREEN_WIDTH - PANEL_WIDTH + 20, COLORS.P2_PANEL_BG, gameMode);
 
         this.ctx.fillStyle = COLORS.WHITE;
         this.ctx.font = '20px Arial';
@@ -591,14 +628,15 @@ class Renderer {
         }
     }
 
-    drawSkillPanel(player, panelX, bgColor) {
+    drawSkillPanel(player, panelX, bgColor, gameMode) {
         this.ctx.fillStyle = bgColor;
         this.ctx.fillRect(panelX - 20, 80, PANEL_WIDTH, SCREEN_HEIGHT - 100);
 
+        const label = (gameMode === 'com' && player.playerNum === 2) ? 'COM' : `Player ${player.playerNum}`;
         this.ctx.fillStyle = COLORS.WHITE;
         this.ctx.font = 'bold 28px Arial';
         this.ctx.textAlign = 'left';
-        this.ctx.fillText(`Player ${player.playerNum}`, panelX, 130);
+        this.ctx.fillText(label, panelX, 130);
 
         if (player.skillConfirmed) {
             this.ctx.fillStyle = '#00FF00';

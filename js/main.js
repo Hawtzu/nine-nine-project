@@ -3,6 +3,7 @@ let game;
 let renderer;
 let settings;
 let animManager;
+let comPlayer;
 
 function init() {
     const canvas = document.getElementById('game-canvas');
@@ -10,6 +11,7 @@ function init() {
     game = new Game();
     settings = new Settings();
     animManager = new AnimationManager();
+    comPlayer = new ComPlayer(game);
 
     // Add event listeners
     canvas.addEventListener('click', handleClick);
@@ -73,7 +75,7 @@ function render(now) {
 
     switch (game.phase) {
         case PHASES.START_SCREEN:
-            renderer.drawStartScreen();
+            renderer.drawStartScreen(game.showDifficultySelect);
             break;
 
         case PHASES.SETTINGS:
@@ -81,7 +83,7 @@ function render(now) {
             break;
 
         case PHASES.SKILL_SELECTION:
-            renderer.drawSkillSelection(game.player1, game.player2);
+            renderer.drawSkillSelection(game.player1, game.player2, game.gameMode);
 
             // Draw hover tooltip for hovered skill
             if (game.hoveredSkill) {
@@ -94,7 +96,7 @@ function render(now) {
 
         case PHASES.ANIMATING:
             // Draw panels and board
-            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase);
+            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode);
             renderer.drawBoard(game.board, now);
             renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
 
@@ -116,7 +118,7 @@ function render(now) {
         case PHASES.SKILL_TARGET:
         case PHASES.WARP_SELECT:
             // Draw panels
-            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase);
+            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode);
 
             // Draw board
             renderer.drawBoard(game.board, now);
@@ -177,15 +179,24 @@ function render(now) {
 
         case PHASES.GAME_OVER:
             // Draw the game state first
-            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase);
+            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode);
             renderer.drawBoard(game.board, now);
             renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
             renderer.drawPlayer(game.player1, null, now);
             renderer.drawPlayer(game.player2, null, now);
 
             // Draw game over overlay
-            renderer.drawGameOver(game.winner, game.winReason);
+            renderer.drawGameOver(game.winner, game.winReason, game.gameMode);
             break;
+    }
+
+    // Draw "COM thinking..." indicator during COM's turn
+    if (game.gameMode === 'com' && game.currentTurn === 2 &&
+        game.phase !== PHASES.START_SCREEN &&
+        game.phase !== PHASES.GAME_OVER &&
+        game.phase !== PHASES.SETTINGS &&
+        game.phase !== PHASES.SKILL_SELECTION) {
+        renderer.drawComThinking(now);
     }
 }
 

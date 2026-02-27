@@ -6,7 +6,9 @@ class Game {
         this.player2 = null;
         this.currentTurn = 1;
         this.phase = PHASES.START_SCREEN;
-        this.gameMode = null; // 'pvp' or 'pva'
+        this.gameMode = null; // 'pvp' or 'com'
+        this.comDifficulty = null;
+        this.showDifficultySelect = false;
         this.diceRoll = 0;
         this.placementType = 'stone';
         this.movableTiles = [];
@@ -27,6 +29,10 @@ class Game {
         this.hoveredKamakuraIndex = null; // index of hovered pattern
         this.pendingMoveRow = -1;
         this.pendingMoveCol = -1;
+
+        // Replay state
+        this.replaySelectScrollOffset = 0;
+        this.replaySelectReplays = [];
     }
 
     generateDiceValue() {
@@ -40,6 +46,7 @@ class Game {
         this.currentTurn = 1;
         this.diceRoll = 0;
         this.winner = null;
+        if (typeof gameLog !== 'undefined') gameLog.reset();
         this.winReason = '';
         this.lastMoveDirectionType = DIRECTION_TYPE.CROSS;
         this.moveMode = DIRECTION_TYPE.CROSS;
@@ -50,8 +57,12 @@ class Game {
         this.sniperAnimStart = 0;
         this.kamakuraPatterns = [];
         this.hoveredKamakuraIndex = null;
+        this.showDifficultySelect = false;
         if (typeof animManager !== 'undefined' && animManager) {
             animManager.reset();
+        }
+        if (typeof comPlayer !== 'undefined' && comPlayer) {
+            comPlayer.reset();
         }
         const gen = () => this.generateDiceValue();
         this.player1.initDiceQueue(gen);
@@ -63,17 +74,27 @@ class Game {
         this.gameMode = mode;
         this.init();
         this.phase = PHASES.SKILL_SELECTION;
+        // In COM mode, trigger COM's skill selection after a delay
+        if (mode === 'com' && typeof comPlayer !== 'undefined' && comPlayer) {
+            comPlayer.difficulty = this.comDifficulty || COM_DIFFICULTY.NORMAL;
+            comPlayer.executeAfterDelay(() => comPlayer.decideSkillSelection(), 'SKILL_SELECTION');
+        }
     }
 
     selectSkill(playerNum, skill) {
         const player = playerNum === 1 ? this.player1 : this.player2;
         if (!player.skillConfirmed) {
             player.setSpecialSkill(skill);
+            if (typeof gameLog !== 'undefined') gameLog.log('skill_select', { player: playerNum, skill });
         }
 
         if (this.player1.skillConfirmed && this.player2.skillConfirmed) {
             this.setupInitialBoard();
             this.phase = PHASES.ROLL;
+            // If COM goes first, trigger COM turn
+            if (this.gameMode === 'com' && this.currentTurn === 2) {
+                comPlayer.startTurn();
+            }
         }
     }
 
@@ -91,6 +112,7 @@ class Game {
             this.board.setTile(pos.row, pos.col, MARKERS.STONE);
         }
         this.currentTurn = Math.random() < 0.5 ? 1 : 2;
+        if (typeof gameLog !== 'undefined') gameLog.recordSetup(this);
     }
 
     findValidFountainPosition(playerNum) {
@@ -193,6 +215,7 @@ class Game {
         this.moveMode = DIRECTION_TYPE.CROSS;
         const currentPlayer = this.getCurrentPlayer();
         this.diceRoll = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
+        if (typeof gameLog !== 'undefined') gameLog.log('roll', { player: this.currentTurn, dice: this.diceRoll, queue: [...currentPlayer.diceQueue] });
         if (!this.hasAnyMovableTile()) {
             this.gameOver(this.currentTurn === 1 ? 2 : 1, 'is blocked and cannot move!');
         } else {
@@ -208,6 +231,7 @@ class Game {
         currentPlayer.deductPoints(SKILL_COSTS.stock);
         const diceValue = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
         currentPlayer.stockDice(diceValue);
+        if (typeof gameLog !== 'undefined') gameLog.log('stock', { player: this.currentTurn, storedDice: diceValue });
         this.rollDice();
         return true;
     }
@@ -216,9 +240,11 @@ class Game {
         this.moveMode = DIRECTION_TYPE.CROSS;
         const currentPlayer = this.getCurrentPlayer();
         // CURRENTをStock値に置き換え、ストック消費
-        currentPlayer.diceQueue[0] = currentPlayer.useStock();
+        const stockVal = currentPlayer.useStock();
+        currentPlayer.diceQueue[0] = stockVal;
         // そのCURRENTでRoll（shiftしてMOVEへ）
         this.diceRoll = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
+        if (typeof gameLog !== 'undefined') gameLog.log('use_stock', { player: this.currentTurn, stockVal, dice: this.diceRoll, queue: [...currentPlayer.diceQueue] });
         if (!this.hasAnyMovableTile()) {
             this.gameOver(this.currentTurn === 1 ? 2 : 1, 'is blocked and cannot move!');
         } else {
@@ -311,6 +337,7 @@ class Game {
             this.moveMode = DIRECTION_TYPE.CROSS;
         }
         this.findMovableTiles();
+        if (typeof gameLog !== 'undefined') gameLog.log('toggle_mode', { player: this.currentTurn, mode: this.moveMode });
         return true;
     }
 
@@ -344,6 +371,7 @@ class Game {
         const fromRow = currentPlayer.row;
         const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
+        if (typeof gameLog !== 'undefined') gameLog.log('move', { player: this.currentTurn, from: { row: fromRow, col: fromCol }, to: { row, col }, mode: this.moveMode });
 
         if (this.moveMode === DIRECTION_TYPE.DIAGONAL) {
             currentPlayer.deductPoints(SKILL_COSTS.diagonal_move);
@@ -369,6 +397,7 @@ class Game {
         if (landedTile === MARKERS.FOUNTAIN) {
             currentPlayer.addPoints(GAME_SETTINGS.fountainPickup);
             this.board.setTile(row, col, MARKERS.EMPTY);
+            if (typeof gameLog !== 'undefined') gameLog.log('fountain', { player: this.currentTurn, pos: { row, col }, pts: GAME_SETTINGS.fountainPickup });
         }
 
         // Warp hole effect: teleport to another warp hole
@@ -378,6 +407,10 @@ class Game {
                 this.clearHighlights();
                 this.warpSelectTiles = otherWarps;
                 this.phase = PHASES.WARP_SELECT;
+                // Trigger COM warp decision
+                if (this.gameMode === 'com' && this.currentTurn === 2 && !this.winner) {
+                    comPlayer.executeAfterDelay(() => comPlayer.decideWarpSelect(), 'WARP');
+                }
                 return;
             }
             // No other warp holes → fall through to normal PLACE
@@ -387,6 +420,11 @@ class Game {
         this.placementType = 'stone';
         this.clearHighlights();
         this.findPlaceableTiles();
+
+        // Trigger COM place decision
+        if (this.gameMode === 'com' && this.currentTurn === 2 && !this.winner) {
+            comPlayer.executeAfterDelay(() => comPlayer.decidePlacePhase(), 'PLACE');
+        }
     }
 
     canUseDrillToSurvive() {
@@ -446,6 +484,7 @@ class Game {
 
     placeObject(row, col) {
         const currentPlayer = this.getCurrentPlayer();
+        if (typeof gameLog !== 'undefined') gameLog.log('place', { player: this.currentTurn, pos: { row, col }, type: this.placementType });
 
         if (this.placementType === 'stone') {
             // Destroy checkpoint if stone is placed on it
@@ -534,6 +573,7 @@ class Game {
     useDrill(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         if (currentPlayer.deductPoints(SKILL_COSTS.drill)) {
+            if (typeof gameLog !== 'undefined') gameLog.log('drill', { player: this.currentTurn, pos: { row, col } });
             this.board.setTile(row, col, MARKERS.EMPTY);
             if (this.drillForSurvival) {
                 this.drillForSurvival = false;
@@ -590,6 +630,7 @@ class Game {
         currentPlayer.deductPoints(SKILL_COSTS.domination);
         const otherPlayer = this.getOtherPlayer();
         otherPlayer.dominationTurnsLeft = 3;
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'domination' });
         this.endTurn();
         return true;
     }
@@ -605,6 +646,7 @@ class Game {
             // Cannot teleport if opponent is on checkpoint
             if (cp.row === otherPos.row && cp.col === otherPos.col) return false;
             currentPlayer.deductPoints(SKILL_COSTS.checkpoint);
+            if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'checkpoint_teleport', to: { row: cp.row, col: cp.col } });
             const fromRow = currentPlayer.row;
             const fromCol = currentPlayer.col;
             currentPlayer.moveTo(cp.row, cp.col);
@@ -617,6 +659,7 @@ class Game {
             // --- Place mode ---
             const pos = currentPlayer.getPosition();
             currentPlayer.deductPoints(SKILL_COSTS.checkpoint);
+            if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'checkpoint_place', pos: { row: pos.row, col: pos.col } });
             this.board.setCheckpoint(pos.row, pos.col, currentPlayer.playerNum);
             currentPlayer.setCheckpoint(pos.row, pos.col);
             // Destroy surrounding 8-direction stones
@@ -676,6 +719,7 @@ class Game {
     executeKamakura(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         currentPlayer.deductPoints(SKILL_COSTS.kamakura);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'kamakura', target: { row, col } });
         const pattern = this.kamakuraPatterns.find(
             p => p.middle.row === row && p.middle.col === col
         );
@@ -733,6 +777,7 @@ class Game {
         if (!currentPlayer.canAfford(SKILL_COSTS.sniper)) return false;
         if (!this.checkSniperCondition()) return false;
         currentPlayer.deductPoints(SKILL_COSTS.sniper);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'sniper' });
         // Start sniper animation instead of immediate game over
         this.sniperAnimating = true;
         this.sniperAnimStart = performance.now();
@@ -756,6 +801,7 @@ class Game {
         if (!currentPlayer.canAfford(SKILL_COSTS.hitokiri)) return false;
         if (!this.checkHitokiriCondition()) return false;
         currentPlayer.deductPoints(SKILL_COSTS.hitokiri);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'hitokiri' });
         this.gameOver(this.currentTurn, 'slashed the opponent!');
         return true;
     }
@@ -786,6 +832,7 @@ class Game {
     executeSuriashi(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         currentPlayer.deductPoints(SKILL_COSTS.suriashi);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'suriashi', target: { row, col } });
         const fromRow = currentPlayer.row;
         const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
@@ -821,6 +868,7 @@ class Game {
     executeMeteor(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         currentPlayer.deductPoints(SKILL_COSTS.meteor);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'meteor', target: { row, col } });
         this.board.setTile(row, col, MARKERS.STONE);
         this.endTurn();
     }
@@ -882,6 +930,7 @@ class Game {
     executeMomonga(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         currentPlayer.deductPoints(SKILL_COSTS.momonga);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'momonga', target: { row, col } });
         const fromRow = currentPlayer.row;
         const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
@@ -895,6 +944,10 @@ class Game {
     // --- Turn Management ---
 
     endTurn() {
+        if (typeof gameLog !== 'undefined') {
+            gameLog.log('end_turn', { player: this.currentTurn, p1pts: this.player1.points, p2pts: this.player2.points });
+            gameLog.incrementTurn();
+        }
         const oldPlayer = this.getCurrentPlayer();
         if (oldPlayer.dominationTurnsLeft > 0) {
             oldPlayer.dominationTurnsLeft--;
@@ -911,6 +964,11 @@ class Game {
         this.phase = PHASES.ROLL;
         this.diceRoll = 0;
         this.clearHighlights();
+
+        // Trigger COM turn
+        if (this.gameMode === 'com' && this.currentTurn === 2 && !this.winner) {
+            comPlayer.startTurn();
+        }
     }
 
     getOtherWarpHoles(currentRow, currentCol) {
@@ -933,6 +991,7 @@ class Game {
         const fromRow = currentPlayer.row;
         const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
+        if (typeof gameLog !== 'undefined') gameLog.log('warp', { player: this.currentTurn, from: { row: fromRow, col: fromCol }, to: { row, col } });
         animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, row, col, 'teleport');
         this.phase = PHASES.ANIMATING;
         animManager.playerAnims[currentPlayer.playerNum].onComplete = () => {
@@ -971,8 +1030,18 @@ class Game {
         if (this.winner === null) {
             const loser = winner === 1 ? 2 : 1;
             this.winner = winner;
-            this.winReason = `Player ${loser} ${reason}`;
+            const loserLabel = (this.gameMode === 'com' && loser === 2) ? 'COM' : `Player ${loser}`;
+            this.winReason = `${loserLabel} ${reason}`;
             this.phase = PHASES.GAME_OVER;
+            if (typeof gameLog !== 'undefined') gameLog.log('game_over', { winner, reason, p1pts: this.player1.points, p2pts: this.player2.points });
+            // Cancel any pending COM actions
+            if (typeof comPlayer !== 'undefined' && comPlayer) {
+                comPlayer.cancelPending();
+            }
+            // Auto-save replay to localStorage
+            if (typeof replayEngine !== 'undefined' && replayEngine && typeof gameLog !== 'undefined') {
+                replayEngine.saveToStorage(gameLog);
+            }
         }
     }
 
@@ -989,6 +1058,16 @@ class Game {
     handleClick(x, y) {
         // Block input during animation
         if (this.phase === PHASES.ANIMATING) return false;
+
+        // Block clicks during COM's turn (except menus and replay)
+        if (this.gameMode === 'com' && this.currentTurn === 2 &&
+            this.phase !== PHASES.START_SCREEN &&
+            this.phase !== PHASES.GAME_OVER &&
+            this.phase !== PHASES.SETTINGS &&
+            this.phase !== PHASES.SKILL_SELECTION &&
+            this.phase !== PHASES.REPLAY) {
+            return false;
+        }
 
         switch (this.phase) {
             case PHASES.START_SCREEN:
@@ -1011,6 +1090,8 @@ class Game {
                 return this.handleWarpSelectClick(x, y);
             case PHASES.GAME_OVER:
                 return this.handleGameOverClick(x, y);
+            case PHASES.REPLAY:
+                return this.handleReplayClick(x, y);
         }
     }
 
@@ -1031,8 +1112,8 @@ class Game {
             }
         }
 
-        // Player 2 panel (right side)
-        if (!this.player2.skillConfirmed) {
+        // Player 2 panel (right side) — skip in COM mode
+        if (!this.player2.skillConfirmed && this.gameMode !== 'com') {
             const panelX = SCREEN_WIDTH - PANEL_WIDTH + 20;
             for (let i = 0; i < SKILL_ORDER.length; i++) {
                 const row = Math.floor(i / 2), col = i % 2;
@@ -1049,19 +1130,66 @@ class Game {
     }
 
     handleStartScreenClick(x, y) {
+        const cx = SCREEN_WIDTH / 2;
+
         // PvP button
-        if (x >= SCREEN_WIDTH / 2 - 150 && x <= SCREEN_WIDTH / 2 + 150 &&
-            y >= 350 && y <= 430) {
+        if (x >= cx - 150 && x <= cx + 150 && y >= 350 && y <= 430) {
+            this.showDifficultySelect = false;
             this.startGame('pvp');
             return true;
         }
+
+        // COM button
+        if (x >= cx - 150 && x <= cx + 150 && y >= 470 && y <= 550) {
+            this.showDifficultySelect = true;
+            return true;
+        }
+
+        // Difficulty buttons (shown when showDifficultySelect is true)
+        if (this.showDifficultySelect) {
+            const btnW = 90, btnH = 50, gap = 10;
+            const startX = cx - (btnW * 3 + gap * 2) / 2;
+            const btnY = 560;
+
+            if (y >= btnY && y <= btnY + btnH) {
+                if (x >= startX && x <= startX + btnW) {
+                    this.comDifficulty = COM_DIFFICULTY.EASY;
+                    this.startGame('com');
+                    return true;
+                }
+                if (x >= startX + btnW + gap && x <= startX + 2 * btnW + gap) {
+                    this.comDifficulty = COM_DIFFICULTY.NORMAL;
+                    this.startGame('com');
+                    return true;
+                }
+                // Hard is disabled (Coming Soon)
+            }
+        }
+
+        // Replay button (below COM/difficulty area)
+        if (x >= cx - 150 && x <= cx + 150 && y >= 640 && y <= 700) {
+            this.enterReplaySelect();
+            return true;
+        }
+
         // Developer Settings gear icon
-        if (x >= SCREEN_WIDTH / 2 + 187 && x <= SCREEN_WIDTH / 2 + 223 &&
-            y >= 372 && y <= 408) {
+        if (x >= cx + 187 && x <= cx + 223 && y >= 372 && y <= 408) {
             this.phase = PHASES.SETTINGS;
             return true;
         }
         return false;
+    }
+
+    enterReplaySelect() {
+        if (typeof replayEngine !== 'undefined' && replayEngine) {
+            this.replaySelectReplays = replayEngine.loadFromStorage();
+        } else {
+            this.replaySelectReplays = [];
+        }
+        this.replaySelectScrollOffset = 0;
+        this.phase = PHASES.REPLAY;
+        this.winner = null;
+        this._replayMode = 'select'; // 'select' or 'playback'
     }
 
     handleSettingsClick(x, y) {
@@ -1253,11 +1381,152 @@ class Game {
     }
 
     handleGameOverClick(x, y) {
-        if (x >= SCREEN_WIDTH / 2 - 110 && x <= SCREEN_WIDTH / 2 + 110 &&
+        // Main Menu button
+        if (x >= SCREEN_WIDTH / 2 - 230 && x <= SCREEN_WIDTH / 2 - 10 &&
             y >= SCREEN_HEIGHT / 2 + 50 && y <= SCREEN_HEIGHT / 2 + 120) {
             this.phase = PHASES.START_SCREEN;
             return true;
         }
+        // Watch Replay button
+        if (x >= SCREEN_WIDTH / 2 + 10 && x <= SCREEN_WIDTH / 2 + 230 &&
+            y >= SCREEN_HEIGHT / 2 + 50 && y <= SCREEN_HEIGHT / 2 + 120) {
+            if (typeof replayEngine !== 'undefined' && replayEngine && typeof gameLog !== 'undefined') {
+                const logData = { setup: gameLog.setupData, log: gameLog.entries };
+                replayEngine.load(logData);
+                replayEngine.first();
+                replayEngine.applyToGame(this);
+                this._replayMode = 'playback';
+                this.phase = PHASES.REPLAY;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    handleReplayClick(x, y) {
+        if (this._replayMode === 'select') {
+            return this._handleReplaySelectClick(x, y);
+        } else if (this._replayMode === 'playback') {
+            return this._handleReplayPlaybackClick(x, y);
+        }
+        return false;
+    }
+
+    _handleReplaySelectClick(x, y) {
+        const cx = SCREEN_WIDTH / 2;
+
+        // Back button (top-left)
+        if (x >= 30 && x <= 180 && y >= 15 && y <= 65) {
+            this.phase = PHASES.START_SCREEN;
+            return true;
+        }
+
+        // Import Log button (top-right)
+        if (x >= SCREEN_WIDTH - 220 && x <= SCREEN_WIDTH - 20 && y >= 15 && y <= 65) {
+            const fileInput = document.getElementById('replay-file-input');
+            if (fileInput) fileInput.click();
+            return true;
+        }
+
+        // Scroll buttons
+        const listY = 100;
+        const itemH = 70;
+        const listH = SCREEN_HEIGHT - 120;
+        const maxVisible = Math.floor(listH / itemH);
+
+        // Scroll Up (if offset > 0)
+        if (this.replaySelectScrollOffset > 0 &&
+            x >= cx - 30 && x <= cx + 30 && y >= listY - 25 && y <= listY) {
+            this.replaySelectScrollOffset--;
+            return true;
+        }
+
+        // Scroll Down
+        if (this.replaySelectScrollOffset + maxVisible < this.replaySelectReplays.length &&
+            x >= cx - 30 && x <= cx + 30 &&
+            y >= listY + maxVisible * itemH && y <= listY + maxVisible * itemH + 25) {
+            this.replaySelectScrollOffset++;
+            return true;
+        }
+
+        // Click on replay entry
+        const replays = this.replaySelectReplays;
+        for (let i = 0; i < maxVisible && i + this.replaySelectScrollOffset < replays.length; i++) {
+            const entryY = listY + i * itemH;
+            if (x >= 40 && x <= SCREEN_WIDTH - 40 && y >= entryY && y <= entryY + itemH - 5) {
+                const replay = replays[i + this.replaySelectScrollOffset];
+                if (replay && replay.log) {
+                    if (typeof replayEngine !== 'undefined' && replayEngine) {
+                        replayEngine.load(replay.log);
+                        replayEngine.first();
+                        // Need to ensure game objects exist for rendering
+                        if (!this.player1) {
+                            this.player1 = new Player(1, 4, 0);
+                            this.player2 = new Player(2, 4, BOARD_SIZE - 1);
+                        }
+                        this.gameMode = replay.mode || null;
+                        replayEngine.applyToGame(this);
+                        this._replayMode = 'playback';
+                    }
+                }
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    _handleReplayPlaybackClick(x, y) {
+        if (typeof replayEngine === 'undefined' || !replayEngine) return false;
+
+        // Back to Menu button (top-left)
+        if (x >= 30 && x <= 230 && y >= 15 && y <= 55) {
+            this.phase = PHASES.START_SCREEN;
+            this._replayMode = null;
+            return true;
+        }
+
+        // Back to List button (next to Back to Menu)
+        if (x >= 240 && x <= 400 && y >= 15 && y <= 55) {
+            this.enterReplaySelect();
+            return true;
+        }
+
+        // Control bar at bottom
+        const barY = SCREEN_HEIGHT - 50;
+        const barH = 40;
+        const btnW = 50;
+        const cx = SCREEN_WIDTH / 2;
+
+        if (y >= barY && y <= barY + barH) {
+            // ◀◀ First
+            if (x >= cx - 180 && x <= cx - 180 + btnW) {
+                replayEngine.first();
+                replayEngine.applyToGame(this);
+                return true;
+            }
+            // ◀ Prev
+            if (x >= cx - 110 && x <= cx - 110 + btnW) {
+                if (replayEngine.prev()) {
+                    replayEngine.applyToGame(this);
+                }
+                return true;
+            }
+            // ▶ Next
+            if (x >= cx + 60 && x <= cx + 60 + btnW) {
+                if (replayEngine.next()) {
+                    replayEngine.applyToGame(this);
+                }
+                return true;
+            }
+            // ▶▶ Last
+            if (x >= cx + 130 && x <= cx + 130 + btnW) {
+                replayEngine.last();
+                replayEngine.applyToGame(this);
+                return true;
+            }
+        }
+
         return false;
     }
 

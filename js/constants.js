@@ -191,3 +191,20 @@ const KAMAKURA_PATTERNS = [
         middle: {dr:0,dc:1}
     }
 ];
+
+// --- COM (Computer) Battle ---
+const COM_DIFFICULTY = {
+    EASY: 'easy',
+    NORMAL: 'normal',
+    HARD: 'hard'
+};
+
+const COM_DELAYS = {
+    SKILL_SELECTION: 800,
+    ROLL: 600,
+    MOVE: 800,
+    PLACE: 700,
+    DRILL: 700,
+    SKILL_TARGET: 800,
+    WARP: 600
+};

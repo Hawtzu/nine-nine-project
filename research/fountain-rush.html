@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Fountain Rush Algorithm Research</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background: #1a1a2e;
+    color: #ccc;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    padding: 20px;
+}
+h1 { color: #00E5FF; font-size: 22px; margin-bottom: 16px; }
+.container { display: flex; gap: 24px; flex-wrap: wrap; }
+.grid-panel { flex-shrink: 0; }
+.controls { display: flex; flex-direction: column; gap: 12px; min-width: 260px; }
+canvas { border: 1px solid #444; cursor: crosshair; }
+.section { background: #0f0f23; border: 1px solid #333; padding: 12px; border-radius: 4px; }
+.section h3 { color: #00E5FF; font-size: 14px; margin-bottom: 8px; }
+.btn-group { display: flex; flex-wrap: wrap; gap: 4px; }
+.btn {
+    padding: 6px 12px; font-size: 12px; cursor: pointer;
+    border: 1px solid #444; background: #1a1a3e; color: #aaa;
+    transition: all 0.15s;
+}
+.btn:hover { border-color: #00E5FF; color: #fff; }
+.btn.active { background: #003344; border-color: #00E5FF; color: #00E5FF; }
+.btn.run { background: #0a3a0a; border-color: #00FF88; color: #00FF88; }
+.btn.run:hover { background: #0a5a0a; }
+.btn.danger { background: #3a0a0a; border-color: #FF4444; color: #FF4444; }
+label { font-size: 12px; color: #888; display: block; margin-bottom: 2px; }
+input[type=number] {
+    width: 60px; padding: 4px 6px; background: #0f0f23; border: 1px solid #444;
+    color: #fff; font-size: 13px;
+}
+.results { margin-top: 16px; width: 100%; max-width: 900px; }
+#result-text {
+    background: #0a0a1a; border: 1px solid #333; padding: 12px;
+    font-family: monospace; font-size: 12px; white-space: pre-wrap;
+    min-height: 100px; max-height: 400px; overflow-y: auto; color: #aaa;
+}
+.legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 11px; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-color { width: 14px; height: 14px; border: 1px solid #555; }
+</style>
+</head>
+<body>
+<h1>Fountain Rush Algorithm Research</h1>
+<div class="container">
+    <div class="grid-panel">
+        <canvas id="board" width="540" height="540"></canvas>
+        <div class="legend">
+            <div class="legend-item"><div class="legend-color" style="background:#00AAFF"></div>Player</div>
+            <div class="legend-item"><div class="legend-color" style="background:#FF4444"></div>Opponent</div>
+            <div class="legend-item"><div class="legend-color" style="background:#556677"></div>Stone</div>
+            <div class="legend-item"><div class="legend-color" style="background:#FFD700"></div>Fountain</div>
+            <div class="legend-item"><div class="legend-color" style="background:#00FF88"></div>Best Move</div>
+            <div class="legend-item"><div class="legend-color" style="background:rgba(255,255,0,0.3)"></div>Candidates</div>
+        </div>
+    </div>
+    <div class="controls">
+        <div class="section">
+            <h3>Placement Mode</h3>
+            <div class="btn-group">
+                <button class="btn active" data-mode="player">Player (P)</button>
+                <button class="btn" data-mode="opponent">Opponent (O)</button>
+                <button class="btn" data-mode="stone">Stone (S)</button>
+                <button class="btn" data-mode="fountain">Fountain (F)</button>
+                <button class="btn" data-mode="erase">Erase (E)</button>
+            </div>
+        </div>
+        <div class="section">
+            <h3>Dice Values</h3>
+            <div style="display:flex; gap:12px; align-items:end">
+                <div><label>Current</label><input type="number" id="dice0" min="1" max="3" value="2"></div>
+                <div><label>Next</label><input type="number" id="dice1" min="1" max="3" value="2"></div>
+                <div><label>Next+1</label><input type="number" id="dice2" min="1" max="3" value="2"></div>
+            </div>
+            <div style="margin-top:8px">
+                <label>Player Points</label>
+                <input type="number" id="points" min="0" max="999" value="50" style="width:80px">
+            </div>
+        </div>
+        <div class="section">
+            <h3>Actions</h3>
+            <div class="btn-group">
+                <button class="btn run" id="run-btn">Run Fountain Rush</button>
+                <button class="btn" id="territory-btn">Show Territory</button>
+            </div>
+            <div class="btn-group" style="margin-top:6px">
+                <button class="btn" id="show-moves-btn">Show All Moves</button>
+                <button class="btn" id="clear-btn">Clear Highlights</button>
+                <button class="btn danger" id="reset-btn">Reset Board</button>
+            </div>
+        </div>
+        <div class="section">
+            <h3>Presets</h3>
+            <div class="btn-group">
+                <button class="btn" id="preset-default">Default Start</button>
+                <button class="btn" id="preset-close">Fountain Near</button>
+                <button class="btn" id="preset-blocked">Path Blocked</button>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="results">
+    <div class="section">
+        <h3>Results</h3>
+        <div id="result-text">Click "Run Fountain Rush" to analyze...</div>
+    </div>
+</div>
+
+<script>
+// ===== Constants =====
+const BOARD_SIZE = 9;
+const CELL_SIZE = 60;
+const MARKERS = { EMPTY: ' ', STONE: 'S', FOUNTAIN: 'F', BOMB: 'B', ICE: 'I', SWAMP: 'W', WARP: 'P', SNOW: 'N', CHECKPOINT: 'C' };
+const CROSS_DIRECTIONS = [{dr:0,dc:1},{dr:0,dc:-1},{dr:1,dc:0},{dr:-1,dc:0}];
+const DIAGONAL_DIRECTIONS = [{dr:-1,dc:-1},{dr:-1,dc:1},{dr:1,dc:-1},{dr:1,dc:1}];
+const SKILL_COSTS = { diagonal_move: 10 };
+
+// ===== Board State =====
+let board = [];
+let playerPos = { row: 4, col: 0 };
+let opponentPos = { row: 4, col: 8 };
+let placementMode = 'player';
+let highlights = { best: null, candidates: [], territory: null, moves: [] };
+
+function resetBoard() {
+    board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(MARKERS.EMPTY));
+    playerPos = { row: 4, col: 0 };
+    opponentPos = { row: 4, col: 8 };
+    highlights = { best: null, candidates: [], territory: null, moves: [] };
+}
+
+function isValidPosition(r, c) {
+    return r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE;
+}
+
+function getTile(r, c) { return board[r][c]; }
+function setTile(r, c, v) { board[r][c] = v; }
+
+// ===== Algorithms (from com.js) =====
+
+function simulateMovableTiles(pos, diceValue, otherPos, diagonal) {
+    const directions = diagonal ? DIAGONAL_DIRECTIONS : CROSS_DIRECTIONS;
+    const results = [];
+    for (const dir of directions) {
+        let steps = diceValue;
+        let currentPos = { row: pos.row, col: pos.col };
+        let finalDest = null;
+        const visitedTiles = new Set();
+        let step = 1;
+        let isFallTrigger = false;
+
+        while (step <= steps) {
+            const nr = currentPos.row + dir.dr;
+            const nc = currentPos.col + dir.dc;
+            if (!isValidPosition(nr, nc)) { isFallTrigger = true; break; }
+            const tile = getTile(nr, nc);
+            if (tile === MARKERS.STONE || tile === MARKERS.SNOW ||
+                (nr === otherPos.row && nc === otherPos.col)) break;
+            finalDest = { row: nr, col: nc };
+            currentPos = { row: nr, col: nc };
+            if (tile === MARKERS.WARP) break;
+            const tileKey = `${nr},${nc}`;
+            if (tile === MARKERS.ICE && !visitedTiles.has(tileKey)) {
+                steps++; visitedTiles.add(tileKey);
+            }
+            if (tile === MARKERS.SWAMP && !visitedTiles.has(tileKey)) {
+                steps = Math.max(step, steps - 1); visitedTiles.add(tileKey);
+            }
+            step++;
+        }
+        if (finalDest) {
+            finalDest.isFallTrigger = isFallTrigger;
+            finalDest.isDiagonal = diagonal;
+            results.push(finalDest);
+        }
+    }
+    const seen = new Set();
+    return results.filter(t => {
+        const key = `${t.row},${t.col}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+function floodFillTerritory(startRow, startCol, otherPlayerPos) {
+    const visited = new Set();
+    visited.add(`${startRow},${startCol}`);
+    const queue = [{ row: startRow, col: startCol }];
+    let count = 1;
+    let head = 0;
+    while (head < queue.length) {
+        const { row, col } = queue[head++];
+        for (const dir of CROSS_DIRECTIONS) {
+            const nr = row + dir.dr;
+            const nc = col + dir.dc;
+            const key = `${nr},${nc}`;
+            if (visited.has(key)) continue;
+            if (!isValidPosition(nr, nc)) continue;
+            if (otherPlayerPos && nr === otherPlayerPos.row && nc === otherPlayerPos.col) continue;
+            const tile = getTile(nr, nc);
+            if (tile === MARKERS.STONE || tile === MARKERS.SNOW) continue;
+            visited.add(key);
+            queue.push({ row: nr, col: nc });
+            count++;
+        }
+    }
+    return { count, visited };
+}
+
+function countPlacementOptions(row, col, otherPlayerPos) {
+    let count = 0;
+    for (const dir of CROSS_DIRECTIONS) {
+        const nr = row + dir.dr;
+        const nc = col + dir.dc;
+        if (!isValidPosition(nr, nc)) continue;
+        if (otherPlayerPos && nr === otherPlayerPos.row && nc === otherPlayerPos.col) continue;
+        const tile = getTile(nr, nc);
+        if (tile !== MARKERS.STONE && tile !== MARKERS.SNOW) count++;
+    }
+    return count;
+}
+
+function chebyshevDistance(a, b) {
+    return Math.max(Math.abs(a.row - b.row), Math.abs(a.col - b.col));
+}
+
+function findFountains() {
+    const result = [];
+    for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = 0; c < BOARD_SIZE; c++)
+            if (getTile(r, c) === MARKERS.FOUNTAIN) result.push({ row: r, col: c });
+    return result;
+}
+
+function findTargetFountain() {
+    const fountains = findFountains();
+    if (fountains.length === 0) return null;
+    let closest = null, minDist = Infinity;
+    for (const f of fountains) {
+        const d = chebyshevDistance(playerPos, f);
+        if (d < minDist) { minDist = d; closest = f; }
+    }
+    return closest;
+}
+
+// ===== Main Analysis: planFountainRush =====
+
+function planFountainRush() {
+    const dice0 = parseInt(document.getElementById('dice0').value) || 2;
+    const dice1 = parseInt(document.getElementById('dice1').value) || 2;
+    const dice2 = parseInt(document.getElementById('dice2').value) || 2;
+    const pts = parseInt(document.getElementById('points').value) || 50;
+
+    const fountain = findTargetFountain();
+    if (!fountain) return { error: 'No fountain on board' };
+
+    // Turn 0 movable tiles (using dice0 = "current roll")
+    const t0cross = simulateMovableTiles(playerPos, dice0, opponentPos, false);
+    const t0diag = pts >= SKILL_COSTS.diagonal_move
+        ? simulateMovableTiles(playerPos, dice0, opponentPos, true) : [];
+    const t0all = t0cross.concat(t0diag);
+    const t0 = t0all.filter(t => !t.isFallTrigger);
+
+    const isFountain = (t) => t.row === fountain.row && t.col === fountain.col;
+
+    let bestMove = null;
+    let bestTurns = 4;
+    let bestDist = Infinity;
+    const allScores = [];
+
+    for (const m0 of t0) {
+        const d0 = chebyshevDistance(m0, fountain);
+        const placeOpts = countPlacementOptions(m0.row, m0.col, opponentPos);
+        let reachTurns = 4;
+        let pathInfo = '';
+
+        if (isFountain(m0)) {
+            reachTurns = 1;
+            pathInfo = 'Direct reach!';
+        } else {
+            // Turn 1
+            const diagCost = m0.isDiagonal ? SKILL_COSTS.diagonal_move : 0;
+            const pts1 = pts - diagCost + 10;
+            const t1 = simulateMovableTiles(m0, dice1, opponentPos, false)
+                .concat(pts1 >= SKILL_COSTS.diagonal_move ?
+                    simulateMovableTiles(m0, dice1, opponentPos, true) : [])
+                .filter(t => !t.isFallTrigger);
+
+            for (const m1 of t1) {
+                if (isFountain(m1)) {
+                    if (reachTurns > 2) {
+                        reachTurns = 2;
+                        pathInfo = `→ (${m1.row},${m1.col}) in T1`;
+                    }
+                    continue;
+                }
+                if (reachTurns <= 2) continue;
+
+                // Turn 2
+                const pts2 = pts1 - (m1.isDiagonal ? SKILL_COSTS.diagonal_move : 0) + 10;
+                const t2 = simulateMovableTiles(m1, dice2, opponentPos, false)
+                    .concat(pts2 >= SKILL_COSTS.diagonal_move ?
+                        simulateMovableTiles(m1, dice2, opponentPos, true) : [])
+                    .filter(t => !t.isFallTrigger);
+
+                for (const m2 of t2) {
+                    if (isFountain(m2)) {
+                        if (reachTurns > 3) {
+                            reachTurns = 3;
+                            pathInfo = `→ (${m1.row},${m1.col}) → (${m2.row},${m2.col}) in T2`;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (reachTurns < bestTurns || (reachTurns === bestTurns && d0 < bestDist)) {
+            bestTurns = reachTurns;
+            bestMove = m0;
+            bestDist = d0;
+        }
+        if (!bestMove || (bestTurns >= 4 && d0 < bestDist)) {
+            bestDist = d0;
+            bestMove = m0;
+        }
+
+        allScores.push({
+            pos: `(${m0.row},${m0.col})`,
+            dist: d0,
+            placeOpts,
+            reachTurns,
+            diagonal: m0.isDiagonal || false,
+            pathInfo
+        });
+    }
+
+    return { bestMove, bestTurns, bestDist, allScores, fountain, t0 };
+}
+
+// ===== Rendering =====
+
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Territory background
+    if (highlights.territory) {
+        const { pVisited, oVisited } = highlights.territory;
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                const key = `${r},${c}`;
+                const x = c * CELL_SIZE, y = r * CELL_SIZE;
+                if (pVisited.has(key) && !oVisited.has(key)) {
+                    ctx.fillStyle = 'rgba(0,100,255,0.15)';
+                    ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+                } else if (oVisited.has(key) && !pVisited.has(key)) {
+                    ctx.fillStyle = 'rgba(255,50,50,0.15)';
+                    ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+                } else if (pVisited.has(key) && oVisited.has(key)) {
+                    ctx.fillStyle = 'rgba(128,128,0,0.1)';
+                    ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+                }
+            }
+        }
+    }
+
+    // Candidate highlights
+    for (const c of highlights.candidates) {
+        const x = c.col * CELL_SIZE, y = c.row * CELL_SIZE;
+        ctx.fillStyle = 'rgba(255,255,0,0.2)';
+        ctx.fillRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4);
+        ctx.strokeStyle = 'rgba(255,255,0,0.5)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4);
+    }
+
+    // Move highlights
+    for (const m of highlights.moves) {
+        const x = m.col * CELL_SIZE, y = m.row * CELL_SIZE;
+        ctx.fillStyle = m.isFallTrigger ? 'rgba(255,0,0,0.2)' : 'rgba(0,200,255,0.2)';
+        ctx.fillRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4);
+    }
+
+    // Best move highlight
+    if (highlights.best) {
+        const x = highlights.best.col * CELL_SIZE, y = highlights.best.row * CELL_SIZE;
+        ctx.fillStyle = 'rgba(0,255,136,0.35)';
+        ctx.fillRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4);
+        ctx.strokeStyle = '#00FF88';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4);
+    }
+
+    // Grid
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= BOARD_SIZE; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * CELL_SIZE, 0); ctx.lineTo(i * CELL_SIZE, BOARD_SIZE * CELL_SIZE);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, i * CELL_SIZE); ctx.lineTo(BOARD_SIZE * CELL_SIZE, i * CELL_SIZE);
+        ctx.stroke();
+    }
+
+    // Tiles
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            const tile = getTile(r, c);
+            const cx = c * CELL_SIZE + CELL_SIZE / 2;
+            const cy = r * CELL_SIZE + CELL_SIZE / 2;
+
+            if (tile === MARKERS.STONE) {
+                ctx.fillStyle = '#556677';
+                ctx.beginPath();
+                drawOctagon(ctx, cx, cy, CELL_SIZE * 0.35);
+                ctx.fill();
+            } else if (tile === MARKERS.FOUNTAIN) {
+                ctx.fillStyle = '#FFD700';
+                ctx.beginPath();
+                ctx.arc(cx, cy, CELL_SIZE * 0.28, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#000';
+                ctx.font = '11px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('F', cx, cy);
+            }
+        }
+    }
+
+    // Player
+    ctx.fillStyle = '#00AAFF';
+    ctx.beginPath();
+    ctx.arc(playerPos.col * CELL_SIZE + CELL_SIZE / 2, playerPos.row * CELL_SIZE + CELL_SIZE / 2, CELL_SIZE * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('P', playerPos.col * CELL_SIZE + CELL_SIZE / 2, playerPos.row * CELL_SIZE + CELL_SIZE / 2);
+
+    // Opponent
+    ctx.fillStyle = '#FF4444';
+    ctx.beginPath();
+    ctx.arc(opponentPos.col * CELL_SIZE + CELL_SIZE / 2, opponentPos.row * CELL_SIZE + CELL_SIZE / 2, CELL_SIZE * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillText('O', opponentPos.col * CELL_SIZE + CELL_SIZE / 2, opponentPos.row * CELL_SIZE + CELL_SIZE / 2);
+
+    // Score annotations on candidates
+    for (const s of (highlights.scoreAnnotations || [])) {
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(s.text, s.col * CELL_SIZE + CELL_SIZE / 2, s.row * CELL_SIZE + 3);
+    }
+}
+
+function drawOctagon(ctx, cx, cy, r) {
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+        const angle = (Math.PI / 8) + (i * Math.PI / 4);
+        const x = cx + r * Math.cos(angle);
+        const y = cy + r * Math.sin(angle);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+}
+
+// ===== Event Handlers =====
+
+canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const col = Math.floor((e.clientX - rect.left) / CELL_SIZE);
+    const row = Math.floor((e.clientY - rect.top) / CELL_SIZE);
+    if (!isValidPosition(row, col)) return;
+
+    if (placementMode === 'player') {
+        // Clear old position if occupied
+        playerPos = { row, col };
+    } else if (placementMode === 'opponent') {
+        opponentPos = { row, col };
+    } else if (placementMode === 'stone') {
+        if (row === playerPos.row && col === playerPos.col) return;
+        if (row === opponentPos.row && col === opponentPos.col) return;
+        setTile(row, col, getTile(row, col) === MARKERS.STONE ? MARKERS.EMPTY : MARKERS.STONE);
+    } else if (placementMode === 'fountain') {
+        if (row === playerPos.row && col === playerPos.col) return;
+        if (row === opponentPos.row && col === opponentPos.col) return;
+        setTile(row, col, getTile(row, col) === MARKERS.FOUNTAIN ? MARKERS.EMPTY : MARKERS.FOUNTAIN);
+    } else if (placementMode === 'erase') {
+        setTile(row, col, MARKERS.EMPTY);
+    }
+    draw();
+});
+
+// Mode buttons
+document.querySelectorAll('[data-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-mode]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        placementMode = btn.dataset.mode;
+    });
+});
+
+// Run Fountain Rush
+document.getElementById('run-btn').addEventListener('click', () => {
+    const result = planFountainRush();
+    const out = document.getElementById('result-text');
+
+    if (result.error) {
+        out.textContent = `Error: ${result.error}`;
+        return;
+    }
+
+    highlights.candidates = result.t0;
+    highlights.best = result.bestMove;
+    highlights.scoreAnnotations = result.allScores.map(s => ({
+        row: parseInt(s.pos.match(/\d+/g)[0]),
+        col: parseInt(s.pos.match(/\d+/g)[1]),
+        text: `d${s.dist} p${s.placeOpts}`
+    }));
+
+    let text = `Fountain at (${result.fountain.row}, ${result.fountain.col})\n`;
+    if (result.bestMove) {
+        text += `Best move: (${result.bestMove.row}, ${result.bestMove.col})`;
+        text += result.bestMove.isDiagonal ? ' [DIAGONAL]' : '';
+        text += `\nReaches fountain in: ${result.bestTurns <= 3 ? result.bestTurns + ' turn(s)' : 'NOT within 3 turns'}\n`;
+    } else {
+        text += 'No valid moves!\n';
+    }
+    text += `\n--- All Candidates ---\n`;
+    text += `${'Pos'.padEnd(8)}${'Dist'.padEnd(6)}${'Place'.padEnd(7)}${'Reach'.padEnd(8)}${'Diag'.padEnd(6)}Path\n`;
+    text += '-'.repeat(55) + '\n';
+    result.allScores.sort((a, b) => a.reachTurns - b.reachTurns || a.dist - b.dist);
+    for (const s of result.allScores) {
+        const reach = s.reachTurns <= 3 ? `T${s.reachTurns}` : '-';
+        text += `${s.pos.padEnd(8)}${String(s.dist).padEnd(6)}${String(s.placeOpts).padEnd(7)}${reach.padEnd(8)}${(s.diagonal ? 'Y' : '').padEnd(6)}${s.pathInfo}\n`;
+    }
+    out.textContent = text;
+    draw();
+});
+
+// Show Territory
+document.getElementById('territory-btn').addEventListener('click', () => {
+    const pTerr = floodFillTerritory(playerPos.row, playerPos.col, opponentPos);
+    const oTerr = floodFillTerritory(opponentPos.row, opponentPos.col, playerPos);
+    highlights.territory = { pVisited: pTerr.visited, oVisited: oTerr.visited };
+
+    const out = document.getElementById('result-text');
+    out.textContent = `Territory Analysis\n`;
+    out.textContent += `Player:   ${pTerr.count} cells\n`;
+    out.textContent += `Opponent: ${oTerr.count} cells\n`;
+    out.textContent += `Advantage: ${pTerr.count > oTerr.count ? 'Player +' + (pTerr.count - oTerr.count) : oTerr.count > pTerr.count ? 'Opponent +' + (oTerr.count - pTerr.count) : 'Even'}`;
+    draw();
+});
+
+// Show All Moves
+document.getElementById('show-moves-btn').addEventListener('click', () => {
+    const dice0 = parseInt(document.getElementById('dice0').value) || 2;
+    const pts = parseInt(document.getElementById('points').value) || 50;
+    const cross = simulateMovableTiles(playerPos, dice0, opponentPos, false);
+    const diag = pts >= SKILL_COSTS.diagonal_move
+        ? simulateMovableTiles(playerPos, dice0, opponentPos, true) : [];
+    highlights.moves = cross.concat(diag);
+    highlights.candidates = [];
+    highlights.best = null;
+
+    const out = document.getElementById('result-text');
+    let text = `Movable tiles with dice ${dice0}:\n\n`;
+    text += 'Cross: ' + cross.map(t => `(${t.row},${t.col})${t.isFallTrigger ? '[FALL]' : ''}`).join(', ') + '\n';
+    text += 'Diagonal: ' + diag.map(t => `(${t.row},${t.col})${t.isFallTrigger ? '[FALL]' : ''}`).join(', ') + '\n';
+    out.textContent = text;
+    draw();
+});
+
+// Clear
+document.getElementById('clear-btn').addEventListener('click', () => {
+    highlights = { best: null, candidates: [], territory: null, moves: [] };
+    document.getElementById('result-text').textContent = 'Cleared.';
+    draw();
+});
+
+// Reset
+document.getElementById('reset-btn').addEventListener('click', () => {
+    resetBoard();
+    document.getElementById('result-text').textContent = 'Board reset.';
+    draw();
+});
+
+// Presets
+document.getElementById('preset-default').addEventListener('click', () => {
+    resetBoard();
+    setTile(0, 1, MARKERS.FOUNTAIN);
+    setTile(8, 7, MARKERS.FOUNTAIN);
+    setTile(2, 3, MARKERS.STONE);
+    setTile(5, 5, MARKERS.STONE);
+    setTile(6, 2, MARKERS.STONE);
+    draw();
+});
+
+document.getElementById('preset-close').addEventListener('click', () => {
+    resetBoard();
+    playerPos = { row: 4, col: 3 };
+    setTile(3, 4, MARKERS.FOUNTAIN);
+    setTile(4, 4, MARKERS.STONE);
+    setTile(3, 3, MARKERS.STONE);
+    document.getElementById('dice0').value = 2;
+    draw();
+});
+
+document.getElementById('preset-blocked').addEventListener('click', () => {
+    resetBoard();
+    playerPos = { row: 4, col: 0 };
+    setTile(1, 1, MARKERS.FOUNTAIN);
+    // Wall of stones blocking direct path
+    for (let r = 2; r <= 6; r++) setTile(r, 2, MARKERS.STONE);
+    setTile(3, 1, MARKERS.STONE);
+    draw();
+});
+
+// ===== Init =====
+resetBoard();
+setTile(0, 1, MARKERS.FOUNTAIN);
+setTile(8, 7, MARKERS.FOUNTAIN);
+setTile(2, 3, MARKERS.STONE);
+setTile(5, 5, MARKERS.STONE);
+setTile(6, 2, MARKERS.STONE);
+draw();
+</script>
+</body>
+</html>

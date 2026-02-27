@@ -3,6 +3,9 @@ let game;
 let renderer;
 let settings;
 let animManager;
+let comPlayer;
+let gameLog;
+let replayEngine;
 
 function init() {
     const canvas = document.getElementById('game-canvas');
@@ -10,12 +13,77 @@ function init() {
     game = new Game();
     settings = new Settings();
     animManager = new AnimationManager();
+    comPlayer = new ComPlayer(game);
+    gameLog = new GameLog();
+    replayEngine = new ReplayEngine();
 
     // Add event listeners
     canvas.addEventListener('click', handleClick);
     canvas.addEventListener('mousedown', handleMouseDown);
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('keydown', handleKeyDown);
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+
+    // Game log copy button
+    const copyBtn = document.getElementById('copy-log-btn');
+    const copyFeedback = document.getElementById('copy-feedback');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+            if (typeof gameLog === 'undefined') return;
+            const json = gameLog.toJSON();
+            navigator.clipboard.writeText(json).then(() => {
+                copyFeedback.textContent = 'Copied!';
+                copyFeedback.classList.add('show');
+                setTimeout(() => copyFeedback.classList.remove('show'), 2000);
+            }).catch(() => {
+                const ta = document.createElement('textarea');
+                ta.value = json;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                copyFeedback.textContent = 'Copied!';
+                copyFeedback.classList.add('show');
+                setTimeout(() => copyFeedback.classList.remove('show'), 2000);
+            });
+        });
+    }
+
+    // Replay file import handler
+    const replayFileInput = document.getElementById('replay-file-input');
+    if (replayFileInput) {
+        replayFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                try {
+                    const logData = JSON.parse(evt.target.result);
+                    if (!logData.setup || !logData.log) {
+                        console.warn('Invalid replay file format');
+                        return;
+                    }
+                    replayEngine.load(logData);
+                    replayEngine.first();
+                    // Ensure game has player objects for rendering
+                    if (!game.player1) {
+                        game.player1 = new Player(1, 4, 0);
+                        game.player2 = new Player(2, 4, BOARD_SIZE - 1);
+                    }
+                    game.gameMode = logData.setup.gameMode || null;
+                    replayEngine.applyToGame(game);
+                    game._replayMode = 'playback';
+                    game.phase = PHASES.REPLAY;
+                } catch (err) {
+                    console.warn('Failed to parse replay file:', err);
+                }
+            };
+            reader.readAsText(file);
+            // Reset input so the same file can be re-imported
+            replayFileInput.value = '';
+        });
+    }
 
     // Start game loop
     requestAnimationFrame(gameLoop);
@@ -61,6 +129,53 @@ function handleClick(event) {
     game.handleClick(x, y);
 }
 
+function handleWheel(event) {
+    if (game.phase === PHASES.REPLAY && game._replayMode === 'select') {
+        event.preventDefault();
+        const listH = SCREEN_HEIGHT - 120;
+        const itemH = 70;
+        const maxVisible = Math.floor(listH / itemH);
+        const maxOffset = Math.max(0, game.replaySelectReplays.length - maxVisible);
+
+        if (event.deltaY > 0) {
+            game.replaySelectScrollOffset = Math.min(game.replaySelectScrollOffset + 1, maxOffset);
+        } else if (event.deltaY < 0) {
+            game.replaySelectScrollOffset = Math.max(game.replaySelectScrollOffset - 1, 0);
+        }
+    }
+}
+
+function handleKeyDown(event) {
+    if (game.phase !== PHASES.REPLAY || game._replayMode !== 'playback') return;
+    if (!replayEngine) return;
+
+    switch (event.key) {
+        case 'ArrowLeft':
+            if (replayEngine.prev()) replayEngine.applyToGame(game);
+            event.preventDefault();
+            break;
+        case 'ArrowRight':
+            if (replayEngine.next()) replayEngine.applyToGame(game);
+            event.preventDefault();
+            break;
+        case 'Home':
+            replayEngine.first();
+            replayEngine.applyToGame(game);
+            event.preventDefault();
+            break;
+        case 'End':
+            replayEngine.last();
+            replayEngine.applyToGame(game);
+            event.preventDefault();
+            break;
+        case 'Escape':
+            game.phase = PHASES.START_SCREEN;
+            game._replayMode = null;
+            event.preventDefault();
+            break;
+    }
+}
+
 function gameLoop(timestamp) {
     const now = timestamp || performance.now();
     animManager.update(now);
@@ -73,7 +188,7 @@ function render(now) {
 
     switch (game.phase) {
         case PHASES.START_SCREEN:
-            renderer.drawStartScreen();
+            renderer.drawStartScreen(game.showDifficultySelect);
             break;
 
         case PHASES.SETTINGS:
@@ -81,7 +196,7 @@ function render(now) {
             break;
 
         case PHASES.SKILL_SELECTION:
-            renderer.drawSkillSelection(game.player1, game.player2);
+            renderer.drawSkillSelection(game.player1, game.player2, game.gameMode);
 
             // Draw hover tooltip for hovered skill
             if (game.hoveredSkill) {
@@ -94,7 +209,7 @@ function render(now) {
 
         case PHASES.ANIMATING:
             // Draw panels and board
-            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase);
+            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode);
             renderer.drawBoard(game.board, now);
             renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
 
@@ -116,7 +231,7 @@ function render(now) {
         case PHASES.SKILL_TARGET:
         case PHASES.WARP_SELECT:
             // Draw panels
-            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase);
+            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode);
 
             // Draw board
             renderer.drawBoard(game.board, now);
@@ -177,15 +292,58 @@ function render(now) {
 
         case PHASES.GAME_OVER:
             // Draw the game state first
-            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase);
+            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode);
             renderer.drawBoard(game.board, now);
             renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
             renderer.drawPlayer(game.player1, null, now);
             renderer.drawPlayer(game.player2, null, now);
 
             // Draw game over overlay
-            renderer.drawGameOver(game.winner, game.winReason);
+            renderer.drawGameOver(game.winner, game.winReason, game.gameMode);
             break;
+
+        case PHASES.REPLAY:
+            if (game._replayMode === 'select') {
+                renderer.drawReplaySelect(game.replaySelectReplays, game.replaySelectScrollOffset);
+            } else if (game._replayMode === 'playback') {
+                // Draw the board with current snapshot state
+                renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode);
+                renderer.drawBoard(game.board, now);
+                renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
+                renderer.drawPlayer(game.player1, null, now);
+                renderer.drawPlayer(game.player2, null, now);
+
+                // Draw replay controls overlay
+                const snap = replayEngine.getCurrent();
+                renderer.drawReplayControls(
+                    replayEngine.currentIndex,
+                    replayEngine.getTotalSnapshots(),
+                    replayEngine.getActions(),
+                    replayEngine.gameInfo,
+                    snap
+                );
+            }
+            break;
+    }
+
+    // Draw "COM thinking..." indicator during COM's turn
+    if (game.gameMode === 'com' && game.currentTurn === 2 &&
+        game.phase !== PHASES.START_SCREEN &&
+        game.phase !== PHASES.GAME_OVER &&
+        game.phase !== PHASES.SETTINGS &&
+        game.phase !== PHASES.SKILL_SELECTION &&
+        game.phase !== PHASES.REPLAY) {
+        renderer.drawComThinking(now);
+    }
+
+    // Show/hide game log toolbar
+    const logToolbar = document.getElementById('log-toolbar');
+    if (logToolbar) {
+        const gameActive = game.phase !== PHASES.START_SCREEN &&
+            game.phase !== PHASES.SKILL_SELECTION &&
+            game.phase !== PHASES.SETTINGS &&
+            game.phase !== PHASES.REPLAY;
+        logToolbar.style.display = gameActive ? 'flex' : 'none';
     }
 }
 

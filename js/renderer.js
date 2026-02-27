@@ -554,8 +554,16 @@ class Renderer {
         this.drawButton(startX, y, btnW, btnH, '#1A4A1A', 'Easy');
         // Normal
         this.drawButton(startX + btnW + gap, y, btnW, btnH, '#4A3A0A', 'Normal');
-        // Hard
-        this.drawButton(startX + 2 * (btnW + gap), y, btnW, btnH, '#4A0A0A', 'Hard');
+        // Hard (Coming Soon)
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        this.drawButton(startX + 2 * (btnW + gap), y, btnW, btnH, '#222233', 'Hard');
+        ctx.restore();
+        ctx.fillStyle = '#666688';
+        ctx.font = '11px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Coming Soon', startX + 2 * (btnW + gap) + btnW / 2, y + btnH + 14);
     }
 
     drawComThinking(now) {

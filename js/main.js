@@ -4,6 +4,7 @@ let renderer;
 let settings;
 let animManager;
 let comPlayer;
+let gameLog;
 
 function init() {
     const canvas = document.getElementById('game-canvas');
@@ -12,12 +13,38 @@ function init() {
     settings = new Settings();
     animManager = new AnimationManager();
     comPlayer = new ComPlayer(game);
+    gameLog = new GameLog();
 
     // Add event listeners
     canvas.addEventListener('click', handleClick);
     canvas.addEventListener('mousedown', handleMouseDown);
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('mouseup', handleMouseUp);
+
+    // Game log copy button
+    const copyBtn = document.getElementById('copy-log-btn');
+    const copyFeedback = document.getElementById('copy-feedback');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+            if (typeof gameLog === 'undefined') return;
+            const json = gameLog.toJSON();
+            navigator.clipboard.writeText(json).then(() => {
+                copyFeedback.textContent = 'Copied!';
+                copyFeedback.classList.add('show');
+                setTimeout(() => copyFeedback.classList.remove('show'), 2000);
+            }).catch(() => {
+                const ta = document.createElement('textarea');
+                ta.value = json;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                copyFeedback.textContent = 'Copied!';
+                copyFeedback.classList.add('show');
+                setTimeout(() => copyFeedback.classList.remove('show'), 2000);
+            });
+        });
+    }
 
     // Start game loop
     requestAnimationFrame(gameLoop);
@@ -197,6 +224,15 @@ function render(now) {
         game.phase !== PHASES.SETTINGS &&
         game.phase !== PHASES.SKILL_SELECTION) {
         renderer.drawComThinking(now);
+    }
+
+    // Show/hide game log toolbar
+    const logToolbar = document.getElementById('log-toolbar');
+    if (logToolbar) {
+        const gameActive = game.phase !== PHASES.START_SCREEN &&
+            game.phase !== PHASES.SKILL_SELECTION &&
+            game.phase !== PHASES.SETTINGS;
+        logToolbar.style.display = gameActive ? 'flex' : 'none';
     }
 }
 

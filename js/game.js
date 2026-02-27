@@ -42,6 +42,7 @@ class Game {
         this.currentTurn = 1;
         this.diceRoll = 0;
         this.winner = null;
+        if (typeof gameLog !== 'undefined') gameLog.reset();
         this.winReason = '';
         this.lastMoveDirectionType = DIRECTION_TYPE.CROSS;
         this.moveMode = DIRECTION_TYPE.CROSS;
@@ -80,6 +81,7 @@ class Game {
         const player = playerNum === 1 ? this.player1 : this.player2;
         if (!player.skillConfirmed) {
             player.setSpecialSkill(skill);
+            if (typeof gameLog !== 'undefined') gameLog.log('skill_select', { player: playerNum, skill });
         }
 
         if (this.player1.skillConfirmed && this.player2.skillConfirmed) {
@@ -106,6 +108,7 @@ class Game {
             this.board.setTile(pos.row, pos.col, MARKERS.STONE);
         }
         this.currentTurn = Math.random() < 0.5 ? 1 : 2;
+        if (typeof gameLog !== 'undefined') gameLog.recordSetup(this);
     }
 
     findValidFountainPosition(playerNum) {
@@ -208,6 +211,7 @@ class Game {
         this.moveMode = DIRECTION_TYPE.CROSS;
         const currentPlayer = this.getCurrentPlayer();
         this.diceRoll = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
+        if (typeof gameLog !== 'undefined') gameLog.log('roll', { player: this.currentTurn, dice: this.diceRoll, queue: [...currentPlayer.diceQueue] });
         if (!this.hasAnyMovableTile()) {
             this.gameOver(this.currentTurn === 1 ? 2 : 1, 'is blocked and cannot move!');
         } else {
@@ -223,6 +227,7 @@ class Game {
         currentPlayer.deductPoints(SKILL_COSTS.stock);
         const diceValue = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
         currentPlayer.stockDice(diceValue);
+        if (typeof gameLog !== 'undefined') gameLog.log('stock', { player: this.currentTurn, storedDice: diceValue });
         this.rollDice();
         return true;
     }
@@ -231,9 +236,11 @@ class Game {
         this.moveMode = DIRECTION_TYPE.CROSS;
         const currentPlayer = this.getCurrentPlayer();
         // CURRENTをStock値に置き換え、ストック消費
-        currentPlayer.diceQueue[0] = currentPlayer.useStock();
+        const stockVal = currentPlayer.useStock();
+        currentPlayer.diceQueue[0] = stockVal;
         // そのCURRENTでRoll（shiftしてMOVEへ）
         this.diceRoll = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
+        if (typeof gameLog !== 'undefined') gameLog.log('use_stock', { player: this.currentTurn, stockVal, dice: this.diceRoll, queue: [...currentPlayer.diceQueue] });
         if (!this.hasAnyMovableTile()) {
             this.gameOver(this.currentTurn === 1 ? 2 : 1, 'is blocked and cannot move!');
         } else {
@@ -326,6 +333,7 @@ class Game {
             this.moveMode = DIRECTION_TYPE.CROSS;
         }
         this.findMovableTiles();
+        if (typeof gameLog !== 'undefined') gameLog.log('toggle_mode', { player: this.currentTurn, mode: this.moveMode });
         return true;
     }
 
@@ -359,6 +367,7 @@ class Game {
         const fromRow = currentPlayer.row;
         const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
+        if (typeof gameLog !== 'undefined') gameLog.log('move', { player: this.currentTurn, from: { row: fromRow, col: fromCol }, to: { row, col }, mode: this.moveMode });
 
         if (this.moveMode === DIRECTION_TYPE.DIAGONAL) {
             currentPlayer.deductPoints(SKILL_COSTS.diagonal_move);
@@ -384,6 +393,7 @@ class Game {
         if (landedTile === MARKERS.FOUNTAIN) {
             currentPlayer.addPoints(GAME_SETTINGS.fountainPickup);
             this.board.setTile(row, col, MARKERS.EMPTY);
+            if (typeof gameLog !== 'undefined') gameLog.log('fountain', { player: this.currentTurn, pos: { row, col }, pts: GAME_SETTINGS.fountainPickup });
         }
 
         // Warp hole effect: teleport to another warp hole
@@ -470,6 +480,7 @@ class Game {
 
     placeObject(row, col) {
         const currentPlayer = this.getCurrentPlayer();
+        if (typeof gameLog !== 'undefined') gameLog.log('place', { player: this.currentTurn, pos: { row, col }, type: this.placementType });
 
         if (this.placementType === 'stone') {
             // Destroy checkpoint if stone is placed on it
@@ -558,6 +569,7 @@ class Game {
     useDrill(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         if (currentPlayer.deductPoints(SKILL_COSTS.drill)) {
+            if (typeof gameLog !== 'undefined') gameLog.log('drill', { player: this.currentTurn, pos: { row, col } });
             this.board.setTile(row, col, MARKERS.EMPTY);
             if (this.drillForSurvival) {
                 this.drillForSurvival = false;
@@ -614,6 +626,7 @@ class Game {
         currentPlayer.deductPoints(SKILL_COSTS.domination);
         const otherPlayer = this.getOtherPlayer();
         otherPlayer.dominationTurnsLeft = 3;
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'domination' });
         this.endTurn();
         return true;
     }
@@ -629,6 +642,7 @@ class Game {
             // Cannot teleport if opponent is on checkpoint
             if (cp.row === otherPos.row && cp.col === otherPos.col) return false;
             currentPlayer.deductPoints(SKILL_COSTS.checkpoint);
+            if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'checkpoint_teleport', to: { row: cp.row, col: cp.col } });
             const fromRow = currentPlayer.row;
             const fromCol = currentPlayer.col;
             currentPlayer.moveTo(cp.row, cp.col);
@@ -641,6 +655,7 @@ class Game {
             // --- Place mode ---
             const pos = currentPlayer.getPosition();
             currentPlayer.deductPoints(SKILL_COSTS.checkpoint);
+            if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'checkpoint_place', pos: { row: pos.row, col: pos.col } });
             this.board.setCheckpoint(pos.row, pos.col, currentPlayer.playerNum);
             currentPlayer.setCheckpoint(pos.row, pos.col);
             // Destroy surrounding 8-direction stones
@@ -700,6 +715,7 @@ class Game {
     executeKamakura(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         currentPlayer.deductPoints(SKILL_COSTS.kamakura);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'kamakura', target: { row, col } });
         const pattern = this.kamakuraPatterns.find(
             p => p.middle.row === row && p.middle.col === col
         );
@@ -757,6 +773,7 @@ class Game {
         if (!currentPlayer.canAfford(SKILL_COSTS.sniper)) return false;
         if (!this.checkSniperCondition()) return false;
         currentPlayer.deductPoints(SKILL_COSTS.sniper);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'sniper' });
         // Start sniper animation instead of immediate game over
         this.sniperAnimating = true;
         this.sniperAnimStart = performance.now();
@@ -780,6 +797,7 @@ class Game {
         if (!currentPlayer.canAfford(SKILL_COSTS.hitokiri)) return false;
         if (!this.checkHitokiriCondition()) return false;
         currentPlayer.deductPoints(SKILL_COSTS.hitokiri);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'hitokiri' });
         this.gameOver(this.currentTurn, 'slashed the opponent!');
         return true;
     }
@@ -810,6 +828,7 @@ class Game {
     executeSuriashi(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         currentPlayer.deductPoints(SKILL_COSTS.suriashi);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'suriashi', target: { row, col } });
         const fromRow = currentPlayer.row;
         const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
@@ -845,6 +864,7 @@ class Game {
     executeMeteor(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         currentPlayer.deductPoints(SKILL_COSTS.meteor);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'meteor', target: { row, col } });
         this.board.setTile(row, col, MARKERS.STONE);
         this.endTurn();
     }
@@ -906,6 +926,7 @@ class Game {
     executeMomonga(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         currentPlayer.deductPoints(SKILL_COSTS.momonga);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'momonga', target: { row, col } });
         const fromRow = currentPlayer.row;
         const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
@@ -919,6 +940,10 @@ class Game {
     // --- Turn Management ---
 
     endTurn() {
+        if (typeof gameLog !== 'undefined') {
+            gameLog.log('end_turn', { player: this.currentTurn, p1pts: this.player1.points, p2pts: this.player2.points });
+            gameLog.incrementTurn();
+        }
         const oldPlayer = this.getCurrentPlayer();
         if (oldPlayer.dominationTurnsLeft > 0) {
             oldPlayer.dominationTurnsLeft--;
@@ -962,6 +987,7 @@ class Game {
         const fromRow = currentPlayer.row;
         const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
+        if (typeof gameLog !== 'undefined') gameLog.log('warp', { player: this.currentTurn, from: { row: fromRow, col: fromCol }, to: { row, col } });
         animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, row, col, 'teleport');
         this.phase = PHASES.ANIMATING;
         animManager.playerAnims[currentPlayer.playerNum].onComplete = () => {
@@ -1003,6 +1029,7 @@ class Game {
             const loserLabel = (this.gameMode === 'com' && loser === 2) ? 'COM' : `Player ${loser}`;
             this.winReason = `${loserLabel} ${reason}`;
             this.phase = PHASES.GAME_OVER;
+            if (typeof gameLog !== 'undefined') gameLog.log('game_over', { winner, reason, p1pts: this.player1.points, p2pts: this.player2.points });
             // Cancel any pending COM actions
             if (typeof comPlayer !== 'undefined' && comPlayer) {
                 comPlayer.cancelPending();
@@ -1124,11 +1151,7 @@ class Game {
                     this.startGame('com');
                     return true;
                 }
-                if (x >= startX + 2 * (btnW + gap) && x <= startX + 3 * btnW + 2 * gap) {
-                    this.comDifficulty = COM_DIFFICULTY.HARD;
-                    this.startGame('com');
-                    return true;
-                }
+                // Hard is disabled (Coming Soon)
             }
         }
 

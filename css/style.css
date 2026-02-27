@@ -15,6 +15,7 @@ body {
 
 #game-container {
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
 }
@@ -22,4 +23,41 @@ body {
 #game-canvas {
     border: 2px solid #444;
     background-color: #000;
+}
+
+#log-toolbar {
+    display: none;
+    width: 1284px;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 6px 4px;
+    gap: 10px;
+}
+
+#copy-log-btn {
+    background-color: #1A1A2E;
+    color: #666688;
+    border: 1px solid #333355;
+    padding: 4px 14px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s ease;
+}
+
+#copy-log-btn:hover {
+    color: #CCCCDD;
+    border-color: #00E5FF;
+    background-color: #0A0A28;
+}
+
+#copy-feedback {
+    color: #00FF88;
+    font-size: 12px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+#copy-feedback.show {
+    opacity: 1;
 }

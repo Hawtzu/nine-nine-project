@@ -360,7 +360,22 @@ class ComPlayer {
         if (!hasStock && currentDice === 1 &&
             player.canAfford(SKILL_COSTS.stock) &&
             player.diceQueue.length > 1 && player.diceQueue[1] >= 2) {
-            this.game.stockCurrentDice();
+            // Verify the next dice (after stocking) has safe moves before committing
+            const nextDice = player.diceQueue[1];
+            const myPos = player.getPosition();
+            const oppPos = game.player1.getPosition();
+            const board = game.board;
+            const nextCross = this.simulateMovableTiles(myPos, nextDice, board, oppPos, false)
+                .filter(t => !t.isFallTrigger);
+            const nextDiag = this.simulateMovableTiles(myPos, nextDice, board, oppPos, true)
+                .filter(t => !t.isFallTrigger);
+
+            if (nextCross.length > 0 || nextDiag.length > 0) {
+                this.game.stockCurrentDice();
+            } else {
+                // Next dice has no safe moves — don't stock, use current dice instead
+                this.game.rollDice();
+            }
             this.scheduleMoveDirect();
             return;
         }
@@ -418,16 +433,29 @@ class ComPlayer {
 
         // Freeze prevention: if candidates is empty, recover
         if (candidates.length === 0) {
-            // If stuck in diagonal mode, revert to cross
-            if (game.moveMode === DIRECTION_TYPE.DIAGONAL) {
-                game.toggleMoveMode(); // back to cross, refunds points
+            // Check current mode's tiles (including fall triggers) BEFORE toggling
+            let fallbacks = game.movableTiles.concat(game.fallTriggerTiles);
+
+            if (fallbacks.length === 0) {
+                // Current mode truly empty — try the other mode
+                game.toggleMoveMode();
+                fallbacks = game.movableTiles.concat(game.fallTriggerTiles);
             }
-            // Include fall triggers as last resort
-            const allTiles = game.movableTiles.concat(game.fallTriggerTiles);
-            if (allTiles.length > 0) {
-                candidates = allTiles;
+
+            if (fallbacks.length > 0) {
+                // Check if any safe (non-fall-trigger) tiles exist
+                const ftSet = new Set(game.fallTriggerTiles.map(f => `${f.row},${f.col}`));
+                const hasSafe = fallbacks.some(t => !ftSet.has(`${t.row},${t.col}`));
+                if (hasSafe) {
+                    candidates = fallbacks;
+                } else {
+                    // Only fall trigger tiles — COM falls off the cliff (same as human player)
+                    game.gameOver(game.currentTurn === 1 ? 2 : 1, 'fell off the cliff!');
+                    return;
+                }
             } else {
-                return; // Truly no moves (shouldn't happen after rollDice check)
+                // Both modes empty (shouldn't happen after rollDice hasAnyMovableTile check)
+                return;
             }
         }
 

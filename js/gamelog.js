@@ -16,6 +16,7 @@ class GameLog {
             gameMode: game.gameMode,
             comDifficulty: game.comDifficulty,
             firstTurn: game.currentTurn,
+            skillCosts: { ...SKILL_COSTS },
             player1: {
                 position: { row: game.player1.row, col: game.player1.col },
                 skill: game.player1.specialSkill,

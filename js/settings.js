@@ -28,7 +28,7 @@ const SETTINGS_CONFIG = [
         min: 0,
         max: 500,
         step: 10,
-        defaultValue: 20
+        defaultValue: 30
     },
     {
         key: 'diagonal_move',
@@ -108,7 +108,7 @@ const SETTINGS_CONFIG = [
         min: 0,
         max: 500,
         step: 10,
-        defaultValue: 50
+        defaultValue: 60
     },
     {
         key: 'warp',
@@ -118,7 +118,7 @@ const SETTINGS_CONFIG = [
         min: 0,
         max: 500,
         step: 10,
-        defaultValue: 100
+        defaultValue: 60
     },
     {
         key: 'checkpoint',

@@ -17,6 +17,10 @@ class ReplayEngine {
             mode: logData.setup.gameMode,
             difficulty: logData.setup.comDifficulty
         };
+        // Store skill costs from when the game was played (fallback to current global)
+        this.skillCosts = logData.setup.skillCosts
+            ? { ...logData.setup.skillCosts }
+            : { ...SKILL_COSTS };
         this.buildSnapshots();
     }
 
@@ -38,7 +42,8 @@ class ReplayEngine {
                 specialSkill: setup.player1.skill,
                 stockedDice: null,
                 dominationTurnsLeft: 0,
-                checkpointPos: null
+                checkpointPos: null,
+                diceQueue: setup.player1.diceQueue ? [...setup.player1.diceQueue] : []
             },
             p2: {
                 row: setup.player2.position.row,
@@ -47,20 +52,28 @@ class ReplayEngine {
                 specialSkill: setup.player2.skill,
                 stockedDice: null,
                 dominationTurnsLeft: 0,
-                checkpointPos: null
+                checkpointPos: null,
+                diceQueue: setup.player2.diceQueue ? [...setup.player2.diceQueue] : []
             },
             winner: null,
             winReason: ''
         };
 
         // Snapshot 0 — initial board state before any turns
-        this.snapshots.push(this._capture(state, []));
+        this.snapshots.push(this._capture(state, [], { turnNumber: 0, phase: 'initial' }));
 
         let turnActions = [];
+        let currentTurnNum = 1;
+        let phaseActionsRoll = [];
+        let phaseActionsMove = [];
+        let capturedRoll = false;
+        let capturedMove = false;
+        let currentDiceRoll = 0;
 
         for (const entry of entries) {
             const { action, data } = entry;
-            turnActions.push(this._fmtAction(action, data));
+            const fmtAction = this._fmtAction(action, data);
+            turnActions.push(fmtAction);
 
             switch (action) {
 
@@ -69,26 +82,49 @@ class ReplayEngine {
                     this._p(state, data.player).specialSkill = data.skill;
                     break;
 
-                /* ── Dice ── */
+                /* ── Dice phase ── */
                 case 'roll':
-                    // Info only
-                    break;
-                case 'stock':
-                    this._p(state, data.player).stockedDice = data.storedDice;
-                    break;
-                case 'use_stock':
-                    this._p(state, data.player).stockedDice = null;
-                    break;
-                case 'toggle_mode':
-                    // Info only (points deducted via end_turn)
+                    currentDiceRoll = data.dice;
+                    phaseActionsRoll.push(fmtAction);
+                    // Update dice queue from the logged post-shift queue
+                    if (data.queue) {
+                        this._p(state, data.player).diceQueue = [...data.queue];
+                    }
+                    if (!capturedRoll) {
+                        this.snapshots.push(this._capture(state, [...phaseActionsRoll],
+                            { turnNumber: currentTurnNum, phase: 'rolled', diceRoll: currentDiceRoll }));
+                        capturedRoll = true;
+                    }
                     break;
 
-                /* ── Movement ── */
+                case 'stock':
+                    this._p(state, data.player).stockedDice = data.storedDice;
+                    phaseActionsRoll.push(fmtAction);
+                    break;
+
+                case 'use_stock':
+                    currentDiceRoll = data.dice;
+                    this._p(state, data.player).stockedDice = null;
+                    phaseActionsRoll.push(fmtAction);
+                    if (data.queue) {
+                        this._p(state, data.player).diceQueue = [...data.queue];
+                    }
+                    if (!capturedRoll) {
+                        this.snapshots.push(this._capture(state, [...phaseActionsRoll],
+                            { turnNumber: currentTurnNum, phase: 'rolled', diceRoll: currentDiceRoll }));
+                        capturedRoll = true;
+                    }
+                    break;
+
+                case 'toggle_mode':
+                    phaseActionsRoll.push(fmtAction);
+                    break;
+
+                /* ── Movement phase ── */
                 case 'move': {
                     const p = this._p(state, data.player);
                     const dr = data.to.row, dc = data.to.col;
                     const destKey = `${dr},${dc}`;
-                    // Own-bomb removal (step on your own bomb → remove it)
                     if (state.board[dr][dc] === MARKERS.BOMB &&
                         state.bombOwners[destKey] === data.player) {
                         state.board[dr][dc] = MARKERS.EMPTY;
@@ -96,34 +132,60 @@ class ReplayEngine {
                     }
                     p.row = dr;
                     p.col = dc;
+                    phaseActionsMove.push(fmtAction);
                     break;
                 }
 
-                /* ── Tile Effects ── */
                 case 'fountain':
                     state.board[data.pos.row][data.pos.col] = MARKERS.EMPTY;
-                    // Points updated authoritatively by end_turn
+                    phaseActionsMove.push(fmtAction);
                     break;
 
                 case 'warp': {
                     const p = this._p(state, data.player);
                     p.row = data.to.row;
                     p.col = data.to.col;
+                    phaseActionsMove.push(fmtAction);
                     break;
                 }
 
-                /* ── Placement ── */
+                /* ── Action phase (place/drill/skill) ── */
                 case 'place':
+                    // Capture 'moved' snapshot before action if we have move data
+                    if (!capturedMove && phaseActionsMove.length > 0) {
+                        this.snapshots.push(this._capture(state,
+                            [...phaseActionsRoll, ...phaseActionsMove],
+                            { turnNumber: currentTurnNum, phase: 'moved' }));
+                        capturedMove = true;
+                    }
                     this._applyPlace(state, data);
+                    // Capture 'acted' snapshot
+                    this.snapshots.push(this._capture(state, turnActions.slice(),
+                        { turnNumber: currentTurnNum, phase: 'acted' }));
                     break;
 
                 case 'drill':
+                    if (!capturedMove && phaseActionsMove.length > 0) {
+                        this.snapshots.push(this._capture(state,
+                            [...phaseActionsRoll, ...phaseActionsMove],
+                            { turnNumber: currentTurnNum, phase: 'moved' }));
+                        capturedMove = true;
+                    }
                     state.board[data.pos.row][data.pos.col] = MARKERS.EMPTY;
+                    this.snapshots.push(this._capture(state, turnActions.slice(),
+                        { turnNumber: currentTurnNum, phase: 'acted' }));
                     break;
 
-                /* ── Skills ── */
                 case 'skill':
+                    if (!capturedMove && phaseActionsMove.length > 0) {
+                        this.snapshots.push(this._capture(state,
+                            [...phaseActionsRoll, ...phaseActionsMove],
+                            { turnNumber: currentTurnNum, phase: 'moved' }));
+                        capturedMove = true;
+                    }
                     this._applySkill(state, data);
+                    this.snapshots.push(this._capture(state, turnActions.slice(),
+                        { turnNumber: currentTurnNum, phase: 'acted' }));
                     break;
 
                 /* ── Turn Boundary ── */
@@ -131,6 +193,10 @@ class ReplayEngine {
                     // Authoritative points from log
                     state.p1.points = data.p1pts;
                     state.p2.points = data.p2pts;
+                    if (data.p1Queue) state.p1.diceQueue = [...data.p1Queue];
+                    if (data.p2Queue) state.p2.diceQueue = [...data.p2Queue];
+                    if (data.p1Stock !== undefined) state.p1.stockedDice = data.p1Stock;
+                    if (data.p2Stock !== undefined) state.p2.stockedDice = data.p2Stock;
                     // Decrement domination
                     const oldP = this._p(state, data.player);
                     if (oldP.dominationTurnsLeft > 0) oldP.dominationTurnsLeft--;
@@ -140,9 +206,14 @@ class ReplayEngine {
                     state.currentTurn = state.currentTurn === 1 ? 2 : 1;
                     // Turn bonus for new current player
                     this._p(state, state.currentTurn).points += GAME_SETTINGS.turnBonus;
-                    // Capture snapshot
-                    this.snapshots.push(this._capture(state, turnActions));
+                    // No separate end snapshot — next turn's 'rolled' serves as boundary
+                    currentTurnNum++;
                     turnActions = [];
+                    phaseActionsRoll = [];
+                    phaseActionsMove = [];
+                    capturedRoll = false;
+                    capturedMove = false;
+                    currentDiceRoll = 0;
                     break;
                 }
 
@@ -152,7 +223,12 @@ class ReplayEngine {
                     state.winReason = data.reason || '';
                     if (data.p1pts !== undefined) state.p1.points = data.p1pts;
                     if (data.p2pts !== undefined) state.p2.points = data.p2pts;
-                    this.snapshots.push(this._capture(state, turnActions));
+                    if (data.p1Queue) state.p1.diceQueue = [...data.p1Queue];
+                    if (data.p2Queue) state.p2.diceQueue = [...data.p2Queue];
+                    if (data.p1Stock !== undefined) state.p1.stockedDice = data.p1Stock;
+                    if (data.p2Stock !== undefined) state.p2.stockedDice = data.p2Stock;
+                    this.snapshots.push(this._capture(state, turnActions.slice(),
+                        { turnNumber: currentTurnNum, phase: 'end' }));
                     turnActions = [];
                     break;
                 }
@@ -273,16 +349,27 @@ class ReplayEngine {
 
     // ─── Snapshot ─────────────────────────────────────────────
 
-    _capture(state, actions) {
+    _capture(state, actions, phaseInfo) {
         return {
             index: this.snapshots.length,
+            turnNumber: phaseInfo ? phaseInfo.turnNumber : 0,
+            phase: phaseInfo ? phaseInfo.phase : 'initial',
+            diceRoll: phaseInfo ? (phaseInfo.diceRoll || 0) : 0,
             currentTurn: state.currentTurn,
             board: state.board.map(row => [...row]),
             bombOwners: { ...state.bombOwners },
             checkpointOwners: { ...state.checkpointOwners },
             snowTurnsLeft: { ...state.snowTurnsLeft },
-            p1: { ...state.p1, checkpointPos: state.p1.checkpointPos ? { ...state.p1.checkpointPos } : null },
-            p2: { ...state.p2, checkpointPos: state.p2.checkpointPos ? { ...state.p2.checkpointPos } : null },
+            p1: {
+                ...state.p1,
+                checkpointPos: state.p1.checkpointPos ? { ...state.p1.checkpointPos } : null,
+                diceQueue: state.p1.diceQueue ? [...state.p1.diceQueue] : []
+            },
+            p2: {
+                ...state.p2,
+                checkpointPos: state.p2.checkpointPos ? { ...state.p2.checkpointPos } : null,
+                diceQueue: state.p2.diceQueue ? [...state.p2.diceQueue] : []
+            },
             actions: [...actions],
             winner: state.winner,
             winReason: state.winReason
@@ -368,6 +455,22 @@ class ReplayEngine {
         game.winner = snap.winner;
         game.winReason = snap.winReason || '';
         game.clearHighlights();
+
+        // For 'rolled' phase, compute movable tiles so they can be displayed
+        if (snap.phase === 'rolled' && snap.diceRoll) {
+            game.diceRoll = snap.diceRoll;
+            game.moveMode = DIRECTION_TYPE.CROSS;
+            game.findMovableTiles();
+        }
+
+        // For 'moved' phase, compute stone placement tiles and set default action mode
+        if (snap.phase === 'moved') {
+            game.replayActionMode = 'stone';
+            game.placementType = 'stone';
+            game.findPlaceableTiles();
+        } else {
+            game.replayActionMode = null;
+        }
     }
 
     _applyPlayerSnap(player, snap) {
@@ -381,6 +484,7 @@ class ReplayEngine {
         player.stockedDice = snap.stockedDice;
         player.dominationTurnsLeft = snap.dominationTurnsLeft;
         player.checkpointPos = snap.checkpointPos ? { ...snap.checkpointPos } : null;
+        player.diceQueue = snap.diceQueue ? [...snap.diceQueue] : [];
     }
 
     // ─── Navigation ───────────────────────────────────────────
@@ -403,6 +507,53 @@ class ReplayEngine {
 
     first() { this.currentIndex = 0; }
     last()  { this.currentIndex = this.snapshots.length - 1; }
+
+    // Turn-level navigation: jump to next turn's first snapshot
+    nextTurn() {
+        const currentTurn = this.snapshots[this.currentIndex].turnNumber;
+        for (let i = this.currentIndex + 1; i < this.snapshots.length; i++) {
+            if (this.snapshots[i].turnNumber > currentTurn) {
+                this.currentIndex = i;
+                return true;
+            }
+        }
+        // No next turn found — go to last snapshot
+        if (this.currentIndex < this.snapshots.length - 1) {
+            this.currentIndex = this.snapshots.length - 1;
+            return true;
+        }
+        return false;
+    }
+
+    // Turn-level navigation: jump to current turn's first snapshot, or previous turn's first
+    prevTurn() {
+        const currentTurn = this.snapshots[this.currentIndex].turnNumber;
+        // Find the first snapshot of the current turn
+        let currentTurnStart = this.currentIndex;
+        for (let i = this.currentIndex - 1; i >= 0; i--) {
+            if (this.snapshots[i].turnNumber < currentTurn) {
+                currentTurnStart = i + 1;
+                break;
+            }
+            if (i === 0) currentTurnStart = 0;
+        }
+        // If not at the start of current turn, jump there
+        if (this.currentIndex > currentTurnStart) {
+            this.currentIndex = currentTurnStart;
+            return true;
+        }
+        // Already at start of current turn — jump to previous turn's first snapshot
+        if (currentTurnStart > 0) {
+            const prevTurnNum = this.snapshots[currentTurnStart - 1].turnNumber;
+            for (let i = currentTurnStart - 1; i >= 0; i--) {
+                if (this.snapshots[i].turnNumber < prevTurnNum || i === 0) {
+                    this.currentIndex = (this.snapshots[i].turnNumber < prevTurnNum) ? i + 1 : i;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 
     getCurrent()        { return this.snapshots[this.currentIndex]; }
     getActions()        { return this.snapshots[this.currentIndex]?.actions || []; }

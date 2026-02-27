@@ -102,6 +102,10 @@ function handleMouseMove(event) {
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
 
+    // Track mouse position for hover-reveal UI
+    game._mouseX = x;
+    game._mouseY = y;
+
     if (game.phase === PHASES.SETTINGS) {
         settings.handleMouseMove(x, y);
     } else if (game.phase === PHASES.SKILL_SELECTION) {
@@ -146,6 +150,30 @@ function handleWheel(event) {
 }
 
 function handleKeyDown(event) {
+    // Escape: confirm dialog cancel
+    if (event.key === 'Escape' && game.showConfirmDialog) {
+        game.showConfirmDialog = null;
+        event.preventDefault();
+        return;
+    }
+
+    // Escape: gameplay → show confirm dialog
+    const gameplayPhases = [PHASES.ROLL, PHASES.MOVE, PHASES.PLACE,
+        PHASES.DRILL_TARGET, PHASES.SKILL_TARGET, PHASES.WARP_SELECT];
+    if (event.key === 'Escape' && gameplayPhases.includes(game.phase)) {
+        game.showConfirmDialog = 'save_log';
+        event.preventDefault();
+        return;
+    }
+
+    // Escape: skill selection → back to menu (no dialog)
+    if (event.key === 'Escape' && game.phase === PHASES.SKILL_SELECTION) {
+        game.phase = PHASES.START_SCREEN;
+        event.preventDefault();
+        return;
+    }
+
+    // Replay keyboard controls
     if (game.phase !== PHASES.REPLAY || game._replayMode !== 'playback') return;
     if (!replayEngine) return;
 
@@ -156,6 +184,14 @@ function handleKeyDown(event) {
             break;
         case 'ArrowRight':
             if (replayEngine.next()) replayEngine.applyToGame(game);
+            event.preventDefault();
+            break;
+        case 'PageUp':
+            if (replayEngine.prevTurn()) replayEngine.applyToGame(game);
+            event.preventDefault();
+            break;
+        case 'PageDown':
+            if (replayEngine.nextTurn()) replayEngine.applyToGame(game);
             event.preventDefault();
             break;
         case 'Home':
@@ -205,6 +241,9 @@ function render(now) {
                     renderer.drawSkillTooltip(info);
                 }
             }
+
+            // Hover-reveal menu bar
+            renderer.drawHoverMenuBar(game._mouseY);
             break;
 
         case PHASES.ANIMATING:
@@ -276,6 +315,9 @@ function render(now) {
             // Draw roll button or dice result
             drawPhaseUI();
 
+            // Hover-reveal menu bar
+            renderer.drawHoverMenuBar(game._mouseY);
+
             // Sniper animation overlay
             if (game.sniperAnimating) {
                 const elapsed = now - game.sniperAnimStart;
@@ -307,20 +349,138 @@ function render(now) {
                 renderer.drawReplaySelect(game.replaySelectReplays, game.replaySelectScrollOffset);
             } else if (game._replayMode === 'playback') {
                 // Draw the board with current snapshot state
-                renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode);
+                const replaySkillCosts = (replayEngine && replayEngine.skillCosts) ? replayEngine.skillCosts : null;
+                renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode, replaySkillCosts);
                 renderer.drawBoard(game.board, now);
                 renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
+
+                // Draw movement highlights during 'rolled' phase
+                const replaySnap = replayEngine.getCurrent();
+                if (replaySnap && replaySnap.phase === 'rolled' && replaySnap.diceRoll) {
+                    if (game.moveMode === DIRECTION_TYPE.DIAGONAL) {
+                        renderer.drawHighlights(game.movableTiles, COLORS.DIAGONAL_MOVE_HIGHLIGHT);
+                        renderer.drawHighlights(game.fallTriggerTiles, COLORS.DIAGONAL_FALL_HIGHLIGHT);
+                    } else {
+                        renderer.drawHighlights(game.movableTiles, COLORS.MOVE_HIGHLIGHT);
+                        renderer.drawHighlights(game.fallTriggerTiles, COLORS.FALL_HIGHLIGHT);
+                    }
+                }
+
+                // Draw action highlights during 'moved' phase
+                if (replaySnap && replaySnap.phase === 'moved' && game.replayActionMode) {
+                    if (game.replayActionMode === 'stone') {
+                        renderer.drawHighlights(game.placeableTiles, COLORS.PLACE_HIGHLIGHT);
+                    } else if (game.replayActionMode === 'skill') {
+                        if (game.activeSkillType === SPECIAL_SKILLS.KAMAKURA) {
+                            renderer.drawKamakuraHighlights(
+                                game.kamakuraPatterns,
+                                game.hoveredKamakuraIndex,
+                                COLORS.SKILL_TARGET_HIGHLIGHT,
+                                COLORS.KAMAKURA_PATTERN_HIGHLIGHT
+                            );
+                        } else if (game.placeableTiles.length > 0) {
+                            // Placement-type skills (ice/bomb/swamp/warp) use placeableTiles
+                            renderer.drawHighlights(game.placeableTiles, COLORS.PLACE_HIGHLIGHT);
+                        } else {
+                            renderer.drawHighlights(game.skillTargetTiles, COLORS.SKILL_TARGET_HIGHLIGHT);
+                        }
+                    } else if (game.replayActionMode === 'drill') {
+                        renderer.drawHighlights(game.drillTargetTiles, COLORS.DRILL_TARGET_HIGHLIGHT);
+                    }
+                }
+
                 renderer.drawPlayer(game.player1, null, now);
                 renderer.drawPlayer(game.player2, null, now);
 
+                // Draw dice panels for both players during replay
+                if (game.player1.diceQueue && game.player1.diceQueue.length >= 3) {
+                    drawPlayerDicePanel(renderer.ctx, 40, game.player1);
+                }
+                if (game.player2.diceQueue && game.player2.diceQueue.length >= 3) {
+                    drawPlayerDicePanel(renderer.ctx, SCREEN_WIDTH - PANEL_WIDTH + 40, game.player2);
+                }
+
+                // Draw dice result and mode indicator during 'rolled' phase
+                if (replaySnap && replaySnap.phase === 'rolled' && replaySnap.diceRoll) {
+                    const rctx = renderer.ctx;
+                    const panelX = game.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
+                    // Large dice visual (same as MOVE phase in gameplay)
+                    drawDiceVisual(rctx, panelX + 100, 340, game.diceRoll);
+                    // Mode indicator
+                    rctx.textAlign = 'center';
+                    if (game.moveMode === DIRECTION_TYPE.DIAGONAL) {
+                        rctx.fillStyle = COLORS.DIAGONAL_MOVE_HIGHLIGHT;
+                        rctx.font = 'bold 16px Arial';
+                        rctx.fillText('Diagonal Mode', panelX + 100, 410);
+                    }
+                    rctx.fillStyle = '#888899';
+                    rctx.font = '12px Arial';
+                    rctx.fillText('Click piece to toggle mode', panelX + 100, 430);
+                    rctx.textAlign = 'left';
+                }
+
+                // Draw action buttons during 'moved' phase
+                if (replaySnap && replaySnap.phase === 'moved') {
+                    const rctx = renderer.ctx;
+                    const panelX = game.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
+                    const currentPlayer = game.getCurrentPlayer();
+                    const points = currentPlayer.points;
+                    const isDominated = currentPlayer.isDominated();
+                    const rsc = replaySkillCosts || SKILL_COSTS;
+
+                    // Label
+                    rctx.fillStyle = '#888899';
+                    rctx.font = '14px Arial';
+                    rctx.textAlign = 'left';
+                    rctx.fillText('ACTIONS', panelX, 320);
+
+                    // Stone button (Y: 330-380)
+                    drawSkillButton(rctx, panelX, 330, 200, 50, {
+                        name: 'Stone',
+                        color: COLORS.STONE,
+                        textColor: COLORS.WHITE,
+                        cost: 0,
+                        isSelected: game.replayActionMode === 'stone',
+                        isAffordable: true
+                    });
+
+                    // Skill button (Y: 388-438)
+                    const skillInfo = SKILL_INFO[currentPlayer.specialSkill];
+                    if (skillInfo) {
+                        const skillCost = rsc[skillInfo.costKey] !== undefined
+                            ? rsc[skillInfo.costKey] : SKILL_COSTS[skillInfo.costKey];
+                        drawSkillButton(rctx, panelX, 388, 200, 50, {
+                            name: skillInfo.name,
+                            color: isDominated ? '#333344' : skillInfo.color,
+                            textColor: isDominated ? '#666677' : skillInfo.textColor,
+                            cost: skillCost,
+                            isSelected: game.replayActionMode === 'skill',
+                            isAffordable: !isDominated && points >= skillCost
+                        });
+                    }
+
+                    // Drill button (Y: 446-496)
+                    const drillCost = rsc.drill !== undefined ? rsc.drill : SKILL_COSTS.drill;
+                    drawSkillButton(rctx, panelX, 446, 200, 50, {
+                        name: 'Drill',
+                        color: isDominated ? '#333344' : COLORS.DRILL,
+                        textColor: isDominated ? '#666677' : COLORS.WHITE,
+                        cost: drillCost,
+                        isSelected: game.replayActionMode === 'drill',
+                        isAffordable: !isDominated && points >= drillCost
+                    });
+                }
+
                 // Draw replay controls overlay
-                const snap = replayEngine.getCurrent();
+                const snap = replaySnap;
                 renderer.drawReplayControls(
                     replayEngine.currentIndex,
                     replayEngine.getTotalSnapshots(),
                     replayEngine.getActions(),
                     replayEngine.gameInfo,
-                    snap
+                    snap,
+                    game._mouseY,
+                    replaySkillCosts
                 );
             }
             break;
@@ -334,6 +494,11 @@ function render(now) {
         game.phase !== PHASES.SKILL_SELECTION &&
         game.phase !== PHASES.REPLAY) {
         renderer.drawComThinking(now);
+    }
+
+    // Draw confirm dialog overlay (on top of everything)
+    if (game.showConfirmDialog) {
+        renderer.drawConfirmDialog('Return to Menu', 'Save the game log?');
     }
 
     // Show/hide game log toolbar

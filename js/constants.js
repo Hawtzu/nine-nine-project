@@ -136,7 +136,7 @@ const SKILL_ORDER = [
 const SKILL_COSTS = {
     bomb: 50,
     drill: 100,
-    ice: 20,
+    ice: 30,
     diagonal_move: 10,
     stock: 20,
     domination: 100,
@@ -144,9 +144,9 @@ const SKILL_COSTS = {
     suriashi: 50,
     hitokiri: 100,
     meteor: 200,
-    momonga: 50,
+    momonga: 60,
     swamp: 20,
-    warp: 100,
+    warp: 60,
     checkpoint: 100,
     kamakura: 50
 };

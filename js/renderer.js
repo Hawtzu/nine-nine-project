@@ -534,6 +534,9 @@ class Renderer {
             this.drawDifficultySelector();
         }
 
+        // Replay Button
+        this.drawButton(SCREEN_WIDTH / 2 - 150, 640, 300, 60, '#333355', 'Replay');
+
         // Developer Settings gear icon
         this.drawGearIcon(SCREEN_WIDTH / 2 + 205, 390, 18);
     }
@@ -610,7 +613,9 @@ class Renderer {
         this.ctx.font = '24px Arial';
         this.ctx.fillText(reason, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
 
-        this.drawButton(SCREEN_WIDTH / 2 - 110, SCREEN_HEIGHT / 2 + 50, 220, 70, '#006400', 'Main Menu');
+        // Two buttons side by side
+        this.drawButton(SCREEN_WIDTH / 2 - 230, SCREEN_HEIGHT / 2 + 50, 220, 70, '#006400', 'Main Menu');
+        this.drawButton(SCREEN_WIDTH / 2 + 10, SCREEN_HEIGHT / 2 + 50, 220, 70, '#333355', 'Watch Replay');
     }
 
     // --- Skill Selection ---
@@ -913,5 +918,235 @@ class Renderer {
         }
 
         ctx.textBaseline = 'alphabetic';
+    }
+
+    // ─── Replay: Selection Screen ─────────────────────────────
+
+    drawReplaySelect(replays, scrollOffset) {
+        this.clear();
+        const ctx = this.ctx;
+
+        // Title
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = 'bold 36px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('REPLAY', SCREEN_WIDTH / 2, 50);
+
+        // Back button (top-left)
+        this.drawButton(30, 15, 150, 50, '#333344', 'Back');
+
+        // Import Log button (top-right)
+        this.drawButton(SCREEN_WIDTH - 220, 15, 200, 50, '#224466', 'Import Log');
+
+        const listY = 100;
+        const itemH = 70;
+        const listH = SCREEN_HEIGHT - 120;
+        const maxVisible = Math.floor(listH / itemH);
+        const cx = SCREEN_WIDTH / 2;
+
+        if (replays.length === 0) {
+            ctx.fillStyle = '#666688';
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('No saved replays yet.', cx, SCREEN_HEIGHT / 2);
+            ctx.font = '16px Arial';
+            ctx.fillText('Play a game or import a log file.', cx, SCREEN_HEIGHT / 2 + 35);
+            return;
+        }
+
+        // Scroll Up indicator
+        if (scrollOffset > 0) {
+            ctx.fillStyle = '#AAAACC';
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('▲', cx, listY - 8);
+        }
+
+        // Replay entries
+        for (let i = 0; i < maxVisible && i + scrollOffset < replays.length; i++) {
+            const replay = replays[i + scrollOffset];
+            const entryY = listY + i * itemH;
+            const isHover = false; // no hover tracking yet
+
+            // Entry background
+            ctx.fillStyle = '#111122';
+            ctx.fillRect(40, entryY, SCREEN_WIDTH - 80, itemH - 5);
+            ctx.strokeStyle = '#333355';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(40, entryY, SCREEN_WIDTH - 80, itemH - 5);
+
+            // Date
+            const d = new Date(replay.date);
+            const dateStr = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            ctx.fillStyle = '#888899';
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(dateStr, 55, entryY + 20);
+
+            // Mode + Difficulty
+            let modeStr = replay.mode === 'com' ? `COM (${replay.difficulty || '?'})` : 'PvP';
+            ctx.fillStyle = '#AAAACC';
+            ctx.font = 'bold 16px Arial';
+            ctx.fillText(modeStr, 230, entryY + 20);
+
+            // Winner
+            const winnerLabel = (replay.mode === 'com' && replay.winner === 2) ? 'COM' : `P${replay.winner}`;
+            ctx.fillStyle = replay.winner === 1 ? COLORS.P1 : COLORS.P2;
+            ctx.font = 'bold 18px Arial';
+            ctx.fillText(`${winnerLabel} Win`, 430, entryY + 20);
+
+            // Win reason
+            if (replay.winReason) {
+                ctx.fillStyle = '#888899';
+                ctx.font = '13px Arial';
+                ctx.fillText(replay.winReason, 550, entryY + 20);
+            }
+
+            // Skills
+            const p1Info = SKILL_INFO[replay.p1Skill];
+            const p2Info = SKILL_INFO[replay.p2Skill];
+            ctx.font = '13px Arial';
+            ctx.fillStyle = COLORS.P1;
+            ctx.fillText(`P1: ${p1Info ? p1Info.name : '?'}`, 55, entryY + 45);
+            ctx.fillStyle = COLORS.P2;
+            ctx.fillText(`P2: ${p2Info ? p2Info.name : '?'}`, 230, entryY + 45);
+
+            // Score
+            ctx.fillStyle = '#CCCCDD';
+            ctx.font = '14px Arial';
+            ctx.fillText(`${replay.p1Score} - ${replay.p2Score}`, 430, entryY + 45);
+
+            // Turns
+            ctx.fillStyle = '#888899';
+            ctx.fillText(`${replay.totalTurns} turns`, 550, entryY + 45);
+        }
+
+        // Scroll Down indicator
+        if (scrollOffset + maxVisible < replays.length) {
+            ctx.fillStyle = '#AAAACC';
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('▼', cx, listY + maxVisible * itemH + 15);
+        }
+    }
+
+    // ─── Replay: Playback Controls ────────────────────────────
+
+    drawReplayControls(currentIndex, totalSnapshots, actions, gameInfo, snapshot) {
+        const ctx = this.ctx;
+
+        // Top bar background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.fillRect(0, 0, SCREEN_WIDTH, 60);
+
+        // Back to Menu button
+        this.drawButtonSmall(30, 15, 200, 40, '#333344', '◀ Back to Menu');
+
+        // Back to List button
+        this.drawButtonSmall(240, 15, 160, 40, '#224466', '◀ Replay List');
+
+        // Game info
+        if (gameInfo) {
+            let infoText = gameInfo.mode === 'com' ? `COM (${gameInfo.difficulty || '?'})` : 'PvP';
+            ctx.fillStyle = '#AAAACC';
+            ctx.font = '16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(infoText, SCREEN_WIDTH / 2 + 100, 40);
+        }
+
+        // Winner indicator on final snapshot
+        if (snapshot && snapshot.winner) {
+            const winLabel = (gameInfo && gameInfo.mode === 'com' && snapshot.winner === 2) ? 'COM' : `P${snapshot.winner}`;
+            ctx.fillStyle = '#FFD700';
+            ctx.font = 'bold 16px Arial';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${winLabel} Wins! (${snapshot.winReason})`, SCREEN_WIDTH - 30, 40);
+        }
+
+        // Bottom control bar background
+        const barY = SCREEN_HEIGHT - 55;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.fillRect(0, barY, SCREEN_WIDTH, 55);
+
+        const cx = SCREEN_WIDTH / 2;
+        const btnY = barY + 8;
+        const btnH = 40;
+        const btnW = 50;
+
+        // ◀◀ First
+        this.drawButtonSmall(cx - 180, btnY, btnW, btnH,
+            currentIndex > 0 ? '#444466' : '#222233', '◀◀');
+
+        // ◀ Prev
+        this.drawButtonSmall(cx - 110, btnY, btnW, btnH,
+            currentIndex > 0 ? '#444466' : '#222233', '◀');
+
+        // Turn indicator
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const turnLabel = currentIndex === 0 ? 'Start' :
+            (snapshot && snapshot.winner ? 'End' : `Turn ${currentIndex}`);
+        ctx.fillText(`${turnLabel}  (${currentIndex} / ${totalSnapshots - 1})`,
+            cx, btnY + btnH / 2);
+        ctx.textBaseline = 'alphabetic';
+
+        // ▶ Next
+        this.drawButtonSmall(cx + 60, btnY, btnW, btnH,
+            currentIndex < totalSnapshots - 1 ? '#444466' : '#222233', '▶');
+
+        // ▶▶ Last
+        this.drawButtonSmall(cx + 130, btnY, btnW, btnH,
+            currentIndex < totalSnapshots - 1 ? '#444466' : '#222233', '▶▶');
+
+        // Action log panel (right side)
+        if (actions && actions.length > 0) {
+            const logX = SCREEN_WIDTH - PANEL_WIDTH + 10;
+            const logY = 70;
+            const logW = PANEL_WIDTH - 20;
+            const maxActions = Math.min(actions.length, 14);
+
+            ctx.fillStyle = 'rgba(0, 0, 20, 0.8)';
+            ctx.fillRect(logX, logY, logW, maxActions * 22 + 15);
+            ctx.strokeStyle = '#333355';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(logX, logY, logW, maxActions * 22 + 15);
+
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'left';
+            for (let i = 0; i < maxActions; i++) {
+                const a = actions[i];
+                // Color code by player
+                if (a.raw && a.raw.data && a.raw.data.player === 1) {
+                    ctx.fillStyle = COLORS.P1;
+                } else if (a.raw && a.raw.data && a.raw.data.player === 2) {
+                    ctx.fillStyle = COLORS.P2;
+                } else {
+                    ctx.fillStyle = '#AAAACC';
+                }
+                ctx.fillText(a.text, logX + 8, logY + 18 + i * 22);
+            }
+            if (actions.length > maxActions) {
+                ctx.fillStyle = '#666688';
+                ctx.fillText(`... +${actions.length - maxActions} more`, logX + 8, logY + 18 + maxActions * 22);
+            }
+        }
+    }
+
+    drawButtonSmall(x, y, width, height, color, text) {
+        this.ctx.fillStyle = color;
+        this.ctx.fillRect(x, y, width, height);
+
+        this.ctx.strokeStyle = '#555577';
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(x, y, width, height);
+
+        this.ctx.fillStyle = COLORS.WHITE;
+        this.ctx.font = 'bold 16px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(text, x + width / 2, y + height / 2);
+        this.ctx.textBaseline = 'alphabetic';
     }
 }

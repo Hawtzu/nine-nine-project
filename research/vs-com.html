@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>VS COM - Territory Battle</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0a1a; color: #ccc; font-family: 'Segoe UI', Tahoma, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 10px 0; }
+h1 { color: #00E5FF; font-size: 20px; margin-bottom: 8px; text-shadow: 0 0 10px rgba(0,229,255,0.4); }
+canvas { display: block; cursor: pointer; }
+#game-log { width: 1060px; max-height: 180px; overflow-y: auto; background: #06061a; border: 1px solid #333; padding: 8px; font-family: monospace; font-size: 11px; color: #8a8; margin-top: 4px; white-space: pre-wrap; }
+.top-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.top-bar button { background: #1a1a3e; border: 1px solid #00E5FF; color: #00E5FF; padding: 6px 16px; cursor: pointer; font-size: 13px; }
+.top-bar button:hover { background: #2a2a5e; }
+.top-bar span { color: #888; font-size: 13px; }
+</style>
+</head>
+<body>
+<h1>VS COM — Territory Battle</h1>
+<div class="top-bar">
+    <button onclick="newGame()">New Game</button>
+    <span id="turn-label">Turn 1</span>
+    <label style="color:#888;font-size:12px"><input type="checkbox" id="show-territory" onchange="draw()"> Territory</label>
+</div>
+<canvas id="game-canvas"></canvas>
+<div id="game-log"></div>
+<script>
+'use strict';
+
+// ===== Constants =====
+const BOARD_SIZE = 9;
+const CELL_SIZE = 60;
+const PANEL_WIDTH = 260;
+const BOARD_OFFSET_X = PANEL_WIDTH;
+const BOARD_OFFSET_Y = 40;
+const SCREEN_WIDTH = PANEL_WIDTH * 2 + BOARD_SIZE * CELL_SIZE;
+const SCREEN_HEIGHT = BOARD_SIZE * CELL_SIZE + BOARD_OFFSET_Y + 40;
+const MARKERS = { EMPTY: ' ', STONE: 'S', ICE: 'I', SWAMP: 'W', WARP: 'P', SNOW: 'N' };
+const CROSS_DIRECTIONS = [{dr:0,dc:1},{dr:0,dc:-1},{dr:1,dc:0},{dr:-1,dc:0}];
+const DIAGONAL_DIRECTIONS = [{dr:-1,dc:-1},{dr:-1,dc:1},{dr:1,dc:-1},{dr:1,dc:1}];
+const POINT_TURN_BONUS = 10;
+const POINT_DIAGONAL_COST = 10;
+const POINT_STOCK_COST = 20;
+const MAX_DEPTH = 4;
+
+const PLAYER_COLOR = '#00AAFF';
+const COM_COLOR = '#FF4444';
+
+// ===== Game State =====
+let board = [];
+let playerPos = {row:4, col:0};
+let comPos = {row:4, col:8};
+let playerPoints = 10, comPoints = 0;
+let playerDice = [], comDice = [];   // diceQueue [d0, d1, d2]
+let playerStock = null, comStock = null;
+let turnCount = 1;
+let currentTurn = 'player'; // 'player' | 'com'
+let gamePhase = 'INIT';
+let winner = null, winReason = '';
+
+// Player turn state
+let moveMode = 'cross';
+let movableTiles = [];
+let placeableTiles = [];
+let currentDiceValue = 0;
+let lastActionType = 'normal'; // for log
+
+// COM state
+let comDecision = null;
+
+// Canvas
+const canvas = document.getElementById('game-canvas');
+const ctx = canvas.getContext('2d');
+canvas.width = SCREEN_WIDTH;
+canvas.height = SCREEN_HEIGHT;
+
+// ===== Utility =====
+function isValidPosition(r, c) { return r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE; }
+function randDice() { return Math.floor(Math.random() * 3) + 1; }
+
+// ===== Board Generation =====
+function generateBoard() {
+    board = Array.from({length: BOARD_SIZE}, () => Array(BOARD_SIZE).fill(MARKERS.EMPTY));
+    playerPos = {row:4, col:0};
+    comPos = {row:4, col:8};
+    const banned = new Set();
+    for (const pos of [playerPos, comPos])
+        for (let dr = -1; dr <= 1; dr++)
+            for (let dc = -1; dc <= 1; dc++)
+                banned.add(`${pos.row+dr},${pos.col+dc}`);
+    const available = [];
+    for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = 0; c < BOARD_SIZE; c++)
+            if (!banned.has(`${r},${c}`)) available.push({r, c});
+    for (let i = 0; i < 3 && available.length > 0; i++) {
+        const idx = Math.floor(Math.random() * available.length);
+        const {r, c} = available.splice(idx, 1)[0];
+        board[r][c] = MARKERS.STONE;
+    }
+}
+
+function initDiceQueues() {
+    playerDice = [randDice(), randDice(), randDice()];
+    comDice = [randDice(), randDice(), randDice()];
+}
+
+function shiftQueue(queue) {
+    const used = queue.shift();
+    queue.push(randDice());
+    return used;
+}
+
+// ===== Movement Simulation (from tree-territory.html) =====
+function simulateMovableTiles(brd, pos, diceValue, otherPos, diagonal) {
+    const directions = diagonal ? DIAGONAL_DIRECTIONS : CROSS_DIRECTIONS;
+    const results = [];
+    for (const dir of directions) {
+        let steps = diceValue;
+        let cur = {row: pos.row, col: pos.col};
+        let finalDest = null;
+        const visited = new Set();
+        let step = 1;
+        let isFallTrigger = false;
+        while (step <= steps) {
+            const nr = cur.row + dir.dr, nc = cur.col + dir.dc;
+            if (!isValidPosition(nr, nc)) { isFallTrigger = true; break; }
+            const tile = brd[nr][nc];
+            if (tile === MARKERS.STONE || tile === MARKERS.SNOW || (nr === otherPos.row && nc === otherPos.col)) break;
+            finalDest = {row: nr, col: nc};
+            cur = {row: nr, col: nc};
+            if (tile === MARKERS.WARP) break;
+            const key = `${nr},${nc}`;
+            if (tile === MARKERS.ICE && !visited.has(key)) { steps++; visited.add(key); }
+            if (tile === MARKERS.SWAMP && !visited.has(key)) { steps = Math.max(step, steps - 1); visited.add(key); }
+            step++;
+        }
+        if (finalDest && !isFallTrigger) results.push(finalDest);
+    }
+    const seen = new Set();
+    return results.filter(t => { const k = `${t.row},${t.col}`; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+function getReachableTiles(brd, pos, diceValue, otherPos) {
+    const all = simulateMovableTiles(brd, pos, diceValue, otherPos, false)
+        .concat(simulateMovableTiles(brd, pos, diceValue, otherPos, true));
+    const seen = new Set();
+    return all.filter(t => { const k = `${t.row},${t.col}`; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+function generateMoves(brd, pos, diceValue, otherPos, allowDiag) {
+    const cross = simulateMovableTiles(brd, pos, diceValue, otherPos, false)
+        .map(t => ({...t, isDiagonal: false}));
+    const diag = allowDiag
+        ? simulateMovableTiles(brd, pos, diceValue, otherPos, true)
+            .map(t => ({...t, isDiagonal: true}))
+        : [];
+    const all = cross.concat(diag);
+    const seen = new Set();
+    return all.filter(t => { const k = `${t.row},${t.col}`; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+function findPlaceableTiles(brd, pos, otherPos) {
+    const tiles = [];
+    for (const dir of CROSS_DIRECTIONS) {
+        const r = pos.row + dir.dr, c = pos.col + dir.dc;
+        if (!isValidPosition(r, c)) continue;
+        if (r === otherPos.row && c === otherPos.col) continue;
+        if (brd[r][c] !== MARKERS.STONE && brd[r][c] !== MARKERS.SNOW) tiles.push({row: r, col: c});
+    }
+    return tiles;
+}
+
+// ===== Territory Scoring (from tree-territory.html) =====
+function computeTerritoryScore(brd, pPos, oPos, pDice, oDice) {
+    const pSeeds = new Set(), oSeeds = new Set();
+    for (const dv of pDice)
+        for (const t of getReachableTiles(brd, pPos, dv, oPos)) pSeeds.add(`${t.row},${t.col}`);
+    for (const dv of oDice)
+        for (const t of getReachableTiles(brd, oPos, dv, pPos)) oSeeds.add(`${t.row},${t.col}`);
+    function bfsFromSeeds(seeds) {
+        const dist = new Map(), queue = [];
+        for (const key of seeds) { dist.set(key, 0); const [r,c]=key.split(',').map(Number); queue.push({row:r,col:c,d:0}); }
+        let head = 0;
+        while (head < queue.length) {
+            const {row,col,d} = queue[head++];
+            for (const dir of CROSS_DIRECTIONS) {
+                const nr=row+dir.dr, nc=col+dir.dc;
+                if (!isValidPosition(nr,nc)) continue;
+                const key=`${nr},${nc}`;
+                if (dist.has(key)) continue;
+                if (brd[nr][nc]===MARKERS.STONE||brd[nr][nc]===MARKERS.SNOW) continue;
+                dist.set(key, d+1); queue.push({row:nr,col:nc,d:d+1});
+            }
+        }
+        return dist;
+    }
+    const pDist = bfsFromSeeds(pSeeds), oDist = bfsFromSeeds(oSeeds);
+    let pCount=0, oCount=0, bothCount=0;
+    for (let r=0;r<BOARD_SIZE;r++) for (let c=0;c<BOARD_SIZE;c++) {
+        const key=`${r},${c}`, tile=brd[r][c];
+        if (tile===MARKERS.STONE||tile===MARKERS.SNOW) continue;
+        if ((r===pPos.row&&c===pPos.col)||(r===oPos.row&&c===oPos.col)) continue;
+        const pd=pDist.get(key), od=oDist.get(key);
+        if (pd===undefined&&od===undefined) continue;
+        if (pd!==undefined&&od!==undefined) { if(pd<od)pCount++; else if(od<pd)oCount++; else bothCount++; }
+        else if (pd!==undefined) pCount++; else oCount++;
+    }
+    return { score: pCount-oCount, pCount, oCount, bothCount };
+}
+
+function computeTerritoryMap(brd, pPos, oPos, pDice, oDice) {
+    const pSeeds = new Set(), oSeeds = new Set();
+    for (const dv of pDice) for (const t of getReachableTiles(brd, pPos, dv, oPos)) pSeeds.add(`${t.row},${t.col}`);
+    for (const dv of oDice) for (const t of getReachableTiles(brd, oPos, dv, pPos)) oSeeds.add(`${t.row},${t.col}`);
+    function bfsFromSeeds(seeds) {
+        const dist = new Map(), queue = [];
+        for (const key of seeds) { dist.set(key,0); const [r,c]=key.split(',').map(Number); queue.push({row:r,col:c,d:0}); }
+        let head=0;
+        while(head<queue.length) {
+            const {row,col,d}=queue[head++];
+            for (const dir of CROSS_DIRECTIONS) {
+                const nr=row+dir.dr, nc=col+dir.dc;
+                if (!isValidPosition(nr,nc)) continue;
+                const key=`${nr},${nc}`;
+                if (dist.has(key)) continue;
+                if (brd[nr][nc]===MARKERS.STONE||brd[nr][nc]===MARKERS.SNOW) continue;
+                dist.set(key,d+1); queue.push({row:nr,col:nc,d:d+1});
+            }
+        }
+        return dist;
+    }
+    const pDist=bfsFromSeeds(pSeeds), oDist=bfsFromSeeds(oSeeds);
+    const result = new Map();
+    let pCount=0, oCount=0, bothCount=0;
+    for (let r=0;r<BOARD_SIZE;r++) for (let c=0;c<BOARD_SIZE;c++) {
+        const key=`${r},${c}`, tile=brd[r][c];
+        if (tile===MARKERS.STONE||tile===MARKERS.SNOW) continue;
+        const pd=pDist.get(key), od=oDist.get(key);
+        if (pd===undefined&&od===undefined) continue;
+        const seed=pSeeds.has(key)||oSeeds.has(key);
+        let owner;
+        if (pd!==undefined&&od!==undefined) {
+            if(pd<od){owner='p'; pCount++;}
+            else if(od<pd){owner='o'; oCount++;}
+            else{owner='both'; bothCount++;}
+        } else if(pd!==undefined){owner='p'; pCount++;}
+        else{owner='o'; oCount++;}
+        result.set(key, {owner, seed});
+    }
+    return { territory:result, pSeeds, oSeeds, pCount, oCount, bothCount };
+}
+
+// ===== Minimax Search (adapted from tree-territory.html, COM=maximizer) =====
+function getActionType(depth) { return (depth % 2 === 1) ? 'move' : 'place'; }
+function getActivePlayer(depth) { return (Math.floor((depth - 1) / 2) % 2 === 0) ? 'player' : 'opponent'; }
+
+let leafCount = 0;
+
+function buildComSearchTree() {
+    leafCount = 0;
+    // COM = "player" (maximizer), Human = "opponent" (minimizer)
+    const cSaved = comStock !== null ? {value: comStock, label:'Stk'} : null;
+    const hSaved = playerStock !== null ? {value: playerStock, label:'Stk'} : null;
+    const pQueue = cSaved
+        ? [{value: comDice[0], label:'D0'}]
+        : [{value: comDice[0], label:'D0'}, {value: comDice[1], label:'D1'}];
+    const oQueue = hSaved
+        ? [{value: playerDice[0], label:'O0'}]
+        : [{value: playerDice[0], label:'O0'}, {value: playerDice[1], label:'O1'}];
+
+    const root = {
+        type: 'root', depth: 0, children: [],
+        brd: board.map(r=>[...r]),
+        pPos: {...comPos}, oPos: {...playerPos},
+        pPts: comPoints, oPts: playerPoints,
+        pSaved: cSaved, oSaved: hSaved,
+        pRemainingDice: [...pQueue.map(d => d.value), ...(cSaved ? [cSaved.value] : [])],
+        oRemainingDice: [...oQueue.map(d => d.value), ...(hSaved ? [hSaved.value] : [])],
+        score: 0, bestChildIdx: 0
+    };
+
+    root.children = buildChildren(root.brd, root.pPos, root.oPos, 1,
+        comPoints, playerPoints, pQueue, oQueue, cSaved, hSaved);
+    propagateScores(root, 0);
+    return root;
+}
+
+function buildChildren(brd, pPos, oPos, depth, pPts, oPts, pQueue, oQueue, pSaved, oSaved) {
+    if (depth > MAX_DEPTH) return [];
+    const actionType = getActionType(depth);
+    const player = getActivePlayer(depth);
+    const pos = player === 'player' ? pPos : oPos;
+    const otherPos = player === 'player' ? oPos : pPos;
+    const children = [];
+
+    if (actionType === 'place') {
+        const tiles = findPlaceableTiles(brd, pos, otherPos);
+        for (const t of tiles) {
+            const node = {
+                type:'place', player, row:t.row, col:t.col, depth,
+                moveType:'normal', diceUsed:null, diceLabel:null,
+                savedDice:null, savedLabel:null,
+                pPts, oPts, pSaved, oSaved,
+                pRemainingDice: [...pQueue.map(d=>d.value), ...(pSaved?[pSaved.value]:[])],
+                oRemainingDice: [...oQueue.map(d=>d.value), ...(oSaved?[oSaved.value]:[])],
+                children:[], score:0, bestChildIdx:0
+            };
+            const oldTile = brd[t.row][t.col];
+            brd[t.row][t.col] = MARKERS.STONE;
+            node.children = buildChildren(brd, pPos, oPos, depth+1, pPts, oPts, pQueue, oQueue, pSaved, oSaved);
+            if (node.children.length === 0) {
+                leafCount++;
+                node.board = brd.map(r=>[...r]);
+                node.leafPPos = {...pPos};
+                node.leafOPos = {...oPos};
+            }
+            brd[t.row][t.col] = oldTile;
+            children.push(node);
+        }
+        if (tiles.length === 0) {
+            return buildChildren(brd, pPos, oPos, depth+1, pPts, oPts, pQueue, oQueue, pSaved, oSaved);
+        }
+    } else {
+        const queue = player === 'player' ? pQueue : oQueue;
+        const saved = player === 'player' ? pSaved : oSaved;
+        const activePts = player === 'player' ? pPts : oPts;
+
+        // Option A: Normal
+        if (queue.length >= 1) {
+            const dice = queue[0];
+            const remainQueue = queue.slice(1);
+            const npQ = player==='player' ? remainQueue : pQueue;
+            const noQ = player==='player' ? oQueue : remainQueue;
+            const allowDiag = activePts >= POINT_DIAGONAL_COST;
+            const moves = generateMoves(brd, pos, dice.value, otherPos, allowDiag);
+            if (moves.length === 0) moves.push({row:pos.row, col:pos.col, isDiagonal:false});
+            for (const m of moves) {
+                let childPPos = {...pPos}, childOPos = {...oPos};
+                if (player==='player') childPPos = {row:m.row, col:m.col};
+                else childOPos = {row:m.row, col:m.col};
+                let nodePPts = pPts, nodeOPts = oPts;
+                if (m.isDiagonal) {
+                    if (player==='player') nodePPts -= POINT_DIAGONAL_COST;
+                    else nodeOPts -= POINT_DIAGONAL_COST;
+                }
+                const node = {
+                    type:'move', player, row:m.row, col:m.col, depth,
+                    moveType:'normal', diceUsed:dice.value, diceLabel:dice.label,
+                    savedDice:null, savedLabel:null, isDiagonal:!!m.isDiagonal,
+                    pPts:nodePPts, oPts:nodeOPts, pSaved, oSaved,
+                    pRemainingDice: [...npQ.map(d=>d.value), ...(pSaved?[pSaved.value]:[])],
+                    oRemainingDice: [...noQ.map(d=>d.value), ...(oSaved?[oSaved.value]:[])],
+                    children:[], score:0, bestChildIdx:0
+                };
+                node.children = buildChildren(brd, childPPos, childOPos, depth+1, nodePPts, nodeOPts, npQ, noQ, pSaved, oSaved);
+                if (node.children.length === 0) { leafCount++; node.board = brd.map(r=>[...r]); node.leafPPos={...childPPos}; node.leafOPos={...childOPos}; }
+                children.push(node);
+            }
+        }
+
+        // Option B: Stock
+        if (saved === null && activePts >= POINT_STOCK_COST && queue.length >= 2) {
+            const savedDice = queue[0], useDice = queue[1];
+            const remainQueue = queue.slice(2);
+            let stockPPts = pPts, stockOPts = oPts;
+            if (player==='player') stockPPts -= POINT_STOCK_COST; else stockOPts -= POINT_STOCK_COST;
+            const stockActivePts = player==='player' ? stockPPts : stockOPts;
+            const npQ = player==='player' ? remainQueue : pQueue;
+            const noQ = player==='player' ? oQueue : remainQueue;
+            const npS = player==='player' ? savedDice : pSaved;
+            const noS = player==='player' ? oSaved : savedDice;
+            const allowDiag = stockActivePts >= POINT_DIAGONAL_COST;
+            const moves = generateMoves(brd, pos, useDice.value, otherPos, allowDiag);
+            if (moves.length === 0) moves.push({row:pos.row, col:pos.col, isDiagonal:false});
+            for (const m of moves) {
+                let childPPos = {...pPos}, childOPos = {...oPos};
+                if (player==='player') childPPos = {row:m.row, col:m.col}; else childOPos = {row:m.row, col:m.col};
+                let nodePPts = stockPPts, nodeOPts = stockOPts;
+                if (m.isDiagonal) { if (player==='player') nodePPts -= POINT_DIAGONAL_COST; else nodeOPts -= POINT_DIAGONAL_COST; }
+                const node = {
+                    type:'move', player, row:m.row, col:m.col, depth,
+                    moveType:'stock', diceUsed:useDice.value, diceLabel:useDice.label,
+                    savedDice:savedDice.value, savedLabel:savedDice.label, isDiagonal:!!m.isDiagonal,
+                    pPts:nodePPts, oPts:nodeOPts, pSaved:npS, oSaved:noS,
+                    pRemainingDice: [...npQ.map(d=>d.value), ...(npS?[npS.value]:[])],
+                    oRemainingDice: [...noQ.map(d=>d.value), ...(noS?[noS.value]:[])],
+                    children:[], score:0, bestChildIdx:0
+                };
+                node.children = buildChildren(brd, childPPos, childOPos, depth+1, nodePPts, nodeOPts, npQ, noQ, npS, noS);
+                if (node.children.length === 0) { leafCount++; node.board = brd.map(r=>[...r]); node.leafPPos={...childPPos}; node.leafOPos={...childOPos}; }
+                children.push(node);
+            }
+        }
+
+        // Option C: Use-Stock
+        if (saved !== null && queue.length >= 1) {
+            const remainQueue = queue.slice(1);
+            const npQ = player==='player' ? remainQueue : pQueue;
+            const noQ = player==='player' ? oQueue : remainQueue;
+            const npS = player==='player' ? null : pSaved;
+            const noS = player==='player' ? oSaved : null;
+            const allowDiag = activePts >= POINT_DIAGONAL_COST;
+            const moves = generateMoves(brd, pos, saved.value, otherPos, allowDiag);
+            if (moves.length === 0) moves.push({row:pos.row, col:pos.col, isDiagonal:false});
+            for (const m of moves) {
+                let childPPos = {...pPos}, childOPos = {...oPos};
+                if (player==='player') childPPos = {row:m.row, col:m.col}; else childOPos = {row:m.row, col:m.col};
+                let nodePPts = pPts, nodeOPts = oPts;
+                if (m.isDiagonal) { if (player==='player') nodePPts -= POINT_DIAGONAL_COST; else nodeOPts -= POINT_DIAGONAL_COST; }
+                const node = {
+                    type:'move', player, row:m.row, col:m.col, depth,
+                    moveType:'use_stock', diceUsed:saved.value, diceLabel:saved.label,
+                    savedDice:null, savedLabel:null, isDiagonal:!!m.isDiagonal,
+                    pPts:nodePPts, oPts:nodeOPts, pSaved:npS, oSaved:noS,
+                    pRemainingDice: [...npQ.map(d=>d.value), ...(npS?[npS.value]:[])],
+                    oRemainingDice: [...noQ.map(d=>d.value), ...(noS?[noS.value]:[])],
+                    children:[], score:0, bestChildIdx:0
+                };
+                node.children = buildChildren(brd, childPPos, childOPos, depth+1, nodePPts, nodeOPts, npQ, noQ, npS, noS);
+                if (node.children.length === 0) { leafCount++; node.board = brd.map(r=>[...r]); node.leafPPos={...childPPos}; node.leafOPos={...childOPos}; }
+                children.push(node);
+            }
+        }
+
+        if (children.length === 0) {
+            return buildChildren(brd, pPos, oPos, depth+1, pPts, oPts, pQueue, oQueue, pSaved, oSaved);
+        }
+    }
+    return children;
+}
+
+function propagateScores(node, depth) {
+    if (node.children.length === 0) {
+        if (node.board) {
+            let totalScore = 0, totalP = 0, totalO = 0, totalB = 0;
+            for (let d2 = 1; d2 <= 3; d2++) {
+                for (let o2 = 1; o2 <= 3; o2++) {
+                    const pEval = [...node.pRemainingDice, d2];
+                    const oEval = [...node.oRemainingDice, o2];
+                    const r = computeTerritoryScore(node.board, node.leafPPos, node.leafOPos, pEval, oEval);
+                    totalScore += r.score; totalP += r.pCount; totalO += r.oCount; totalB += r.bothCount;
+                }
+            }
+            node.score = totalScore / 9;
+        }
+        return;
+    }
+    for (const child of node.children) propagateScores(child, depth+1);
+    const childDepth = depth + 1;
+    const isMax = (depth === 0) || getActivePlayer(childDepth) === 'player';
+    let bestIdx = 0;
+    for (let i = 1; i < node.children.length; i++) {
+        if (isMax ? node.children[i].score > node.children[bestIdx].score
+                  : node.children[i].score < node.children[bestIdx].score) bestIdx = i;
+    }
+    node.score = node.children[bestIdx].score;
+    node.bestChildIdx = bestIdx;
+}
+
+// ===== Game Log =====
+function logMsg(msg) {
+    const el = document.getElementById('game-log');
+    el.textContent += msg + '\n';
+    el.scrollTop = el.scrollHeight;
+}
+
+// ===== New Game =====
+function newGame() {
+    generateBoard();
+    initDiceQueues();
+    playerPoints = 10; comPoints = 0;
+    playerStock = null; comStock = null;
+    turnCount = 1; currentTurn = 'player';
+    winner = null; winReason = '';
+    moveMode = 'cross';
+    movableTiles = []; placeableTiles = [];
+    gamePhase = 'PLAYER_ROLL';
+    comDecision = null;
+    document.getElementById('game-log').textContent = '';
+    logMsg('=== Game Start ===');
+    logMsg(`Player: ${playerPoints}pt  COM: ${comPoints}pt`);
+    logMsg(`--- Turn ${turnCount} (Player) ---`);
+    document.getElementById('turn-label').textContent = `Turn ${turnCount}`;
+    draw();
+}
+
+// ===== Player Turn =====
+function playerRollNormal() {
+    if (gamePhase !== 'PLAYER_ROLL') return;
+    currentDiceValue = shiftQueue(playerDice);
+    lastActionType = 'normal';
+    logMsg(`Player rolls: ${currentDiceValue} (Normal)`);
+    computePlayerMovable();
+}
+
+function playerDoStock() {
+    if (gamePhase !== 'PLAYER_ROLL') return;
+    if (playerStock !== null || playerPoints < POINT_STOCK_COST) return;
+    playerPoints -= POINT_STOCK_COST;
+    const saved = shiftQueue(playerDice);
+    playerStock = saved;
+    currentDiceValue = shiftQueue(playerDice);
+    lastActionType = 'stock';
+    logMsg(`Player stocks ${saved}, rolls: ${currentDiceValue} (-${POINT_STOCK_COST}pt)`);
+    computePlayerMovable();
+}
+
+function playerUseStock() {
+    if (gamePhase !== 'PLAYER_ROLL') return;
+    if (playerStock === null) return;
+    currentDiceValue = playerStock;
+    playerStock = null;
+    shiftQueue(playerDice); // discard current, shift queue
+    lastActionType = 'use_stock';
+    logMsg(`Player uses stock: ${currentDiceValue}`);
+    computePlayerMovable();
+}
+
+function computePlayerMovable() {
+    const allowDiag = moveMode === 'diagonal' && playerPoints >= POINT_DIAGONAL_COST;
+    const cross = simulateMovableTiles(board, playerPos, currentDiceValue, comPos, false)
+        .map(t => ({...t, isDiagonal: false}));
+    const diag = playerPoints >= POINT_DIAGONAL_COST
+        ? simulateMovableTiles(board, playerPos, currentDiceValue, comPos, true)
+            .map(t => ({...t, isDiagonal: true}))
+        : [];
+    const all = cross.concat(diag);
+    const seen = new Set();
+    movableTiles = all.filter(t => { const k = `${t.row},${t.col}`; if (seen.has(k)) return false; seen.add(k); return true; });
+
+    if (movableTiles.length === 0) {
+        winner = 'com'; winReason = 'Player is blocked!';
+        gamePhase = 'GAME_OVER';
+        logMsg(`>>> GAME OVER: ${winReason} COM wins! <<<`);
+    } else {
+        gamePhase = 'PLAYER_MOVE';
+    }
+    draw();
+}
+
+function playerMove(row, col) {
+    if (gamePhase !== 'PLAYER_MOVE') return;
+    const tile = movableTiles.find(t => t.row === row && t.col === col);
+    if (!tile) return;
+    if (tile.isDiagonal) {
+        playerPoints -= POINT_DIAGONAL_COST;
+        logMsg(`Player moves to (${row},${col}) ↗ diagonal (-${POINT_DIAGONAL_COST}pt)`);
+    } else {
+        logMsg(`Player moves to (${row},${col})`);
+    }
+    playerPos = {row, col};
+    movableTiles = [];
+
+    placeableTiles = findPlaceableTiles(board, playerPos, comPos);
+    if (placeableTiles.length === 0) {
+        winner = 'com'; winReason = 'Player cannot place a stone!';
+        gamePhase = 'GAME_OVER';
+        logMsg(`>>> GAME OVER: ${winReason} COM wins! <<<`);
+    } else {
+        gamePhase = 'PLAYER_PLACE';
+    }
+    draw();
+}
+
+function playerPlace(row, col) {
+    if (gamePhase !== 'PLAYER_PLACE') return;
+    const tile = placeableTiles.find(t => t.row === row && t.col === col);
+    if (!tile) return;
+    board[row][col] = MARKERS.STONE;
+    placeableTiles = [];
+    logMsg(`Player places stone at (${row},${col})`);
+
+    // End player turn → COM gets bonus
+    comPoints += POINT_TURN_BONUS;
+    logMsg(`COM +${POINT_TURN_BONUS}pt → ${comPoints}pt`);
+    currentTurn = 'com';
+    turnCount++;
+    document.getElementById('turn-label').textContent = `Turn ${turnCount}`;
+    logMsg(`--- Turn ${turnCount} (COM) ---`);
+
+    gamePhase = 'COM_THINK';
+    draw();
+    setTimeout(comThink, 400);
+}
+
+// ===== COM Turn =====
+function comThink() {
+    if (winner) return;
+
+    // Check if COM can move at all
+    const anyMoves = generateMoves(board, comPos, comDice[0], playerPos, comPoints >= POINT_DIAGONAL_COST);
+    const stockMoves = (comStock === null && comPoints >= POINT_STOCK_COST && comDice.length >= 2)
+        ? generateMoves(board, comPos, comDice[1], playerPos, (comPoints - POINT_STOCK_COST) >= POINT_DIAGONAL_COST)
+        : [];
+    const useStockMoves = comStock !== null
+        ? generateMoves(board, comPos, comStock, playerPos, comPoints >= POINT_DIAGONAL_COST)
+        : [];
+
+    if (anyMoves.length === 0 && stockMoves.length === 0 && useStockMoves.length === 0) {
+        winner = 'player'; winReason = 'COM is blocked!';
+        gamePhase = 'GAME_OVER';
+        logMsg(`>>> GAME OVER: ${winReason} Player wins! <<<`);
+        draw();
+        return;
+    }
+
+    // Run minimax
+    const root = buildComSearchTree();
+
+    if (root.children.length === 0) {
+        winner = 'player'; winReason = 'COM has no valid moves!';
+        gamePhase = 'GAME_OVER';
+        logMsg(`>>> GAME OVER: ${winReason} Player wins! <<<`);
+        draw();
+        return;
+    }
+
+    const bestMove = root.children[root.bestChildIdx];
+    let bestPlace = null;
+    if (bestMove.children.length > 0) {
+        bestPlace = bestMove.children[bestMove.bestChildIdx];
+    }
+
+    comDecision = {
+        moveType: bestMove.moveType,
+        diceUsed: bestMove.diceUsed,
+        moveRow: bestMove.row, moveCol: bestMove.col,
+        isDiagonal: bestMove.isDiagonal,
+        savedDice: bestMove.savedDice,
+        placeRow: bestPlace ? bestPlace.row : null,
+        placeCol: bestPlace ? bestPlace.col : null,
+        score: root.score
+    };
+
+    logMsg(`COM thinks... (score: ${root.score >= 0 ? '+' : ''}${root.score.toFixed(1)}, leaves: ${leafCount})`);
+
+    // Execute COM's dice action
+    if (comDecision.moveType === 'stock') {
+        const saved = shiftQueue(comDice);
+        comStock = saved;
+        comPoints -= POINT_STOCK_COST;
+        currentDiceValue = shiftQueue(comDice);
+        logMsg(`COM stocks ${saved}, uses ${currentDiceValue} (-${POINT_STOCK_COST}pt)`);
+    } else if (comDecision.moveType === 'use_stock') {
+        currentDiceValue = comStock;
+        comStock = null;
+        shiftQueue(comDice);
+        logMsg(`COM uses stock: ${currentDiceValue}`);
+    } else {
+        currentDiceValue = shiftQueue(comDice);
+        logMsg(`COM rolls: ${currentDiceValue} (Normal)`);
+    }
+
+    gamePhase = 'COM_MOVE';
+    draw();
+    setTimeout(comExecuteMove, 600);
+}
+
+function comExecuteMove() {
+    if (winner || !comDecision) return;
+    const {moveRow, moveCol, isDiagonal} = comDecision;
+    if (isDiagonal) {
+        comPoints -= POINT_DIAGONAL_COST;
+        logMsg(`COM moves to (${moveRow},${moveCol}) ↗ diagonal (-${POINT_DIAGONAL_COST}pt)`);
+    } else {
+        logMsg(`COM moves to (${moveRow},${moveCol})`);
+    }
+    comPos = {row: moveRow, col: moveCol};
+
+    // Check placement
+    const places = findPlaceableTiles(board, comPos, playerPos);
+    if (places.length === 0) {
+        winner = 'player'; winReason = 'COM cannot place a stone!';
+        gamePhase = 'GAME_OVER';
+        logMsg(`>>> GAME OVER: ${winReason} Player wins! <<<`);
+        draw();
+        return;
+    }
+
+    gamePhase = 'COM_PLACE';
+    draw();
+    setTimeout(comExecutePlace, 600);
+}
+
+function comExecutePlace() {
+    if (winner || !comDecision) return;
+    let pr = comDecision.placeRow, pc = comDecision.placeCol;
+
+    // Validate the planned placement is still valid
+    const places = findPlaceableTiles(board, comPos, playerPos);
+    if (pr === null || !places.find(t => t.row === pr && t.col === pc)) {
+        // Fallback: pick best placement from available (re-evaluate)
+        if (places.length > 0) {
+            let bestScore = -Infinity, bestP = places[0];
+            for (const p of places) {
+                const oldTile = board[p.row][p.col];
+                board[p.row][p.col] = MARKERS.STONE;
+                const s = computeTerritoryScore(board, comPos, playerPos, [2], [2]);
+                board[p.row][p.col] = oldTile;
+                if (s.score > bestScore) { bestScore = s.score; bestP = p; }
+            }
+            pr = bestP.row; pc = bestP.col;
+        } else {
+            winner = 'player'; winReason = 'COM cannot place!';
+            gamePhase = 'GAME_OVER';
+            logMsg(`>>> GAME OVER: ${winReason} Player wins! <<<`);
+            draw();
+            return;
+        }
+    }
+
+    board[pr][pc] = MARKERS.STONE;
+    logMsg(`COM places stone at (${pr},${pc})`);
+
+    // End COM turn → Player gets bonus
+    playerPoints += POINT_TURN_BONUS;
+    logMsg(`Player +${POINT_TURN_BONUS}pt → ${playerPoints}pt`);
+    currentTurn = 'player';
+    turnCount++;
+    document.getElementById('turn-label').textContent = `Turn ${turnCount}`;
+    logMsg(`--- Turn ${turnCount} (Player) ---`);
+
+    comDecision = null;
+    gamePhase = 'PLAYER_ROLL';
+    moveMode = 'cross';
+
+    // Check if player can move
+    const pMoves = generateMoves(board, playerPos, playerDice[0], comPos, playerPoints >= POINT_DIAGONAL_COST);
+    const pUsStk = playerStock !== null
+        ? generateMoves(board, playerPos, playerStock, comPos, playerPoints >= POINT_DIAGONAL_COST) : [];
+    if (pMoves.length === 0 && pUsStk.length === 0) {
+        winner = 'com'; winReason = 'Player is blocked!';
+        gamePhase = 'GAME_OVER';
+        logMsg(`>>> GAME OVER: ${winReason} COM wins! <<<`);
+    }
+    draw();
+}
+
+// ===== Drawing =====
+function draw() {
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    drawPanels();
+    drawBoard();
+    if (document.getElementById('show-territory').checked) drawTerritory();
+    drawHighlights();
+    drawPlayers();
+    drawStatus();
+    if (gamePhase === 'GAME_OVER') drawGameOver();
+}
+
+function drawBoard() {
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            const x = c * CELL_SIZE + BOARD_OFFSET_X;
+            const y = r * CELL_SIZE + BOARD_OFFSET_Y;
+            ctx.fillStyle = (r + c) % 2 === 0 ? '#0d0d1e' : '#0a0a18';
+            ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+            ctx.strokeStyle = '#1a3a4a';
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(x, y, CELL_SIZE, CELL_SIZE);
+
+            if (board[r][c] === MARKERS.STONE) {
+                drawOctagon(x + CELL_SIZE/2, y + CELL_SIZE/2, CELL_SIZE * 0.35, '#2a3a4a', '#00E5FF');
+            }
+        }
+    }
+}
+
+function drawOctagon(cx, cy, r, fill, stroke) {
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+        const a = Math.PI/8 + i * Math.PI/4;
+        const x = cx + r * Math.cos(a), y = cy + r * Math.sin(a);
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+}
+
+function drawPlayers() {
+    drawPlayerPiece(playerPos, PLAYER_COLOR, 'P');
+    drawPlayerPiece(comPos, COM_COLOR, 'C');
+}
+
+function drawPlayerPiece(pos, color, label) {
+    const cx = pos.col * CELL_SIZE + CELL_SIZE/2 + BOARD_OFFSET_X;
+    const cy = pos.row * CELL_SIZE + CELL_SIZE/2 + BOARD_OFFSET_Y;
+    // Glow
+    ctx.beginPath(); ctx.arc(cx, cy, CELL_SIZE * 0.38, 0, Math.PI * 2);
+    ctx.fillStyle = color + '30'; ctx.fill();
+    // Body
+    ctx.beginPath(); ctx.arc(cx, cy, CELL_SIZE * 0.3, 0, Math.PI * 2);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+    // Label
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 18px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, cx, cy);
+}
+
+function drawHighlights() {
+    if (gamePhase === 'PLAYER_MOVE') {
+        for (const t of movableTiles) {
+            const x = t.col * CELL_SIZE + BOARD_OFFSET_X;
+            const y = t.row * CELL_SIZE + BOARD_OFFSET_Y;
+            ctx.strokeStyle = t.isDiagonal ? '#00FF64' : '#FFFF00';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(x + 3, y + 3, CELL_SIZE - 6, CELL_SIZE - 6);
+        }
+    }
+    if (gamePhase === 'PLAYER_PLACE') {
+        for (const t of placeableTiles) {
+            const x = t.col * CELL_SIZE + BOARD_OFFSET_X;
+            const y = t.row * CELL_SIZE + BOARD_OFFSET_Y;
+            ctx.strokeStyle = '#00FFFF';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.strokeRect(x + 3, y + 3, CELL_SIZE - 6, CELL_SIZE - 6);
+            ctx.setLineDash([]);
+        }
+    }
+    // COM move/place highlight
+    if ((gamePhase === 'COM_MOVE' || gamePhase === 'COM_PLACE') && comDecision) {
+        if (gamePhase === 'COM_MOVE') {
+            const x = comDecision.moveCol * CELL_SIZE + BOARD_OFFSET_X;
+            const y = comDecision.moveRow * CELL_SIZE + BOARD_OFFSET_Y;
+            ctx.strokeStyle = COM_COLOR; ctx.lineWidth = 3;
+            ctx.strokeRect(x + 3, y + 3, CELL_SIZE - 6, CELL_SIZE - 6);
+        }
+    }
+}
+
+function drawTerritory() {
+    const pDice = playerStock !== null ? [playerDice[0], playerStock] : [playerDice[0], playerDice[1]];
+    const cDice = comStock !== null ? [comDice[0], comStock] : [comDice[0], comDice[1]];
+    const tm = computeTerritoryMap(board, playerPos, comPos, pDice, cDice);
+    for (const [key, {owner, seed}] of tm.territory) {
+        const [r, c] = key.split(',').map(Number);
+        const x = c * CELL_SIZE + BOARD_OFFSET_X + 1;
+        const y = r * CELL_SIZE + BOARD_OFFSET_Y + 1;
+        const s = CELL_SIZE - 2;
+        if (owner === 'both') ctx.fillStyle = seed ? 'rgba(160,80,220,0.4)' : 'rgba(160,80,220,0.15)';
+        else if (owner === 'p') ctx.fillStyle = seed ? 'rgba(0,150,255,0.35)' : 'rgba(0,150,255,0.12)';
+        else ctx.fillStyle = seed ? 'rgba(255,60,60,0.35)' : 'rgba(255,60,60,0.12)';
+        ctx.fillRect(x, y, s, s);
+    }
+}
+
+// ===== Panels =====
+function drawPanels() {
+    // Left panel (Player)
+    ctx.fillStyle = '#0a0a28';
+    ctx.fillRect(0, 0, PANEL_WIDTH, SCREEN_HEIGHT);
+    drawPanelContent(true);
+
+    // Right panel (COM)
+    ctx.fillStyle = '#1a0a0a';
+    ctx.fillRect(SCREEN_WIDTH - PANEL_WIDTH, 0, PANEL_WIDTH, SCREEN_HEIGHT);
+    drawPanelContent(false);
+}
+
+function drawPanelContent(isPlayer) {
+    const baseX = isPlayer ? 20 : SCREEN_WIDTH - PANEL_WIDTH + 20;
+    const color = isPlayer ? PLAYER_COLOR : COM_COLOR;
+    const name = isPlayer ? 'PLAYER' : 'COM';
+    const pts = isPlayer ? playerPoints : comPoints;
+    const dice = isPlayer ? playerDice : comDice;
+    const stock = isPlayer ? playerStock : comStock;
+    let y = 30;
+
+    // Name
+    ctx.fillStyle = color; ctx.font = 'bold 22px Arial'; ctx.textAlign = 'left';
+    ctx.fillText(name, baseX, y); y += 30;
+
+    // Points
+    ctx.fillStyle = '#aaa'; ctx.font = '14px Arial';
+    ctx.fillText('Points', baseX, y); y += 5;
+    // Points bar
+    const barW = 200, barH = 18;
+    ctx.fillStyle = '#1a1a2a';
+    ctx.fillRect(baseX, y, barW, barH);
+    const fillW = Math.min(barW, pts / 200 * barW);
+    ctx.fillStyle = color + '80';
+    ctx.fillRect(baseX, y, fillW, barH);
+    ctx.strokeStyle = color + '60'; ctx.lineWidth = 1;
+    ctx.strokeRect(baseX, y, barW, barH);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 13px Arial'; ctx.textAlign = 'center';
+    ctx.fillText(`${pts} pt`, baseX + barW/2, y + 14);
+    ctx.textAlign = 'left';
+    y += barH + 20;
+
+    // CURRENT dice — show currentDiceValue during active move/place phases
+    ctx.fillStyle = '#888'; ctx.font = '12px Arial';
+    ctx.fillText('CURRENT', baseX, y); y += 5;
+    const isActiveMove = (isPlayer && (gamePhase === 'PLAYER_MOVE' || gamePhase === 'PLAYER_PLACE'))
+        || (!isPlayer && (gamePhase === 'COM_MOVE' || gamePhase === 'COM_PLACE'));
+    const dispCurrent = isActiveMove ? currentDiceValue : dice[0];
+    drawDice(baseX + 10, y, 50, dispCurrent, color);
+    y += 60;
+
+    // NEXT dice
+    ctx.fillStyle = '#666'; ctx.font = '11px Arial';
+    ctx.fillText('NEXT', baseX, y); y += 5;
+    drawDice(baseX + 5, y, 38, dice[1], '#555');
+    drawDice(baseX + 50, y, 38, dice[2], '#444');
+    y += 48;
+
+    // STOCK
+    ctx.fillStyle = '#aa8800'; ctx.font = '12px Arial';
+    ctx.fillText('STOCK', baseX, y); y += 5;
+    if (stock !== null) {
+        drawDice(baseX + 10, y, 45, stock, '#aa8800');
+    } else {
+        ctx.fillStyle = '#222'; ctx.fillRect(baseX + 10, y, 45, 45);
+        ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+        ctx.strokeRect(baseX + 10, y, 45, 45);
+        ctx.fillStyle = '#444'; ctx.font = '12px Arial'; ctx.textAlign = 'center';
+        ctx.fillText('—', baseX + 32, y + 28);
+        ctx.textAlign = 'left';
+    }
+    y += 55;
+
+    // Action buttons (only for player during PLAYER_ROLL)
+    if (isPlayer && gamePhase === 'PLAYER_ROLL') {
+        drawButton(baseX, y, 200, 36, 'Roll Dice', '#004400', '#00FF88', true);
+        y += 42;
+        const canStock = playerStock === null && playerPoints >= POINT_STOCK_COST;
+        drawButton(baseX, y, 200, 36, `Stock (-${POINT_STOCK_COST}pt)`, canStock ? '#443300' : '#222', canStock ? '#FFaa00' : '#555', canStock);
+        y += 42;
+        const canUse = playerStock !== null;
+        drawButton(baseX, y, 200, 36, `Use Stock (${playerStock || '—'})`, canUse ? '#442200' : '#222', canUse ? '#FF8844' : '#555', canUse);
+    }
+
+    // Move mode toggle (during PLAYER_MOVE)
+    if (isPlayer && gamePhase === 'PLAYER_MOVE') {
+        ctx.fillStyle = '#888'; ctx.font = '11px Arial';
+        ctx.fillText(`Dice: ${currentDiceValue}  Mode: ${moveMode}`, baseX, y);
+        y += 18;
+        ctx.fillStyle = '#666'; ctx.font = '10px Arial';
+        ctx.fillText('Click your piece to toggle cross/diag', baseX, y);
+    }
+}
+
+function drawDice(x, y, size, value, color) {
+    const r = 5;
+    ctx.fillStyle = '#1a1a2a';
+    ctx.beginPath();
+    ctx.roundRect(x, y, size, size, r);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x, y, size, size, r);
+    ctx.stroke();
+
+    const cx = x + size/2, cy = y + size/2;
+    const d = size * 0.22;
+    ctx.fillStyle = color;
+    if (value === 1) {
+        drawDot(cx, cy, size * 0.08);
+    } else if (value === 2) {
+        drawDot(cx - d, cy - d, size * 0.07);
+        drawDot(cx + d, cy + d, size * 0.07);
+    } else if (value === 3) {
+        drawDot(cx - d, cy - d, size * 0.07);
+        drawDot(cx, cy, size * 0.07);
+        drawDot(cx + d, cy + d, size * 0.07);
+    }
+}
+
+function drawDot(x, y, r) {
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawButton(x, y, w, h, text, bgColor, textColor, enabled) {
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = enabled ? textColor : '#444';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = textColor;
+    ctx.font = enabled ? 'bold 14px Arial' : '14px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, x + w/2, y + h/2);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+
+// Button hit rectangles
+function getButtonRects() {
+    const baseX = 20;
+    // Must match drawPanel() y progression exactly:
+    // y=30 + name(30) + pointsLabel(5) + bar(18+20) + currentLabel(5) + dice(60) + nextLabel(5) + nextDice(48) + stockLabel(5) + stockArea(55) = 281
+    let y = 281;
+    return {
+        roll: {x: baseX, y: y, w: 200, h: 36},
+        stock: {x: baseX, y: y + 42, w: 200, h: 36},
+        useStock: {x: baseX, y: y + 84, w: 200, h: 36}
+    };
+}
+
+function drawStatus() {
+    const y = BOARD_OFFSET_Y + BOARD_SIZE * CELL_SIZE + 5;
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(BOARD_OFFSET_X, y, BOARD_SIZE * CELL_SIZE, 30);
+    ctx.fillStyle = '#aaa'; ctx.font = '13px Arial'; ctx.textAlign = 'center';
+    let text = '';
+    switch (gamePhase) {
+        case 'PLAYER_ROLL': text = 'Your turn — choose action (Roll / Stock / Use Stock)'; break;
+        case 'PLAYER_MOVE': text = `Your turn — click a tile to move (dice: ${currentDiceValue}, mode: ${moveMode})`; break;
+        case 'PLAYER_PLACE': text = 'Your turn — click a tile to place a stone'; break;
+        case 'COM_THINK': text = 'COM is thinking...'; break;
+        case 'COM_MOVE': text = 'COM is moving...'; break;
+        case 'COM_PLACE': text = 'COM is placing a stone...'; break;
+        case 'GAME_OVER': text = `Game Over! ${winner === 'player' ? 'You win!' : 'COM wins!'} — ${winReason}`; break;
+    }
+    ctx.fillText(text, BOARD_OFFSET_X + BOARD_SIZE * CELL_SIZE / 2, y + 18);
+    ctx.textAlign = 'left';
+}
+
+function drawGameOver() {
+    // Semi-transparent overlay
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(BOARD_OFFSET_X, BOARD_OFFSET_Y, BOARD_SIZE * CELL_SIZE, BOARD_SIZE * CELL_SIZE);
+    const cx = BOARD_OFFSET_X + BOARD_SIZE * CELL_SIZE / 2;
+    const cy = BOARD_OFFSET_Y + BOARD_SIZE * CELL_SIZE / 2;
+    ctx.fillStyle = winner === 'player' ? PLAYER_COLOR : COM_COLOR;
+    ctx.font = 'bold 36px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(winner === 'player' ? 'YOU WIN!' : 'COM WINS!', cx, cy - 20);
+    ctx.fillStyle = '#ccc'; ctx.font = '16px Arial';
+    ctx.fillText(winReason, cx, cy + 20);
+    ctx.fillStyle = '#888'; ctx.font = '14px Arial';
+    ctx.fillText('Click "New Game" to play again', cx, cy + 55);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+
+// ===== Event Handling =====
+canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    if (gamePhase === 'PLAYER_ROLL') {
+        const btns = getButtonRects();
+        if (hitTest(x, y, btns.roll)) { playerRollNormal(); return; }
+        if (hitTest(x, y, btns.stock) && playerStock === null && playerPoints >= POINT_STOCK_COST) { playerDoStock(); return; }
+        if (hitTest(x, y, btns.useStock) && playerStock !== null) { playerUseStock(); return; }
+    }
+
+    if (gamePhase === 'PLAYER_MOVE') {
+        const cell = getBoardCell(x, y);
+        if (cell) {
+            // Toggle move mode if clicking own position
+            if (cell.row === playerPos.row && cell.col === playerPos.col) {
+                moveMode = moveMode === 'cross' ? 'diagonal' : 'cross';
+                computePlayerMovable();
+                return;
+            }
+            playerMove(cell.row, cell.col);
+        }
+    }
+
+    if (gamePhase === 'PLAYER_PLACE') {
+        const cell = getBoardCell(x, y);
+        if (cell) playerPlace(cell.row, cell.col);
+    }
+});
+
+function hitTest(x, y, rect) {
+    return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+}
+
+function getBoardCell(x, y) {
+    const col = Math.floor((x - BOARD_OFFSET_X) / CELL_SIZE);
+    const row = Math.floor((y - BOARD_OFFSET_Y) / CELL_SIZE);
+    if (row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE) return {row, col};
+    return null;
+}
+
+// ===== Init =====
+newGame();
+</script>
+</body>
+</html>

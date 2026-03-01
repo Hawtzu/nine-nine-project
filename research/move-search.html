@@ -1,0 +1,2046 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Move Search - Tree Explorer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background: #1a1a2e;
+    color: #ccc;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    padding: 20px;
+}
+h1 { color: #00E5FF; font-size: 22px; margin-bottom: 16px; }
+.container { display: flex; gap: 24px; flex-wrap: wrap; }
+.grid-panel { flex-shrink: 0; }
+.controls { display: flex; flex-direction: column; gap: 12px; min-width: 280px; }
+canvas { border: 1px solid #444; cursor: crosshair; }
+.section { background: #0f0f23; border: 1px solid #333; padding: 12px; border-radius: 4px; }
+.section h3 { color: #00E5FF; font-size: 14px; margin-bottom: 8px; }
+.btn-group { display: flex; flex-wrap: wrap; gap: 4px; }
+.btn {
+    padding: 6px 12px; font-size: 12px; cursor: pointer;
+    border: 1px solid #444; background: #1a1a3e; color: #aaa;
+    transition: all 0.15s;
+}
+.btn:hover { border-color: #00E5FF; color: #fff; }
+.btn.active { background: #003344; border-color: #00E5FF; color: #00E5FF; }
+.btn.run { background: #0a3a0a; border-color: #00FF88; color: #00FF88; }
+.btn.run:hover { background: #0a5a0a; }
+.btn.back { background: #2a2a0a; border-color: #FFAA00; color: #FFAA00; }
+.btn.back:hover { background: #3a3a0a; }
+.btn.danger { background: #3a0a0a; border-color: #FF4444; color: #FF4444; }
+label { font-size: 12px; color: #888; display: block; margin-bottom: 2px; }
+input[type=number] {
+    width: 50px; padding: 4px 6px; background: #0f0f23; border: 1px solid #444;
+    color: #fff; font-size: 13px;
+}
+.results { margin-top: 16px; width: 100%; max-width: 900px; }
+#result-text {
+    background: #0a0a1a; border: 1px solid #333; padding: 12px;
+    font-family: monospace; font-size: 12px; white-space: pre-wrap;
+    min-height: 100px; max-height: 400px; overflow-y: auto; color: #aaa;
+}
+.legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 11px; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-color { width: 14px; height: 14px; border: 1px solid #555; }
+.dice-row { display: flex; gap: 8px; align-items: end; }
+.dice-row > div { text-align: center; }
+.dice-label { font-size: 11px; color: #00AAFF; font-weight: bold; }
+.dice-label.opp { color: #FF4444; }
+.path-display {
+    background: #0a0a1a; border: 1px solid #444; padding: 6px 10px;
+    font-family: monospace; font-size: 11px; color: #FFAA00;
+    min-height: 20px; margin-top: 4px;
+}
+.d3o3-selector { display:none; margin-top:6px; }
+.d3o3-grid { display:grid; grid-template-columns:auto repeat(3,1fr); gap:2px; font-size:11px; }
+.d3o3-cell { padding:4px 8px; text-align:center; cursor:pointer; border:1px solid #444; background:#1a1a3e; color:#aaa; transition:all 0.15s; }
+.d3o3-cell:hover { border-color:#00E5FF; color:#fff; }
+.d3o3-cell.active { background:#003344; border-color:#00E5FF; color:#00E5FF; }
+.boards-container { display:flex; gap:8px; align-items:flex-start; }
+.board-wrapper { display:flex; flex-direction:column; align-items:center; }
+.board-label { font-size:11px; color:#aaa; margin-bottom:4px; font-family:monospace; min-height:16px; }
+.board-wrapper canvas { border:1px solid #444; cursor:crosshair; }
+#board-compare { display:none; }
+.boards-container.compare-active canvas { width:400px; height:400px; }
+.boards-container.compare-active .board-label { font-size:10px; }
+.compare-controls { display:none; margin-top:6px; }
+.compare-d3o3-grid { display:grid; grid-template-columns:auto repeat(3,1fr); gap:2px; font-size:11px; }
+.compare-d3o3-cell { padding:4px 8px; text-align:center; cursor:pointer; border:1px solid #444; background:#1a1a3e; color:#aaa; transition:all 0.15s; }
+.compare-d3o3-cell:hover { border-color:#FF8800; color:#fff; }
+.compare-d3o3-cell.active { background:#332200; border-color:#FF8800; color:#FF8800; }
+</style>
+</head>
+<body>
+<h1>Move Search - Tree Explorer</h1>
+<div class="container">
+    <div class="grid-panel">
+        <div class="boards-container" id="boards-container">
+            <div class="board-wrapper">
+                <div class="board-label" id="board-label-main"></div>
+                <canvas id="board" width="540" height="540"></canvas>
+            </div>
+            <div class="board-wrapper">
+                <div class="board-label" id="board-label-compare"></div>
+                <canvas id="board-compare" width="540" height="540"></canvas>
+            </div>
+        </div>
+        <div class="legend">
+            <div class="legend-item"><div class="legend-color" style="background:#00AAFF"></div>Player</div>
+            <div class="legend-item"><div class="legend-color" style="background:#FF4444"></div>Opponent</div>
+            <div class="legend-item"><div class="legend-color" style="background:#556677"></div>Stone</div>
+            <div class="legend-item"><div class="legend-color" style="background:#FFD700"></div>Fountain</div>
+            <div class="legend-item"><div class="legend-color" style="background:#66DDFF"></div>Ice</div>
+            <div class="legend-item"><div class="legend-color" style="background:#668844"></div>Swamp</div>
+            <div class="legend-item"><div class="legend-color" style="background:#AA66FF"></div>Warp</div>
+            <div class="legend-item"><div class="legend-color" style="background:#CCDDEE"></div>Snow</div>
+        </div>
+    </div>
+    <div class="controls">
+        <div class="section">
+            <h3>Placement Mode</h3>
+            <div class="btn-group">
+                <button class="btn" data-mode="player" style="display:none">Player (P)</button>
+                <button class="btn" data-mode="opponent" style="display:none">Opponent (O)</button>
+                <button class="btn active" data-mode="stone">Stone (S)</button>
+                <button class="btn" data-mode="fountain">Fountain (F)</button>
+                <button class="btn" data-mode="ice">Ice (I)</button>
+                <button class="btn" data-mode="swamp">Swamp (W)</button>
+                <button class="btn" data-mode="warp">Warp (P)</button>
+                <button class="btn" data-mode="snow">Snow (N)</button>
+                <button class="btn" data-mode="erase">Erase (E)</button>
+            </div>
+        </div>
+        <div class="section">
+            <h3>Dice Values</h3>
+            <div class="dice-row">
+                <div><div class="dice-label">D0</div><input type="number" id="d0" min="1" max="3" value="2"></div>
+                <div><div class="dice-label">D1</div><input type="number" id="d1" min="1" max="3" value="2"></div>
+                <div><div class="dice-label">D2</div><input type="number" id="d2" min="1" max="3" value="2"></div>
+                <div><div class="dice-label">D3</div><input type="number" id="d3" min="1" max="3" value="2"></div>
+                <div style="width:12px"></div>
+                <div><div class="dice-label opp">O0</div><input type="number" id="o0" min="1" max="3" value="2"></div>
+                <div><div class="dice-label opp">O1</div><input type="number" id="o1" min="1" max="3" value="2"></div>
+                <div><div class="dice-label opp">O2</div><input type="number" id="o2" min="1" max="3" value="2"></div>
+                <div><div class="dice-label opp">O3</div><input type="number" id="o3" min="1" max="3" value="2"></div>
+            </div>
+            <div class="btn-group" style="margin-top:6px">
+                <button class="btn" id="rand-dice-p" style="font-size:11px;padding:3px 8px">🎲 P</button>
+                <button class="btn" id="rand-dice-o" style="font-size:11px;padding:3px 8px">🎲 O</button>
+                <button class="btn" id="rand-dice-all" style="font-size:11px;padding:3px 8px">🎲 Both</button>
+            </div>
+        </div>
+        <div class="section">
+            <h3>Search Depth</h3>
+            <div class="btn-group">
+                <button class="btn active" data-depth="1">1</button>
+                <button class="btn" data-depth="2">2</button>
+                <button class="btn" data-depth="3">3</button>
+                <button class="btn" data-depth="4">4</button>
+                <button class="btn" data-depth="5">5</button>
+                <button class="btn" data-depth="6">6</button>
+                <button class="btn" data-depth="7">7</button>
+                <button class="btn" data-depth="8">8</button>
+                <button class="btn" data-depth="9">9</button>
+            </div>
+            <div id="depth-desc" style="font-size:11px; color:#888; margin-top:6px;">D1: P Move (D0)</div>
+        </div>
+        <div class="section">
+            <h3>Actions</h3>
+            <div class="btn-group">
+                <button class="btn run" id="run-btn">Run Search</button>
+                <button class="btn back" id="back-btn" style="display:none">Back</button>
+                <button class="btn" id="clear-btn">Clear</button>
+                <button class="btn" id="finalpos-btn">Show Final Pos</button>
+                <button class="btn" id="indpos-btn">Show Ind. Final Pos</button>
+                <button class="btn" id="guarpos-btn">Show Guar. Final Pos</button>
+                <button class="btn" id="overall-guarpos-btn" style="display:none">Overall Guar.</button>
+                <button class="btn" id="compare-btn" style="display:none">Compare</button>
+            </div>
+            <div class="d3o3-selector" id="d3o3-selector">
+                <div class="d3o3-grid">
+                    <div style="color:#888;font-size:10px"></div>
+                    <div style="color:#f44;text-align:center;font-size:10px">O3=1</div>
+                    <div style="color:#f44;text-align:center;font-size:10px">O3=2</div>
+                    <div style="color:#f44;text-align:center;font-size:10px">O3=3</div>
+                    <div style="color:#0af;text-align:right;padding-right:4px;font-size:10px">D3=1</div>
+                    <div class="d3o3-cell" data-d3="1" data-o3="1">-</div>
+                    <div class="d3o3-cell" data-d3="1" data-o3="2">-</div>
+                    <div class="d3o3-cell" data-d3="1" data-o3="3">-</div>
+                    <div style="color:#0af;text-align:right;padding-right:4px;font-size:10px">D3=2</div>
+                    <div class="d3o3-cell" data-d3="2" data-o3="1">-</div>
+                    <div class="d3o3-cell" data-d3="2" data-o3="2">-</div>
+                    <div class="d3o3-cell" data-d3="2" data-o3="3">-</div>
+                    <div style="color:#0af;text-align:right;padding-right:4px;font-size:10px">D3=3</div>
+                    <div class="d3o3-cell" data-d3="3" data-o3="1">-</div>
+                    <div class="d3o3-cell" data-d3="3" data-o3="2">-</div>
+                    <div class="d3o3-cell" data-d3="3" data-o3="3">-</div>
+                </div>
+            </div>
+            <div class="compare-controls" id="compare-controls">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                    <span style="color:#FF8800; font-size:11px; font-weight:bold;">Compare with:</span>
+                    <button class="btn" id="compare-close-btn" style="font-size:10px; padding:2px 8px;">✕ Close</button>
+                </div>
+                <div class="compare-d3o3-grid">
+                    <div style="color:#888;font-size:10px"></div>
+                    <div style="color:#f44;text-align:center;font-size:10px">O3=1</div>
+                    <div style="color:#f44;text-align:center;font-size:10px">O3=2</div>
+                    <div style="color:#f44;text-align:center;font-size:10px">O3=3</div>
+                    <div style="color:#0af;text-align:right;padding-right:4px;font-size:10px">D3=1</div>
+                    <div class="compare-d3o3-cell" data-d3="1" data-o3="1">-</div>
+                    <div class="compare-d3o3-cell" data-d3="1" data-o3="2">-</div>
+                    <div class="compare-d3o3-cell" data-d3="1" data-o3="3">-</div>
+                    <div style="color:#0af;text-align:right;padding-right:4px;font-size:10px">D3=2</div>
+                    <div class="compare-d3o3-cell" data-d3="2" data-o3="1">-</div>
+                    <div class="compare-d3o3-cell" data-d3="2" data-o3="2">-</div>
+                    <div class="compare-d3o3-cell" data-d3="2" data-o3="3">-</div>
+                    <div style="color:#0af;text-align:right;padding-right:4px;font-size:10px">D3=3</div>
+                    <div class="compare-d3o3-cell" data-d3="3" data-o3="1">-</div>
+                    <div class="compare-d3o3-cell" data-d3="3" data-o3="2">-</div>
+                    <div class="compare-d3o3-cell" data-d3="3" data-o3="3">-</div>
+                </div>
+            </div>
+            <div class="btn-group" style="margin-top:6px">
+                <button class="btn" id="generate-btn">Generate Board</button>
+                <button class="btn danger" id="reset-btn">Reset Board</button>
+            </div>
+        </div>
+        <div class="section" id="fountain-options">
+            <h3>Initial State</h3>
+            <div style="display:flex; gap:16px; align-items:end; flex-wrap:wrap;">
+                <div>
+                    <label style="color:#0af">Player Pos</label>
+                    <div style="display:flex; gap:4px;">
+                        <input type="number" id="init-p-row" min="0" max="8" value="4" style="width:36px" title="Row">
+                        <input type="number" id="init-p-col" min="0" max="8" value="0" style="width:36px" title="Col">
+                    </div>
+                </div>
+                <div>
+                    <label style="color:#f44">Opponent Pos</label>
+                    <div style="display:flex; gap:4px;">
+                        <input type="number" id="init-o-row" min="0" max="8" value="4" style="width:36px" title="Row">
+                        <input type="number" id="init-o-col" min="0" max="8" value="8" style="width:36px" title="Col">
+                    </div>
+                </div>
+                <div>
+                    <label style="color:#0af">P pts</label>
+                    <input type="number" id="init-p-pts" min="0" max="999" value="0" style="width:50px">
+                </div>
+                <div>
+                    <label style="color:#f44">O pts</label>
+                    <input type="number" id="init-o-pts" min="0" max="999" value="0" style="width:50px">
+                </div>
+            </div>
+            <div style="font-size:10px; color:#666; margin-top:6px">
+                ※ &ge;20pt の移動depth でストック/ユーズストック分岐を自動生成
+            </div>
+            <div id="points-display" style="font-size:12px; color:#888; margin-top:6px; font-family:monospace;">
+                P: 0 pts | O: 0 pts
+            </div>
+        </div>
+        <div class="section">
+            <h3>Current Path</h3>
+            <div id="path-display" class="path-display">(none)</div>
+        </div>
+    </div>
+</div>
+<div class="results">
+    <div class="section">
+        <h3>Results</h3>
+        <div id="result-text">Click "Generate Board" to create a board, set dice values, then "Run Search" to explore.</div>
+    </div>
+</div>
+
+<script>
+// ===== Constants =====
+const BOARD_SIZE = 9;
+const CELL_SIZE = 60;
+const MARKERS = { EMPTY: ' ', STONE: 'S', FOUNTAIN: 'F', BOMB: 'B', ICE: 'I', SWAMP: 'W', WARP: 'P', SNOW: 'N', CHECKPOINT: 'C' };
+const CROSS_DIRECTIONS = [{dr:0,dc:1},{dr:0,dc:-1},{dr:1,dc:0},{dr:-1,dc:0}];
+const DIAGONAL_DIRECTIONS = [{dr:-1,dc:-1},{dr:-1,dc:1},{dr:1,dc:-1},{dr:1,dc:1}];
+
+// Point system constants
+const POINT_TURN_BONUS = 10;
+const POINT_FOUNTAIN_CAPTURE = 100;
+const POINT_DIAGONAL_COST = 10;
+const POINT_STOCK_COST = 20;
+
+// Highlight colors per depth action type
+const HIGHLIGHT_COLORS = {
+    pMove:  { fill: 'rgba(0,200,255,0.25)', stroke: '#00CCFF' },   // Player move: cyan
+    pPlace: { fill: 'rgba(0,255,136,0.25)', stroke: '#00FF88' },   // Player place: green
+    oMove:  { fill: 'rgba(255,136,0,0.25)', stroke: '#FF8800' },   // Opponent move: orange
+    oPlace: { fill: 'rgba(255,100,100,0.25)', stroke: '#FF6666' }, // Opponent place: red
+    stock:     { fill: 'rgba(255,200,0,0.25)', stroke: '#FFCC00' },   // Stock: gold
+    use_stock: { fill: 'rgba(200,100,255,0.25)', stroke: '#CC66FF' }, // UseStock: purple
+};
+
+// ===== Board State =====
+let board = [];
+let playerPos = { row: 4, col: 0 };
+let opponentPos = { row: 4, col: 8 };
+let placementMode = 'stone';
+let searchDepth = 1;
+
+// ===== Browse State =====
+let browseActive = false;
+let searchTree = null;        // { children: [...], leafCount: N }
+let browseNodeStack = [];     // [rootNode, childNode, ...] — navigation path in tree
+let browseMaxDepth = 1;
+let finalPosData = null;  // Map<"row,col", count> or null
+let filteredTree = null;    // フィルタされたツリー or null
+let filteredTarget = null;  // { row, col } — フィルタ対象の位置
+let multiDiceTrees = null;  // Map<"d3,o3", { children, leafCount }> — 9 trees for D3/O3 combos
+let selectedD3O3 = null;    // { d3, o3 } — currently selected D3/O3 combo
+let currentDisplayMode = 'treeStats';  // 'treeStats' | 'finalPos' | 'indFinalPos' | 'guarFinalPos' | 'overallGuar'
+let compareMode = false;
+let compareD3O3 = null;       // { d3, o3 }
+let compareTree = null;
+let compareFinalPosData = null;
+
+function resetBoard() {
+    board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(MARKERS.EMPTY));
+    applyInitialPositions();
+    exitBrowse();
+}
+
+function applyInitialPositions() {
+    const clampPos = (v) => Math.min(8, Math.max(0, parseInt(v) || 0));
+    playerPos = {
+        row: clampPos(document.getElementById('init-p-row').value),
+        col: clampPos(document.getElementById('init-p-col').value)
+    };
+    opponentPos = {
+        row: clampPos(document.getElementById('init-o-row').value),
+        col: clampPos(document.getElementById('init-o-col').value)
+    };
+}
+
+function syncPositionInputs() {
+    document.getElementById('init-p-row').value = playerPos.row;
+    document.getElementById('init-p-col').value = playerPos.col;
+    document.getElementById('init-o-row').value = opponentPos.row;
+    document.getElementById('init-o-col').value = opponentPos.col;
+}
+
+
+function exitBrowse() {
+    browseActive = false;
+    searchTree = null;
+    browseNodeStack = [];
+    finalPosData = null;
+    filteredTree = null;
+    filteredTarget = null;
+    multiDiceTrees = null;
+    selectedD3O3 = null;
+    currentDisplayMode = 'treeStats';
+    compareMode = false;
+    compareD3O3 = null;
+    compareTree = null;
+    compareFinalPosData = null;
+    document.getElementById('back-btn').style.display = 'none';
+    document.getElementById('path-display').textContent = '(none)';
+    document.getElementById('d3o3-selector').style.display = 'none';
+    document.getElementById('overall-guarpos-btn').style.display = 'none';
+    document.getElementById('compare-btn').style.display = 'none';
+    document.getElementById('boards-container').classList.remove('compare-active');
+    document.getElementById('board-compare').style.display = 'none';
+    document.getElementById('compare-controls').style.display = 'none';
+    document.getElementById('board-label-main').textContent = '';
+    document.getElementById('board-label-compare').textContent = '';
+    updatePointsDisplay();
+}
+
+function randomizeDice(target) {
+    const rand = () => Math.floor(Math.random() * 3) + 1;
+    if (target === 'player' || target === 'both') {
+        document.getElementById('d0').value = rand();
+        document.getElementById('d1').value = rand();
+        document.getElementById('d2').value = rand();
+        document.getElementById('d3').value = rand();
+    }
+    if (target === 'opponent' || target === 'both') {
+        document.getElementById('o0').value = rand();
+        document.getElementById('o1').value = rand();
+        document.getElementById('o2').value = rand();
+        document.getElementById('o3').value = rand();
+    }
+    updateDepthDesc();
+}
+
+function isValidPosition(r, c) {
+    return r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE;
+}
+
+function chebyshevDistance(a, b) {
+    return Math.max(Math.abs(a.row - b.row), Math.abs(a.col - b.col));
+}
+
+// ===== Board Generation (same rules as main game) =====
+
+function findValidFountainPosition(playerNum) {
+    const pos = playerNum === 1 ? playerPos : opponentPos;
+    const zone = [];
+    if (playerNum === 1) {
+        for (let r = 0; r < BOARD_SIZE; r++)
+            for (let c = 0; c < Math.floor(BOARD_SIZE / 2) - 1; c++)
+                if (chebyshevDistance(pos, { row: r, col: c }) > 3)
+                    zone.push({ row: r, col: c });
+    } else {
+        for (let r = 0; r < BOARD_SIZE; r++)
+            for (let c = Math.floor(BOARD_SIZE / 2) + 2; c < BOARD_SIZE; c++)
+                if (chebyshevDistance(pos, { row: r, col: c }) > 3)
+                    zone.push({ row: r, col: c });
+    }
+    return zone.length > 0 ? zone[Math.floor(Math.random() * zone.length)] : null;
+}
+
+function getBannedPositions(p1Fountain, p2Fountain) {
+    const banned = new Set();
+    if (p1Fountain) banned.add(`${p1Fountain.row},${p1Fountain.col}`);
+    if (p2Fountain) banned.add(`${p2Fountain.row},${p2Fountain.col}`);
+    for (const pos of [playerPos, opponentPos]) {
+        for (let dr = -1; dr <= 1; dr++)
+            for (let dc = -1; dc <= 1; dc++)
+                banned.add(`${pos.row + dr},${pos.col + dc}`);
+    }
+    return banned;
+}
+
+function getRandomPositions(count, bannedSet) {
+    const available = [];
+    for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = 0; c < BOARD_SIZE; c++)
+            if (!bannedSet.has(`${r},${c}`))
+                available.push({ row: r, col: c });
+    const positions = [];
+    for (let i = 0; i < count && available.length > 0; i++) {
+        const idx = Math.floor(Math.random() * available.length);
+        positions.push(available.splice(idx, 1)[0]);
+    }
+    return positions;
+}
+
+function generateBoard() {
+    resetBoard();
+    const p1F = findValidFountainPosition(1);
+    const p2F = findValidFountainPosition(2);
+    if (p1F) board[p1F.row][p1F.col] = MARKERS.FOUNTAIN;
+    if (p2F) board[p2F.row][p2F.col] = MARKERS.FOUNTAIN;
+    const banned = getBannedPositions(p1F, p2F);
+    const stones = getRandomPositions(3, banned);
+    for (const s of stones) board[s.row][s.col] = MARKERS.STONE;
+    draw();
+    document.getElementById('result-text').textContent = 'Board generated (same rules as main game).';
+}
+
+// ===== Movement Simulation (board-parameterized) =====
+
+function simulateMovableTilesOnBoard(brd, pos, diceValue, otherPos, diagonal) {
+    const directions = diagonal ? DIAGONAL_DIRECTIONS : CROSS_DIRECTIONS;
+    const results = [];
+    for (const dir of directions) {
+        let steps = diceValue;
+        let cur = { row: pos.row, col: pos.col };
+        let finalDest = null;
+        const visited = new Set();
+        let step = 1;
+        let isFallTrigger = false;
+
+        while (step <= steps) {
+            const nr = cur.row + dir.dr;
+            const nc = cur.col + dir.dc;
+            if (!isValidPosition(nr, nc)) { isFallTrigger = true; break; }
+            const tile = brd[nr][nc];
+            if (tile === MARKERS.STONE || tile === MARKERS.SNOW ||
+                (nr === otherPos.row && nc === otherPos.col)) break;
+            finalDest = { row: nr, col: nc };
+            cur = { row: nr, col: nc };
+            if (tile === MARKERS.WARP) break;
+            const key = `${nr},${nc}`;
+            if (tile === MARKERS.ICE && !visited.has(key)) { steps++; visited.add(key); }
+            if (tile === MARKERS.SWAMP && !visited.has(key)) { steps = Math.max(step, steps - 1); visited.add(key); }
+            step++;
+        }
+        if (finalDest) {
+            finalDest.isFallTrigger = isFallTrigger;
+            finalDest.isDiagonal = diagonal;
+            results.push(finalDest);
+        }
+    }
+    const seen = new Set();
+    return results.filter(t => {
+        const key = `${t.row},${t.col}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+function generateMovesOnBoard(brd, pos, diceValue, otherPos, allowDiag) {
+    if (allowDiag === undefined) allowDiag = true;
+    const cross = simulateMovableTilesOnBoard(brd, pos, diceValue, otherPos, false);
+    const all = allowDiag
+        ? cross.concat(simulateMovableTilesOnBoard(brd, pos, diceValue, otherPos, true))
+        : [...cross];
+    const seen = new Set();
+    return all.filter(t => {
+        if (t.isFallTrigger) return false;
+        const key = `${t.row},${t.col}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
+function findPlaceableTilesOnBoard(brd, playerPosition, otherPos) {
+    const tiles = [];
+    for (const dir of CROSS_DIRECTIONS) {
+        const r = playerPosition.row + dir.dr;
+        const c = playerPosition.col + dir.dc;
+        if (!isValidPosition(r, c)) continue;
+        if (r === otherPos.row && c === otherPos.col) continue;
+        const tile = brd[r][c];
+        if (tile !== MARKERS.STONE && tile !== MARKERS.SNOW) {
+            tiles.push({ row: r, col: c });
+        }
+    }
+    return tiles;
+}
+
+// ===== Depth Logic =====
+// Depth 1: P Move, 2: P Place, 3: O Move, 4: O Place, 5: P Move, 6: P Place
+
+function getActionType(depth) {
+    return (depth % 2 === 1) ? 'move' : 'place';
+}
+
+function getActivePlayer(depth) {
+    return (Math.floor((depth - 1) / 2) % 2 === 0) ? 'player' : 'opponent';
+}
+
+function getDepthLabel(depth) {
+    const p = getActivePlayer(depth) === 'player' ? 'P' : 'O';
+    if (getActionType(depth) === 'move') {
+        return `${p} Move`;
+    }
+    return `${p} Place`;
+}
+
+function getHighlightColor(depth, moveType) {
+    if (moveType === 'stock') return HIGHLIGHT_COLORS.stock;
+    if (moveType === 'use_stock') return HIGHLIGHT_COLORS.use_stock;
+    const p = getActivePlayer(depth);
+    const a = getActionType(depth);
+    if (p === 'player' && a === 'move') return HIGHLIGHT_COLORS.pMove;
+    if (p === 'player' && a === 'place') return HIGHLIGHT_COLORS.pPlace;
+    if (p === 'opponent' && a === 'move') return HIGHLIGHT_COLORS.oMove;
+    return HIGHLIGHT_COLORS.oPlace;
+}
+
+// ===== Fountain Helpers: Generate move nodes for a given moveType =====
+
+function generateMoveNodes(brd, pPos, oPos, currentDepth, maxDepth,
+                           pPts, oPts, player, diceValue, diceLabel, moveType,
+                           savedDiceValue, savedDiceLabel,
+                           newPQueue, newOQueue, newPSaved, newOSaved,
+                           oPlacedStones, pathOAided) {
+    const pos = player === 'player' ? pPos : oPos;
+    const other = player === 'player' ? oPos : pPos;
+    const activePts = player === 'player' ? pPts : oPts;
+    const allowDiag = activePts >= POINT_DIAGONAL_COST;
+
+    const moves = generateMovesOnBoard(brd, pos, diceValue, other, allowDiag);
+    const children = [];
+
+    // Pre-compute independence check for P moves (shared across all destinations)
+    let indMoves = null;
+    if (player === 'player' && !pathOAided) {
+        const cleanBrd = brd.map(r => [...r]);
+        for (const key of oPlacedStones) {
+            const [sr, sc] = key.split(',').map(Number);
+            if (cleanBrd[sr][sc] === MARKERS.STONE) cleanBrd[sr][sc] = MARKERS.EMPTY;
+        }
+        indMoves = generateMovesOnBoard(cleanBrd, pos, diceValue, {row:-1,col:-1}, allowDiag);
+    }
+
+    for (const t of moves) {
+        let nodePPts = pPts, nodeOPts = oPts;
+        const node = {
+            type: 'move', player, row: t.row, col: t.col,
+            isDiagonal: t.isDiagonal || false,
+            depth: currentDepth, children: [], leafCount: 0,
+            moveType: moveType,
+            diceUsed: diceValue,
+            diceLabel: diceLabel,
+            savedDice: (moveType === 'stock') ? savedDiceValue : null,
+            savedLabel: (moveType === 'stock') ? savedDiceLabel : null,
+        };
+
+        // Independence check for P Move
+        let nodeOAided = pathOAided;
+        if (indMoves !== null) {
+            if (!indMoves.some(m => m.row === t.row && m.col === t.col)) {
+                nodeOAided = true;
+            }
+        }
+        node.oAided = nodeOAided;
+
+        let newPPos = pPos, newOPos = oPos;
+        let needRestore = false, oldTile;
+
+        if (player === 'player') newPPos = { row: t.row, col: t.col };
+        else newOPos = { row: t.row, col: t.col };
+
+        // Diagonal cost
+        if (t.isDiagonal) {
+            if (player === 'player') nodePPts -= POINT_DIAGONAL_COST;
+            else nodeOPts -= POINT_DIAGONAL_COST;
+        }
+
+        // Fountain capture
+        if (brd[t.row][t.col] === MARKERS.FOUNTAIN) {
+            if (player === 'player') nodePPts += POINT_FOUNTAIN_CAPTURE;
+            else nodeOPts += POINT_FOUNTAIN_CAPTURE;
+            oldTile = brd[t.row][t.col];
+            brd[t.row][t.col] = MARKERS.EMPTY;
+            needRestore = true;
+        }
+
+        node.pPts = nodePPts;
+        node.oPts = nodeOPts;
+
+        if (currentDepth < maxDepth) {
+            node.children = buildTree(brd, newPPos, newOPos, currentDepth + 1, maxDepth,
+                                      nodePPts, nodeOPts,
+                                      newPQueue, newOQueue, newPSaved, newOSaved,
+                                      oPlacedStones, nodeOAided);
+        }
+
+        if (node.children.length === 0) {
+            node.leafCount = 1;
+            node.board = brd.map(r => [...r]);
+            node.pPos = { ...newPPos };
+            node.oPos = { ...newOPos };
+        } else {
+            node.leafCount = node.children.reduce((sum, c) => sum + c.leafCount, 0);
+        }
+
+        if (needRestore) brd[t.row][t.col] = oldTile;
+        children.push(node);
+    }
+    return children;
+}
+
+function computePlaceNodes(brd, pPos, oPos, currentDepth, maxDepth,
+                           pPts, oPts, pQueue, oQueue, pSaved, oSaved,
+                           oPlacedStones, pathOAided) {
+    const player = getActivePlayer(currentDepth);
+    const pos = player === 'player' ? pPos : oPos;
+    const other = player === 'player' ? oPos : pPos;
+    const tiles = findPlaceableTilesOnBoard(brd, pos, other);
+    const children = [];
+
+    for (const t of tiles) {
+        const node = {
+            type: 'place', player, row: t.row, col: t.col,
+            isDiagonal: false, depth: currentDepth, children: [], leafCount: 0,
+            moveType: 'normal',
+            diceUsed: null, diceLabel: null,
+            savedDice: null, savedLabel: null,
+        };
+        node.pPts = pPts;
+        node.oPts = oPts;
+        node.oAided = pathOAided;
+
+        // Track O-placed stones
+        let childOPlaced = oPlacedStones;
+        if (player === 'opponent') {
+            childOPlaced = new Set(oPlacedStones);
+            childOPlaced.add(`${t.row},${t.col}`);
+        }
+
+        const oldTile = brd[t.row][t.col];
+        brd[t.row][t.col] = MARKERS.STONE;
+
+        if (currentDepth < maxDepth) {
+            node.children = buildTree(brd, pPos, oPos, currentDepth + 1, maxDepth,
+                                      pPts, oPts, pQueue, oQueue, pSaved, oSaved,
+                                      childOPlaced, pathOAided);
+        }
+
+        if (node.children.length === 0) {
+            node.leafCount = 1;
+            node.board = brd.map(r => [...r]);
+            node.pPos = { ...pPos };
+            node.oPos = { ...oPos };
+        } else {
+            node.leafCount = node.children.reduce((sum, c) => sum + c.leafCount, 0);
+        }
+
+        brd[t.row][t.col] = oldTile;
+        children.push(node);
+    }
+    return children;
+}
+
+// ===== State from Path =====
+
+function getStateFromPath(baseBrd, basePPos, baseOPos, path) {
+    const brd = baseBrd.map(r => [...r]);
+    let pPos = { ...basePPos };
+    let oPos = { ...baseOPos };
+    for (const a of path) {
+        if (a.type === 'move') {
+            if (a.player === 'player') pPos = { row: a.row, col: a.col };
+            else oPos = { row: a.row, col: a.col };
+            // ファウンテン消費
+            if (brd[a.row][a.col] === MARKERS.FOUNTAIN) {
+                brd[a.row][a.col] = MARKERS.EMPTY;
+            }
+        } else {
+            brd[a.row][a.col] = MARKERS.STONE;
+        }
+    }
+    return { brd, pPos, oPos };
+}
+
+// ===== Build Tree (Method C: leaf nodes store board state) =====
+
+function buildTree(brd, pPos, oPos, currentDepth, maxDepth, pPts, oPts,
+                   pQueue, oQueue, pSaved, oSaved, oPlacedStones, pathOAided) {
+
+    // Turn bonus (depth > 1, move depth)
+    if (currentDepth > 1 && getActionType(currentDepth) === 'move') {
+        const bonusPlayer = getActivePlayer(currentDepth);
+        if (bonusPlayer === 'player') pPts += POINT_TURN_BONUS;
+        else oPts += POINT_TURN_BONUS;
+    }
+
+    const actionType = getActionType(currentDepth);
+    const player = getActivePlayer(currentDepth);
+
+    // === Place Action ===
+    if (actionType === 'place') {
+        return computePlaceNodes(brd, pPos, oPos, currentDepth, maxDepth,
+                                 pPts, oPts, pQueue, oQueue, pSaved, oSaved,
+                                 oPlacedStones, pathOAided);
+    }
+
+    // === Move Action ===
+    const queue = player === 'player' ? pQueue : oQueue;
+    const saved = player === 'player' ? pSaved : oSaved;
+    const activePts = player === 'player' ? pPts : oPts;
+    const children = [];
+
+    // Option A: Normal — use queue[0], consume 1
+    if (queue.length >= 1) {
+        const dice = queue[0];
+        const remainQueue = queue.slice(1);
+        const npQ = player === 'player' ? remainQueue : pQueue;
+        const noQ = player === 'player' ? oQueue : remainQueue;
+        const npS = player === 'player' ? pSaved : pSaved;
+        const noS = player === 'player' ? oSaved : oSaved;
+
+        const nodes = generateMoveNodes(brd, pPos, oPos, currentDepth, maxDepth,
+                                        pPts, oPts, player, dice.value, dice.label,
+                                        'normal', null, null,
+                                        npQ, noQ, npS, noS,
+                                        oPlacedStones, pathOAided);
+        children.push(...nodes);
+    }
+
+    // Option B: Stock — save queue[0], use queue[1], consume 2, -20pt
+    // Conditions: saved === null, activePts >= 20, queue >= 2
+    if (saved === null && activePts >= POINT_STOCK_COST && queue.length >= 2) {
+        const savedDice = queue[0];
+        const useDice = queue[1];
+        const remainQueue = queue.slice(2);
+        let stockPPts = pPts, stockOPts = oPts;
+        if (player === 'player') stockPPts -= POINT_STOCK_COST;
+        else stockOPts -= POINT_STOCK_COST;
+
+        const npQ = player === 'player' ? remainQueue : pQueue;
+        const noQ = player === 'player' ? oQueue : remainQueue;
+        const npS = player === 'player' ? savedDice : pSaved;
+        const noS = player === 'player' ? oSaved : savedDice;
+
+        const nodes = generateMoveNodes(brd, pPos, oPos, currentDepth, maxDepth,
+                                        stockPPts, stockOPts, player, useDice.value, useDice.label,
+                                        'stock', savedDice.value, savedDice.label,
+                                        npQ, noQ, npS, noS,
+                                        oPlacedStones, pathOAided);
+        children.push(...nodes);
+    }
+
+    // Option C: UseStock — discard queue[0], use saved dice, consume 1, free
+    // Conditions: saved !== null, queue >= 1
+    if (saved !== null && queue.length >= 1) {
+        const discarded = queue[0];
+        const remainQueue = queue.slice(1);
+        const npQ = player === 'player' ? remainQueue : pQueue;
+        const noQ = player === 'player' ? oQueue : remainQueue;
+        const npS = player === 'player' ? null : pSaved;
+        const noS = player === 'player' ? oSaved : null;
+
+        const nodes = generateMoveNodes(brd, pPos, oPos, currentDepth, maxDepth,
+                                        pPts, oPts, player, saved.value, saved.label,
+                                        'use_stock', null, null,
+                                        npQ, noQ, npS, noS,
+                                        oPlacedStones, pathOAided);
+        children.push(...nodes);
+    }
+
+    return children;
+}
+
+// ===== Collect Tree Stats =====
+
+function collectTreeStats(rootChildren, maxDepth) {
+    const depthCounts = new Array(maxDepth + 1).fill(0);
+    let totalLeaves = 0;
+    let stockNodes = 0, useStockNodes = 0;
+
+    function dfs(nodes, depth) {
+        for (const node of nodes) {
+            depthCounts[depth]++;
+            if (node.moveType === 'stock') stockNodes++;
+            if (node.moveType === 'use_stock') useStockNodes++;
+            if (node.children.length === 0) totalLeaves++;
+            else dfs(node.children, depth + 1);
+        }
+    }
+    dfs(rootChildren, 1);
+
+    const stats = [];
+    for (let d = 1; d <= maxDepth; d++) {
+        stats.push({
+            depth: d,
+            label: getDepthLabel(d),
+            nodeCount: d === 1 ? 1 : depthCounts[d - 1],
+            totalOptions: depthCounts[d],
+        });
+    }
+
+    return { stats, totalLeaves, stockNodes, useStockNodes };
+}
+
+// ===== Run Search =====
+
+function formatOptionLine(opt, showLeaves) {
+    const pos = `(${opt.row},${opt.col})`;
+    const diag = opt.isDiagonal ? ' [diag]' : '';
+    const sub = showLeaves ? ` -> ${opt.leafCount} leaves` : '';
+    const ptsStr = (opt.pPts !== undefined) ? `  [P:${opt.pPts} O:${opt.oPts}]` : '';
+
+    if (opt.moveType === 'stock') {
+        return `  ${pos} [STOCK save ${opt.savedLabel}=${opt.savedDice}, use ${opt.diceLabel}=${opt.diceUsed}]${diag}${sub}${ptsStr}`;
+    } else if (opt.moveType === 'use_stock') {
+        return `  ${pos} [USE-STK ${opt.diceLabel}=${opt.diceUsed}]${diag}${sub}${ptsStr}`;
+    } else {
+        const diceStr = opt.diceLabel ? ` (${opt.diceLabel}=${opt.diceUsed})` : '';
+        return `  ${pos}${diceStr}${diag}${sub}${ptsStr}`;
+    }
+}
+
+// ===== Display Helper =====
+
+function applyCurrentDisplayMode(header) {
+    switch (currentDisplayMode) {
+        case 'finalPos':      showFinalPositions(); break;
+        case 'indFinalPos':   showIndependentFinalPositions(); break;
+        case 'guarFinalPos':  showGuaranteedFinalPositions(); break;
+        case 'overallGuar':   showOverallGuaranteedFinalPositions(); break;
+        default:              displayTreeStats(header); break;
+    }
+}
+
+function displayTreeStats(extraHeader) {
+    currentDisplayMode = 'treeStats';
+    const { stats, totalLeaves, stockNodes, useStockNodes } = collectTreeStats(searchTree.children, browseMaxDepth);
+
+    document.getElementById('back-btn').style.display = 'none';
+    browseNodeStack = [searchTree];
+    updatePathDisplay();
+
+    const out = document.getElementById('result-text');
+    let text = '';
+    if (extraHeader) text += extraHeader + '\n';
+    text += `=== Tree Search (Max Depth: ${browseMaxDepth}) ===\n`;
+    text += `Total Leaves: ${totalLeaves} | Tree stored in memory`;
+    text += ` | Stock: ${stockNodes} | Use-stock: ${useStockNodes}`;
+    if (selectedD3O3) {
+        text += ` | D3=${selectedD3O3.d3}, O3=${selectedD3O3.o3}`;
+    }
+    text += `\n\n`;
+    text += `--- Depth Stats ---\n`;
+    text += `${'D'.padEnd(4)}${'Action'.padEnd(18)}${'Nodes'.padEnd(10)}${'Options'.padEnd(10)}${'Avg Branch'.padEnd(10)}\n`;
+    text += '-'.repeat(52) + '\n';
+    for (const s of stats) {
+        const avg = s.nodeCount > 0 ? (s.totalOptions / s.nodeCount).toFixed(1) : '-';
+        text += `${String(s.depth).padEnd(4)}${s.label.padEnd(18)}${String(s.nodeCount).padEnd(10)}${String(s.totalOptions).padEnd(10)}${avg.padEnd(10)}\n`;
+    }
+
+    const options = searchTree.children;
+    text += `\n--- Depth 1: ${getDepthLabel(1)} ---\n`;
+    text += `${options.length} option(s)  [click a tile to drill down]\n\n`;
+    for (const opt of options) {
+        text += formatOptionLine(opt, browseMaxDepth > 1) + '\n';
+    }
+
+    out.textContent = text;
+    updatePointsDisplay();
+    draw();
+}
+
+// ===== D3/O3 Multi-Dice Selector =====
+
+function updateD3O3Selector() {
+    document.querySelectorAll('.d3o3-cell').forEach(cell => {
+        const d3 = parseInt(cell.dataset.d3);
+        const o3 = parseInt(cell.dataset.o3);
+        const tree = multiDiceTrees ? multiDiceTrees.get(`${d3},${o3}`) : null;
+        cell.textContent = tree ? `${tree.leafCount}` : '-';
+        cell.classList.toggle('active',
+            selectedD3O3 && selectedD3O3.d3 === d3 && selectedD3O3.o3 === o3);
+    });
+}
+
+function selectD3O3(d3, o3) {
+    if (!multiDiceTrees) return;
+    selectedD3O3 = { d3, o3 };
+    searchTree = multiDiceTrees.get(`${d3},${o3}`);
+    finalPosData = null;
+    filteredTree = null;
+    filteredTarget = null;
+    updateD3O3Selector();
+    // Overall Guar is cross-tree, so fallback to treeStats on D3/O3 switch
+    if (currentDisplayMode === 'overallGuar') currentDisplayMode = 'treeStats';
+    applyCurrentDisplayMode(`[D3=${d3}, O3=${o3}]`);
+    if (compareMode) {
+        updateBoardLabels();
+        renderCompareBoard();
+    }
+}
+
+// ===== Run Search =====
+
+function runSearch() {
+    finalPosData = null;
+    filteredTree = null;
+    filteredTarget = null;
+    browseMaxDepth = searchDepth;
+
+    // Show searching indicator before heavy computation
+    const out = document.getElementById('result-text');
+    const runBtn = document.getElementById('run-btn');
+    out.textContent = `Searching... (Depth: ${searchDepth}, building 9 trees)\nPlease wait...`;
+    runBtn.disabled = true;
+    runBtn.textContent = 'Searching...';
+
+    // Use setTimeout to allow DOM to render the "Searching..." message
+    setTimeout(() => {
+        browseActive = true;
+
+        const t0 = performance.now();
+        const brdCopy = board.map(r => [...r]);
+
+        // Read initial points from inputs
+        const initPPts = Math.max(0, parseInt(document.getElementById('init-p-pts').value) || 0);
+        const initOPts = Math.max(0, parseInt(document.getElementById('init-o-pts').value) || 0);
+
+        // Build dice queues from inputs — D0-D2 and O0-O2 are fixed
+        const clamp = (v) => Math.min(3, Math.max(1, parseInt(v) || 2));
+        const basePQueue = [];
+        const baseOQueue = [];
+        for (let i = 0; i <= 2; i++) {
+            basePQueue.push({ value: clamp(document.getElementById(`d${i}`).value), label: `D${i}` });
+            baseOQueue.push({ value: clamp(document.getElementById(`o${i}`).value), label: `O${i}` });
+        }
+
+        // Build 9 trees for all D3/O3 combinations
+        multiDiceTrees = new Map();
+        for (let d3 = 1; d3 <= 3; d3++) {
+            for (let o3 = 1; o3 <= 3; o3++) {
+                const pQueue = [...basePQueue, { value: d3, label: 'D3' }];
+                const oQueue = [...baseOQueue, { value: o3, label: 'O3' }];
+                const rootChildren = buildTree(brdCopy, playerPos, opponentPos, 1, browseMaxDepth,
+                                               initPPts, initOPts, pQueue, oQueue, null, null, new Set(), false);
+                multiDiceTrees.set(`${d3},${o3}`, {
+                    children: rootChildren,
+                    leafCount: rootChildren.reduce((s, c) => s + c.leafCount, 0),
+                });
+            }
+        }
+
+        // Select the tree matching the current D3/O3 input values
+        const inputD3 = clamp(document.getElementById('d3').value);
+        const inputO3 = clamp(document.getElementById('o3').value);
+        selectedD3O3 = { d3: inputD3, o3: inputO3 };
+        searchTree = multiDiceTrees.get(`${inputD3},${inputO3}`);
+
+        const elapsed = (performance.now() - t0).toFixed(1);
+        const totalLeaves = [...multiDiceTrees.values()].reduce((s, t) => s + t.leafCount, 0);
+
+        // Restore button
+        runBtn.disabled = false;
+        runBtn.textContent = 'Run Search';
+
+        // Show D3/O3 selector, Overall Guar button, and Compare button
+        document.getElementById('d3o3-selector').style.display = 'block';
+        document.getElementById('overall-guarpos-btn').style.display = '';
+        document.getElementById('compare-btn').style.display = '';
+        updateD3O3Selector();
+
+        displayTreeStats(`Time: ${elapsed}ms (9 trees, ${totalLeaves.toLocaleString()} total leaves)`);
+    }, 10);
+}
+
+// ===== Browse: Drill Down =====
+
+function drillDown(optIndex) {
+    finalPosData = null;
+    const currentNode = browseNodeStack[browseNodeStack.length - 1];
+    if (optIndex < 0 || optIndex >= currentNode.children.length) return;
+
+    browseNodeStack.push(currentNode.children[optIndex]);
+
+    document.getElementById('back-btn').style.display = '';
+    updatePathDisplay();
+    updateBrowseResults();
+    updatePointsDisplay();
+    draw();
+}
+
+// ===== Browse: Back =====
+
+function browseBack() {
+    finalPosData = null;
+    if (browseNodeStack.length <= 1) {
+        if (filteredTree) {
+            // フィルタモード脱出 → Final Pos表示に復帰
+            filteredTree = null;
+            filteredTarget = null;
+            browseNodeStack = [searchTree];
+            document.getElementById('back-btn').style.display = 'none';
+            showFinalPositions();
+            return;
+        }
+        return;
+    }
+    browseNodeStack.pop();
+
+    document.getElementById('back-btn').style.display = browseNodeStack.length > 1 || filteredTree ? '' : 'none';
+    updatePathDisplay();
+    updateBrowseResults();
+    updatePointsDisplay();
+    draw();
+}
+
+// ===== Show Final Positions =====
+
+function showFinalPositions() {
+    if (!searchTree || searchTree.children.length === 0) return;
+    currentDisplayMode = 'finalPos';
+
+    // Collect all leaf nodes and aggregate by position
+    const posMap = new Map();  // "row,col" → count
+
+    function collectLeaves(nodes) {
+        for (const node of nodes) {
+            if (node.children.length === 0) {
+                const key = `${node.row},${node.col}`;
+                posMap.set(key, (posMap.get(key) || 0) + 1);
+            } else {
+                collectLeaves(node.children);
+            }
+        }
+    }
+    collectLeaves(searchTree.children);
+
+    finalPosData = posMap;
+
+    // Results display
+    const out = document.getElementById('result-text');
+    const actionType = getActionType(browseMaxDepth);
+    const label = actionType === 'move' ? '移動先' : '配置先';
+
+    let text = `=== Final Positions (Depth ${browseMaxDepth}: ${getDepthLabel(browseMaxDepth)}) ===\n`;
+    text += `${posMap.size} unique positions | ${searchTree.leafCount} total paths\n\n`;
+
+    // Sort by count descending
+    const sorted = [...posMap.entries()]
+        .map(([key, count]) => ({ key, count, pos: key.split(',').map(Number) }))
+        .sort((a, b) => b.count - a.count);
+
+    for (const { key, count, pos } of sorted) {
+        const pct = (count / searchTree.leafCount * 100).toFixed(1);
+        text += `  (${pos[0]},${pos[1]})  ${count} paths  (${pct}%)\n`;
+    }
+
+    out.textContent = text;
+    draw();
+    if (compareMode && compareTree) {
+        compareFinalPosData = computeDisplayData(compareTree);
+        renderCompareBoard();
+    }
+}
+
+function showIndependentFinalPositions() {
+    if (!searchTree || searchTree.children.length === 0) return;
+    currentDisplayMode = 'indFinalPos';
+
+    const posMap = new Map();  // "row,col" → independent count
+    let totalIndep = 0, totalAll = 0;
+
+    function collectLeaves(nodes) {
+        for (const node of nodes) {
+            if (node.children.length === 0) {
+                totalAll++;
+                if (!node.oAided) {
+                    totalIndep++;
+                    const key = `${node.row},${node.col}`;
+                    posMap.set(key, (posMap.get(key) || 0) + 1);
+                }
+            } else {
+                collectLeaves(node.children);
+            }
+        }
+    }
+    collectLeaves(searchTree.children);
+
+    finalPosData = posMap;
+
+    const out = document.getElementById('result-text');
+    let text = `=== Independent Final Positions (Depth ${browseMaxDepth}: ${getDepthLabel(browseMaxDepth)}) ===\n`;
+    text += `${posMap.size} unique positions | ${totalIndep}/${totalAll} independent paths\n`;
+    text += `(Excluded: ${totalAll - totalIndep} paths aided by opponent)\n\n`;
+
+    const sorted = [...posMap.entries()]
+        .map(([key, count]) => ({ key, count, pos: key.split(',').map(Number) }))
+        .sort((a, b) => b.count - a.count);
+
+    for (const { key, count, pos } of sorted) {
+        const pct = totalIndep > 0 ? (count / totalIndep * 100).toFixed(1) : '0.0';
+        text += `  (${pos[0]},${pos[1]})  ${count} paths  (${pct}%)\n`;
+    }
+
+    out.textContent = text;
+    draw();
+    if (compareMode && compareTree) {
+        compareFinalPosData = computeDisplayData(compareTree);
+        renderCompareBoard();
+    }
+}
+
+function computeGuaranteedSet(siblings) {
+    if (siblings.length === 0) return new Set();
+    const whoChooses = siblings[0].player;
+    const perSibling = siblings.map(node => {
+        if (node.children.length === 0) {
+            return new Set([`${node.row},${node.col}`]);
+        }
+        return computeGuaranteedSet(node.children);
+    });
+    if (whoChooses === 'player') {
+        // P picks → UNION (P can choose the best option)
+        const result = new Set();
+        for (const s of perSibling) for (const pos of s) result.add(pos);
+        return result;
+    } else {
+        // O picks → INTERSECTION (must work for ALL O choices)
+        const result = new Set(perSibling[0]);
+        for (let i = 1; i < perSibling.length; i++) {
+            for (const pos of result) {
+                if (!perSibling[i].has(pos)) result.delete(pos);
+            }
+        }
+        return result;
+    }
+}
+
+function showGuaranteedFinalPositions() {
+    if (!searchTree || searchTree.children.length === 0) return;
+    currentDisplayMode = 'guarFinalPos';
+
+    // Compute guaranteed positions via minimax
+    const guarSet = computeGuaranteedSet(searchTree.children);
+
+    // Collect all leaf positions with counts (for path count reference)
+    const allPosMap = new Map();
+    function collectLeaves(nodes) {
+        for (const node of nodes) {
+            if (node.children.length === 0) {
+                const key = `${node.row},${node.col}`;
+                allPosMap.set(key, (allPosMap.get(key) || 0) + 1);
+            } else {
+                collectLeaves(node.children);
+            }
+        }
+    }
+    collectLeaves(searchTree.children);
+
+    // Build finalPosData with only guaranteed positions
+    const guarPosMap = new Map();
+    let guarPaths = 0;
+    for (const key of guarSet) {
+        const count = allPosMap.get(key) || 0;
+        guarPosMap.set(key, count);
+        guarPaths += count;
+    }
+    finalPosData = guarPosMap;
+
+    // Results display
+    const out = document.getElementById('result-text');
+    let text = `=== Guaranteed Final Positions (Depth ${browseMaxDepth}: ${getDepthLabel(browseMaxDepth)}) ===\n`;
+    text += `${guarSet.size} guaranteed positions | ${allPosMap.size} total unique\n`;
+    text += `(Excluded: ${allPosMap.size - guarSet.size} positions not guaranteed against opponent)\n\n`;
+
+    const sorted = [...guarPosMap.entries()]
+        .map(([key, count]) => ({ key, count, pos: key.split(',').map(Number) }))
+        .sort((a, b) => b.count - a.count);
+
+    for (const { key, count, pos } of sorted) {
+        const pct = guarPaths > 0 ? (count / guarPaths * 100).toFixed(1) : '0.0';
+        text += `  (${pos[0]},${pos[1]})  ${count} paths  (${pct}%)\n`;
+    }
+
+    if (guarSet.size === 0) {
+        text += `  (No positions are guaranteed against all opponent choices)\n`;
+    }
+
+    out.textContent = text;
+    draw();
+    if (compareMode && compareTree) {
+        compareFinalPosData = computeDisplayData(compareTree);
+        renderCompareBoard();
+    }
+}
+
+function showOverallGuaranteedFinalPositions() {
+    if (!multiDiceTrees || multiDiceTrees.size === 0) return;
+    currentDisplayMode = 'overallGuar';
+
+    // Compute guaranteed set for each of 9 trees, then INTERSECT all
+    let overallSet = null;
+    const perTreeInfo = [];
+
+    for (const [key, tree] of multiDiceTrees) {
+        const guarSet = tree.children.length > 0
+            ? computeGuaranteedSet(tree.children) : new Set();
+        perTreeInfo.push({ key, size: guarSet.size });
+
+        if (overallSet === null) {
+            overallSet = new Set(guarSet);
+        } else {
+            for (const pos of overallSet) {
+                if (!guarSet.has(pos)) overallSet.delete(pos);
+            }
+        }
+    }
+    if (overallSet === null) overallSet = new Set();
+
+    // Count total paths across all 9 trees for each position
+    const allPosMap = new Map();
+    for (const [, tree] of multiDiceTrees) {
+        (function collect(nodes) {
+            for (const n of nodes) {
+                if (n.children.length === 0) {
+                    const k = `${n.row},${n.col}`;
+                    allPosMap.set(k, (allPosMap.get(k) || 0) + 1);
+                } else {
+                    collect(n.children);
+                }
+            }
+        })(tree.children);
+    }
+
+    // Build finalPosData with only overall guaranteed positions
+    const guarPosMap = new Map();
+    let guarPaths = 0;
+    for (const pos of overallSet) {
+        const count = allPosMap.get(pos) || 0;
+        guarPosMap.set(pos, count);
+        guarPaths += count;
+    }
+    finalPosData = guarPosMap;
+
+    // Count total unique across all trees
+    const totalUnique = allPosMap.size;
+
+    // Results display
+    const out = document.getElementById('result-text');
+    let text = `=== Overall Guaranteed Final Positions ===\n`;
+    text += `(Intersection of guaranteed sets across all 9 D3/O3 combos)\n`;
+    text += `${overallSet.size} overall guaranteed | ${totalUnique} total unique across all trees\n`;
+    text += `(Excluded: ${totalUnique - overallSet.size} positions not guaranteed in all combos)\n\n`;
+
+    // Per-tree breakdown
+    text += `--- Per D3/O3 Guaranteed Counts ---\n`;
+    for (const { key, size } of perTreeInfo) {
+        const [d, o] = key.split(',');
+        text += `  D3=${d}, O3=${o}: ${size} guaranteed\n`;
+    }
+    text += `\n`;
+
+    // Sorted position list
+    const sorted = [...guarPosMap.entries()]
+        .map(([key, count]) => ({ key, count, pos: key.split(',').map(Number) }))
+        .sort((a, b) => b.count - a.count);
+
+    for (const { key, count, pos } of sorted) {
+        const pct = guarPaths > 0 ? (count / guarPaths * 100).toFixed(1) : '0.0';
+        text += `  (${pos[0]},${pos[1]})  ${count} total paths  (${pct}%)\n`;
+    }
+
+    if (overallSet.size === 0) {
+        text += `  (No positions are guaranteed across all D3/O3 combinations)\n`;
+    }
+
+    out.textContent = text;
+    draw();
+}
+
+// ===== Side-by-Side Comparison =====
+
+function computeDisplayData(tree) {
+    if (!tree || tree.children.length === 0) return new Map();
+    switch (currentDisplayMode) {
+        case 'finalPos': {
+            const posMap = new Map();
+            (function collect(nodes) {
+                for (const n of nodes) {
+                    if (n.children.length === 0) {
+                        const k = `${n.row},${n.col}`;
+                        posMap.set(k, (posMap.get(k) || 0) + 1);
+                    } else collect(n.children);
+                }
+            })(tree.children);
+            return posMap;
+        }
+        case 'indFinalPos': {
+            const posMap = new Map();
+            (function collect(nodes) {
+                for (const n of nodes) {
+                    if (n.children.length === 0) {
+                        if (!n.oAided) {
+                            const k = `${n.row},${n.col}`;
+                            posMap.set(k, (posMap.get(k) || 0) + 1);
+                        }
+                    } else collect(n.children);
+                }
+            })(tree.children);
+            return posMap;
+        }
+        case 'guarFinalPos': {
+            const guarSet = computeGuaranteedSet(tree.children);
+            const allMap = new Map();
+            (function collect(nodes) {
+                for (const n of nodes) {
+                    if (n.children.length === 0) {
+                        const k = `${n.row},${n.col}`;
+                        allMap.set(k, (allMap.get(k) || 0) + 1);
+                    } else collect(n.children);
+                }
+            })(tree.children);
+            const result = new Map();
+            for (const pos of guarSet) result.set(pos, allMap.get(pos) || 0);
+            return result;
+        }
+        default: return null;  // treeStats, overallGuar → no finalPosData
+    }
+}
+
+function toggleCompareMode() {
+    if (!multiDiceTrees) return;
+    compareMode = !compareMode;
+    if (compareMode) {
+        document.getElementById('boards-container').classList.add('compare-active');
+        document.getElementById('board-compare').style.display = 'block';
+        document.getElementById('compare-controls').style.display = 'block';
+        updateCompareD3O3Selector();
+        updateBoardLabels();
+        if (selectedD3O3) selectCompareD3O3(selectedD3O3.d3, selectedD3O3.o3);
+    } else {
+        closeCompareMode();
+    }
+}
+
+function closeCompareMode() {
+    compareMode = false;
+    compareD3O3 = null;
+    compareTree = null;
+    compareFinalPosData = null;
+    document.getElementById('boards-container').classList.remove('compare-active');
+    document.getElementById('board-compare').style.display = 'none';
+    document.getElementById('compare-controls').style.display = 'none';
+    document.getElementById('board-label-main').textContent = '';
+    document.getElementById('board-label-compare').textContent = '';
+    draw();
+}
+
+function selectCompareD3O3(d3, o3) {
+    if (!multiDiceTrees || !compareMode) return;
+    compareD3O3 = { d3, o3 };
+    compareTree = multiDiceTrees.get(`${d3},${o3}`);
+    compareFinalPosData = computeDisplayData(compareTree);
+    updateCompareD3O3Selector();
+    updateBoardLabels();
+    renderCompareBoard();
+}
+
+function renderCompareBoard() {
+    if (!compareMode || !compareTree) return;
+    const compareCanvas = document.getElementById('board-compare');
+    const compareCtx = compareCanvas.getContext('2d');
+
+    // Save main state
+    const savedSearchTree = searchTree;
+    const savedFinalPosData = finalPosData;
+    const savedBrowseNodeStack = browseNodeStack;
+    const savedFilteredTarget = filteredTarget;
+
+    // Swap to compare state
+    searchTree = compareTree;
+    finalPosData = compareFinalPosData;
+    browseNodeStack = [compareTree];
+    filteredTarget = null;
+
+    // Draw on main canvas (temporarily)
+    draw();
+
+    // Copy pixels to compare canvas
+    compareCtx.clearRect(0, 0, compareCanvas.width, compareCanvas.height);
+    compareCtx.drawImage(canvas, 0, 0);
+
+    // Restore main state and redraw
+    searchTree = savedSearchTree;
+    finalPosData = savedFinalPosData;
+    browseNodeStack = savedBrowseNodeStack;
+    filteredTarget = savedFilteredTarget;
+    draw();
+}
+
+function updateCompareD3O3Selector() {
+    document.querySelectorAll('.compare-d3o3-cell').forEach(cell => {
+        const d3 = parseInt(cell.dataset.d3);
+        const o3 = parseInt(cell.dataset.o3);
+        const tree = multiDiceTrees ? multiDiceTrees.get(`${d3},${o3}`) : null;
+        cell.textContent = tree ? `${tree.leafCount}` : '-';
+        cell.classList.toggle('active',
+            compareD3O3 && compareD3O3.d3 === d3 && compareD3O3.o3 === o3);
+    });
+}
+
+function updateBoardLabels() {
+    const mainLabel = document.getElementById('board-label-main');
+    const compareLabel = document.getElementById('board-label-compare');
+    if (compareMode && selectedD3O3) {
+        mainLabel.textContent = `D3=${selectedD3O3.d3}, O3=${selectedD3O3.o3}`;
+        compareLabel.textContent = compareD3O3
+            ? `D3=${compareD3O3.d3}, O3=${compareD3O3.o3}` : '';
+    } else {
+        mainLabel.textContent = '';
+        compareLabel.textContent = '';
+    }
+}
+
+// ===== Filtered Tree =====
+
+function filterTreeByTarget(rootChildren, targetRow, targetCol) {
+    function filterNode(node) {
+        if (node.children.length === 0) {
+            if (node.row === targetRow && node.col === targetCol) {
+                return { ...node };
+            }
+            return null;
+        }
+        const filteredChildren = [];
+        for (const child of node.children) {
+            const f = filterNode(child);
+            if (f) filteredChildren.push(f);
+        }
+        if (filteredChildren.length === 0) return null;
+        const leafCount = filteredChildren.reduce((sum, c) => sum + c.leafCount, 0);
+        return { ...node, children: filteredChildren, leafCount };
+    }
+
+    const filtered = [];
+    for (const child of rootChildren) {
+        const f = filterNode(child);
+        if (f) filtered.push(f);
+    }
+    return filtered;
+}
+
+function enterFilteredMode(targetRow, targetCol) {
+    const filteredChildren = filterTreeByTarget(searchTree.children, targetRow, targetCol);
+    const totalLeaves = filteredChildren.reduce((sum, c) => sum + c.leafCount, 0);
+    filteredTree = { children: filteredChildren, leafCount: totalLeaves };
+    filteredTarget = { row: targetRow, col: targetCol };
+    finalPosData = null;
+    browseNodeStack = [filteredTree];
+
+    document.getElementById('back-btn').style.display = '';
+    updatePathDisplay();
+    updateBrowseResults();
+    draw();
+}
+
+function updatePathDisplay() {
+    const el = document.getElementById('path-display');
+    const path = browseNodeStack.slice(1); // skip root
+    if (path.length === 0) {
+        el.textContent = browseActive ? '(root)' : '(none)';
+        return;
+    }
+    const parts = path.map(node => {
+        const label = node.player === 'player' ? 'P' : 'O';
+        if (node.type === 'place') {
+            return `${label} Place(${node.row},${node.col})`;
+        }
+        // Move node
+        if (node.moveType === 'stock') {
+            return `${label} Stock[save ${node.savedLabel}=${node.savedDice}](${node.diceLabel}=${node.diceUsed}->(${node.row},${node.col}))`;
+        } else if (node.moveType === 'use_stock') {
+            return `${label} UseStk(${node.diceLabel}=${node.diceUsed}->(${node.row},${node.col}))`;
+        } else {
+            const diceStr = node.diceLabel ? `${node.diceLabel}=${node.diceUsed}->` : '';
+            return `${label} Move(${diceStr}(${node.row},${node.col}))`;
+        }
+    });
+    let text = parts.join(' -> ');
+    if (path.length > 0) {
+        const last = path[path.length - 1];
+        if (last.pPts !== undefined) {
+            text += ` | P:${last.pPts} O:${last.oPts}`;
+        }
+    }
+    el.textContent = text;
+}
+
+function formatLeafPathLine(node, depthIndex) {
+    const pts = (node.pPts !== undefined)
+        ? `  [P:${node.pPts} O:${node.oPts}]` : '';
+    if (node.type === 'place') {
+        return `  D${depthIndex}: ${getDepthLabel(depthIndex)} -> (${node.row},${node.col})${pts}`;
+    }
+    if (node.moveType === 'stock') {
+        return `  D${depthIndex}: ${getDepthLabel(depthIndex)} [STOCK save ${node.savedLabel}=${node.savedDice}, use ${node.diceLabel}=${node.diceUsed}] -> (${node.row},${node.col})${pts}`;
+    } else if (node.moveType === 'use_stock') {
+        return `  D${depthIndex}: ${getDepthLabel(depthIndex)} [USE-STK ${node.diceLabel}=${node.diceUsed}] -> (${node.row},${node.col})${pts}`;
+    } else {
+        const diceStr = node.diceLabel ? ` (${node.diceLabel}=${node.diceUsed})` : '';
+        return `  D${depthIndex}: ${getDepthLabel(depthIndex)}${diceStr} -> (${node.row},${node.col})${pts}`;
+    }
+}
+
+function updateBrowseResults() {
+    const path = browseNodeStack.slice(1);
+    const currentNode = browseNodeStack[browseNodeStack.length - 1];
+    const options = currentNode.children;
+    const nextDepth = browseNodeStack.length; // depth of children
+    const out = document.getElementById('result-text');
+
+    // Filter mode header
+    let filterHeader = '';
+    if (filteredTarget) {
+        filterHeader = `Filtered: paths to (${filteredTarget.row},${filteredTarget.col})\n`;
+        filterHeader += `${filteredTree.leafCount} paths | Back at root -> return to Final Pos\n\n`;
+    }
+
+    if (options.length === 0) {
+        // Leaf reached
+        let text = filterHeader;
+        text += `=== Maximum Depth Reached (${browseMaxDepth}) ===\n\n`;
+        text += `Path:\n`;
+        path.forEach((node, i) => {
+            text += formatLeafPathLine(node, i + 1) + '\n';
+        });
+        if (path.length > 0) {
+            const last = path[path.length - 1];
+            if (last.pPts !== undefined) {
+                text += `\nFinal Points: P=${last.pPts}  O=${last.oPts}\n`;
+            }
+        }
+        const leafNode = browseNodeStack[browseNodeStack.length - 1];
+        if (leafNode.board) {
+            text += `\nLeaf board state: stored ✓\n`;
+        }
+        out.textContent = text;
+        return;
+    }
+
+    let text = filterHeader;
+    const eff = getEffectivePoints();
+    text += `Points: P=${eff.pPts}  O=${eff.oPts}\n`;
+    text += `=== Depth ${nextDepth}: ${getDepthLabel(nextDepth)} ===\n`;
+    text += `${options.length} option(s)  [click a tile to drill down]\n\n`;
+    for (const opt of options) {
+        text += formatOptionLine(opt, nextDepth < browseMaxDepth) + '\n';
+    }
+    out.textContent = text;
+}
+
+// ターンボーナス込みの「現在のポイント」を返す
+// browseNodeStack の末尾ノード（親）のポイントに、表示中 depth のターンボーナスを加算
+// Stock cost はツリーノードに含まれるため、ここでは不要
+function getEffectivePoints() {
+    // Start from initial points
+    let pPts = Math.max(0, parseInt(document.getElementById('init-p-pts').value) || 0);
+    let oPts = Math.max(0, parseInt(document.getElementById('init-o-pts').value) || 0);
+    if (browseActive && browseNodeStack.length > 1) {
+        const last = browseNodeStack[browseNodeStack.length - 1];
+        if (last.pPts !== undefined) { pPts = last.pPts; oPts = last.oPts; }
+    }
+    const viewDepth = browseNodeStack.length; // children's depth
+    // Turn bonus
+    if (viewDepth > 1 && getActionType(viewDepth) === 'move') {
+        const bonusPlayer = getActivePlayer(viewDepth);
+        if (bonusPlayer === 'player') pPts += POINT_TURN_BONUS;
+        else oPts += POINT_TURN_BONUS;
+    }
+    return { pPts, oPts };
+}
+
+// Reconstruct saved dice state from browse path
+function getPathSavedState() {
+    let pSaved = null, oSaved = null;
+    const path = browseNodeStack.slice(1);
+    for (const node of path) {
+        if (node.type !== 'move') continue;
+        if (node.moveType === 'stock') {
+            if (node.player === 'player') pSaved = { value: node.savedDice, label: node.savedLabel };
+            else oSaved = { value: node.savedDice, label: node.savedLabel };
+        } else if (node.moveType === 'use_stock') {
+            if (node.player === 'player') pSaved = null;
+            else oSaved = null;
+        }
+    }
+    return { pSaved, oSaved };
+}
+
+function updatePointsDisplay() {
+    const el = document.getElementById('points-display');
+    if (!el) return;
+    if (browseActive && browseNodeStack.length >= 1) {
+        const eff = getEffectivePoints();
+        el.textContent = `P: ${eff.pPts} pts | O: ${eff.oPts} pts`;
+        el.style.color = '#ccc';
+    } else {
+        const initP = Math.max(0, parseInt(document.getElementById('init-p-pts').value) || 0);
+        const initO = Math.max(0, parseInt(document.getElementById('init-o-pts').value) || 0);
+        el.textContent = `P: ${initP} pts | O: ${initO} pts`;
+        el.style.color = '#888';
+    }
+}
+
+// ===== Rendering =====
+
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+
+function draw() {
+    // Get the board state after applying the path
+    let drawBrd, drawPPos, drawOPos;
+    if (browseActive && browseNodeStack.length > 0) {
+        const path = browseNodeStack.slice(1); // skip root
+        const state = getStateFromPath(board, playerPos, opponentPos, path);
+        drawBrd = state.brd;
+        drawPPos = state.pPos;
+        drawOPos = state.oPos;
+    } else {
+        drawBrd = board;
+        drawPPos = playerPos;
+        drawOPos = opponentPos;
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Final Positions mode (takes priority over browse highlights)
+    if (finalPosData) {
+        const maxCount = Math.max(...finalPosData.values());
+        for (const [key, count] of finalPosData) {
+            const [r, c] = key.split(',').map(Number);
+            const x = c * CELL_SIZE, y = r * CELL_SIZE;
+            const alpha = 0.15 + 0.45 * (count / maxCount);
+            ctx.fillStyle = `rgba(255, 215, 0, ${alpha})`;
+            ctx.fillRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4);
+            ctx.strokeStyle = '#FFD700';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4);
+        }
+    }
+
+    // Option highlights (hidden during Final Pos mode) — split cells for multi-option
+    if (browseActive && browseNodeStack.length > 0 && !finalPosData) {
+        const currentNode = browseNodeStack[browseNodeStack.length - 1];
+        const options = currentNode.children;
+        if (options.length > 0) {
+            const nextDepth = browseNodeStack.length;
+            // Group by cell
+            const cellMap = new Map();
+            for (const opt of options) {
+                const key = `${opt.row},${opt.col}`;
+                if (!cellMap.has(key)) cellMap.set(key, []);
+                cellMap.get(key).push(opt);
+            }
+            for (const [key, cellOpts] of cellMap) {
+                const [r, c] = key.split(',').map(Number);
+                const x = c * CELL_SIZE, y = r * CELL_SIZE;
+                if (cellOpts.length === 1) {
+                    const hc = getHighlightColor(nextDepth, cellOpts[0].moveType);
+                    ctx.fillStyle = hc.fill;
+                    ctx.fillRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4);
+                    ctx.strokeStyle = hc.stroke;
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4);
+                } else {
+                    // Split cell into N vertical segments
+                    const n = cellOpts.length;
+                    const totalW = CELL_SIZE - 4;
+                    const segW = totalW / n;
+                    for (let i = 0; i < n; i++) {
+                        const hc = getHighlightColor(nextDepth, cellOpts[i].moveType);
+                        ctx.fillStyle = hc.fill;
+                        ctx.fillRect(x + 2 + i * segW, y + 2, segW, CELL_SIZE - 4);
+                        ctx.strokeStyle = hc.stroke;
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(x + 2 + i * segW, y + 2, segW, CELL_SIZE - 4);
+                    }
+                }
+            }
+        }
+    }
+
+    // Filtered mode: target position indicator (red dashed border)
+    if (filteredTarget) {
+        const tx = filteredTarget.col * CELL_SIZE;
+        const ty = filteredTarget.row * CELL_SIZE;
+        ctx.strokeStyle = '#FF4444';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(tx + 1, ty + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+        ctx.setLineDash([]);
+    }
+
+    // Grid
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= BOARD_SIZE; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * CELL_SIZE, 0); ctx.lineTo(i * CELL_SIZE, BOARD_SIZE * CELL_SIZE);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, i * CELL_SIZE); ctx.lineTo(BOARD_SIZE * CELL_SIZE, i * CELL_SIZE);
+        ctx.stroke();
+    }
+
+    // Tiles
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            const tile = drawBrd[r][c];
+            const cx = c * CELL_SIZE + CELL_SIZE / 2;
+            const cy = r * CELL_SIZE + CELL_SIZE / 2;
+            drawTile(ctx, tile, cx, cy);
+        }
+    }
+
+    // Player
+    drawPlayer(ctx, drawPPos, '#00AAFF', 'P');
+    // Opponent
+    drawPlayer(ctx, drawOPos, '#FF4444', 'O');
+
+    // Canvas point overlay (ターンボーナス込み + saved dice)
+    if (browseActive) {
+        const eff = getEffectivePoints();
+        const saved = getPathSavedState();
+        ctx.font = 'bold 12px monospace';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#00AAFF';
+        ctx.textAlign = 'left';
+        let pText = `P:${eff.pPts}pt`;
+        if (saved.pSaved) pText += ` Stk:${saved.pSaved.value}`;
+        ctx.fillText(pText, 4, 4);
+        ctx.fillStyle = '#FF4444';
+        ctx.textAlign = 'right';
+        let oText = `O:${eff.oPts}pt`;
+        if (saved.oSaved) oText += ` Stk:${saved.oSaved.value}`;
+        ctx.fillText(oText, BOARD_SIZE * CELL_SIZE - 4, 4);
+    }
+
+    // Sub-branch annotations (leafCount + moveType per segment) — hidden during Final Pos mode
+    if (browseActive && browseNodeStack.length > 0 && !finalPosData) {
+        const currentNode = browseNodeStack[browseNodeStack.length - 1];
+        const nextDepth = browseNodeStack.length;
+        // Group by cell for split annotations
+        const cellMap2 = new Map();
+        currentNode.children.forEach(opt => {
+            const key = `${opt.row},${opt.col}`;
+            if (!cellMap2.has(key)) cellMap2.set(key, []);
+            cellMap2.get(key).push(opt);
+        });
+        for (const [key, cellOpts] of cellMap2) {
+            const [r, c] = key.split(',').map(Number);
+            const x = c * CELL_SIZE, y = r * CELL_SIZE;
+            if (cellOpts.length === 1) {
+                const opt = cellOpts[0];
+                if (opt.leafCount > 1 || nextDepth < browseMaxDepth) {
+                    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+                    ctx.font = 'bold 10px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'top';
+                    let label = String(opt.leafCount);
+                    if (opt.moveType === 'stock') label = 'S:' + label;
+                    else if (opt.moveType === 'use_stock') label = 'U:' + label;
+                    ctx.fillText(label, x + CELL_SIZE / 2, y + 3);
+                }
+            } else {
+                const n = cellOpts.length;
+                const totalW = CELL_SIZE - 4;
+                const segW = totalW / n;
+                for (let i = 0; i < n; i++) {
+                    const opt = cellOpts[i];
+                    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+                    ctx.font = 'bold 9px monospace';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'top';
+                    let label = String(opt.leafCount);
+                    if (opt.moveType === 'stock') label = 'S:' + label;
+                    else if (opt.moveType === 'use_stock') label = 'U:' + label;
+                    ctx.fillText(label, x + 2 + i * segW + segW / 2, y + 3);
+                }
+            }
+        }
+    }
+
+    // Final Positions count display
+    if (finalPosData) {
+        for (const [key, count] of finalPosData) {
+            const [r, c] = key.split(',').map(Number);
+            const tx = c * CELL_SIZE + CELL_SIZE / 2;
+            const ty = r * CELL_SIZE + CELL_SIZE / 2;
+            ctx.font = 'bold 13px monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.strokeText(String(count), tx, ty);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillText(String(count), tx, ty);
+        }
+    }
+}
+
+function drawTile(ctx, tile, cx, cy) {
+    if (tile === MARKERS.STONE) {
+        ctx.fillStyle = '#556677';
+        drawOctagon(ctx, cx, cy, CELL_SIZE * 0.35);
+        ctx.fill();
+    } else if (tile === MARKERS.FOUNTAIN) {
+        ctx.fillStyle = '#FFD700';
+        ctx.beginPath();
+        ctx.arc(cx, cy, CELL_SIZE * 0.28, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#000'; ctx.font = '11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('F', cx, cy);
+    } else if (tile === MARKERS.ICE) {
+        ctx.fillStyle = '#66DDFF';
+        drawDiamond(ctx, cx, cy, CELL_SIZE * 0.3);
+        ctx.fill();
+        ctx.fillStyle = '#000'; ctx.font = '11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('I', cx, cy);
+    } else if (tile === MARKERS.SWAMP) {
+        ctx.fillStyle = '#668844';
+        drawDiamond(ctx, cx, cy, CELL_SIZE * 0.3);
+        ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = '11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('W', cx, cy);
+    } else if (tile === MARKERS.WARP) {
+        ctx.fillStyle = '#AA66FF';
+        drawDiamond(ctx, cx, cy, CELL_SIZE * 0.3);
+        ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = '11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('P', cx, cy);
+    } else if (tile === MARKERS.SNOW) {
+        ctx.fillStyle = '#CCDDEE';
+        drawOctagon(ctx, cx, cy, CELL_SIZE * 0.35);
+        ctx.fill();
+        ctx.fillStyle = '#333'; ctx.font = '11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('N', cx, cy);
+    }
+}
+
+function drawPlayer(ctx, pos, color, label) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(pos.col * CELL_SIZE + CELL_SIZE / 2, pos.row * CELL_SIZE + CELL_SIZE / 2, CELL_SIZE * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, pos.col * CELL_SIZE + CELL_SIZE / 2, pos.row * CELL_SIZE + CELL_SIZE / 2);
+}
+
+function drawOctagon(ctx, cx, cy, r) {
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+        const angle = (Math.PI / 8) + (i * Math.PI / 4);
+        const x = cx + r * Math.cos(angle);
+        const y = cy + r * Math.sin(angle);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+}
+
+function drawDiamond(ctx, cx, cy, r) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx + r, cy);
+    ctx.lineTo(cx, cy + r);
+    ctx.lineTo(cx - r, cy);
+    ctx.closePath();
+}
+
+// ===== Event Handlers =====
+
+canvas.addEventListener('click', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const col = Math.floor((e.clientX - rect.left) / CELL_SIZE);
+    const row = Math.floor((e.clientY - rect.top) / CELL_SIZE);
+    if (!isValidPosition(row, col)) return;
+
+    // Final Pos mode: click gold tile to enter filtered mode
+    if (finalPosData) {
+        const key = `${row},${col}`;
+        if (finalPosData.has(key)) {
+            enterFilteredMode(row, col);
+        }
+        return;
+    }
+
+    // Browse mode: check if clicked on an option
+    if (browseActive && browseNodeStack.length > 0) {
+        const currentNode = browseNodeStack[browseNodeStack.length - 1];
+        // Find all options at this cell
+        const matching = [];
+        currentNode.children.forEach((o, i) => {
+            if (o.row === row && o.col === col) matching.push(i);
+        });
+        if (matching.length === 1) {
+            drillDown(matching[0]);
+            return;
+        } else if (matching.length > 1) {
+            // Split-cell click: determine which segment was clicked based on X position
+            const cellX = (e.clientX - rect.left) - col * CELL_SIZE;
+            const segW = CELL_SIZE / matching.length;
+            let segIdx = Math.floor(cellX / segW);
+            segIdx = Math.max(0, Math.min(segIdx, matching.length - 1));
+            drillDown(matching[segIdx]);
+            return;
+        }
+        // Click outside options: ignore (stay in browse mode)
+        return;
+    }
+
+    // Placement mode
+    const modeToMarker = {
+        ice: MARKERS.ICE, swamp: MARKERS.SWAMP, warp: MARKERS.WARP,
+        snow: MARKERS.SNOW, stone: MARKERS.STONE, fountain: MARKERS.FOUNTAIN
+    };
+
+    if (placementMode === 'player' || placementMode === 'opponent') {
+        return; // 位置変更不可
+    } else if (placementMode === 'erase') {
+        board[row][col] = MARKERS.EMPTY;
+    } else if (modeToMarker[placementMode]) {
+        if (row === playerPos.row && col === playerPos.col) return;
+        if (row === opponentPos.row && col === opponentPos.col) return;
+        const marker = modeToMarker[placementMode];
+        board[row][col] = board[row][col] === marker ? MARKERS.EMPTY : marker;
+    }
+    draw();
+});
+
+// Mode buttons
+document.querySelectorAll('[data-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-mode]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        placementMode = btn.dataset.mode;
+        exitBrowse();
+        draw();
+    });
+});
+
+// Depth buttons
+function updateDepthDesc() {
+    const descs = [];
+    for (let d = 1; d <= searchDepth; d++) {
+        descs.push(`D${d}: ${getDepthLabel(d)}`);
+    }
+    document.getElementById('depth-desc').textContent = descs.join(' | ');
+}
+
+document.querySelectorAll('[data-depth]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-depth]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        searchDepth = parseInt(btn.dataset.depth);
+        updateDepthDesc();
+    });
+});
+
+// Actions
+document.getElementById('run-btn').addEventListener('click', runSearch);
+document.getElementById('back-btn').addEventListener('click', browseBack);
+document.getElementById('clear-btn').addEventListener('click', () => {
+    exitBrowse();
+    document.getElementById('result-text').textContent = 'Cleared.';
+    draw();
+});
+document.getElementById('generate-btn').addEventListener('click', generateBoard);
+document.getElementById('finalpos-btn').addEventListener('click', showFinalPositions);
+document.getElementById('indpos-btn').addEventListener('click', showIndependentFinalPositions);
+document.getElementById('guarpos-btn').addEventListener('click', showGuaranteedFinalPositions);
+document.getElementById('overall-guarpos-btn').addEventListener('click', showOverallGuaranteedFinalPositions);
+document.querySelectorAll('.d3o3-cell').forEach(cell => {
+    cell.addEventListener('click', () => selectD3O3(parseInt(cell.dataset.d3), parseInt(cell.dataset.o3)));
+});
+document.getElementById('compare-btn').addEventListener('click', toggleCompareMode);
+document.getElementById('compare-close-btn').addEventListener('click', closeCompareMode);
+document.querySelectorAll('.compare-d3o3-cell').forEach(cell => {
+    cell.addEventListener('click', () => selectCompareD3O3(parseInt(cell.dataset.d3), parseInt(cell.dataset.o3)));
+});
+document.getElementById('reset-btn').addEventListener('click', () => {
+    resetBoard();
+    document.getElementById('result-text').textContent = 'Board reset.';
+    draw();
+});
+
+// Dice randomize buttons
+document.getElementById('rand-dice-p').addEventListener('click', () => randomizeDice('player'));
+document.getElementById('rand-dice-o').addEventListener('click', () => randomizeDice('opponent'));
+document.getElementById('rand-dice-all').addEventListener('click', () => randomizeDice('both'));
+
+// Initial position inputs — apply on change
+['init-p-row', 'init-p-col', 'init-o-row', 'init-o-col'].forEach(id => {
+    document.getElementById(id).addEventListener('change', () => {
+        applyInitialPositions();
+        exitBrowse();
+        draw();
+    });
+});
+
+
+// ===== Init =====
+updateDepthDesc();
+resetBoard();
+draw();
+</script>
+</body>
+</html>

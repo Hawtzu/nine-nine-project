@@ -35,7 +35,8 @@ const BOARD_OFFSET_X = PANEL_WIDTH;
 const BOARD_OFFSET_Y = 40;
 const SCREEN_WIDTH = PANEL_WIDTH * 2 + BOARD_SIZE * CELL_SIZE;
 const SCREEN_HEIGHT = BOARD_SIZE * CELL_SIZE + BOARD_OFFSET_Y + 40;
-const MARKERS = { EMPTY: ' ', STONE: 'S', ICE: 'I', SWAMP: 'W', WARP: 'P', SNOW: 'N' };
+const MARKERS = { EMPTY: ' ', STONE: 'S', ICE: 'I', SWAMP: 'W', WARP: 'P', SNOW: 'N', FOUNTAIN: 'F' };
+const POINT_FOUNTAIN_PICKUP = 100;
 const CROSS_DIRECTIONS = [{dr:0,dc:1},{dr:0,dc:-1},{dr:1,dc:0},{dr:-1,dc:0}];
 const DIAGONAL_DIRECTIONS = [{dr:-1,dc:-1},{dr:-1,dc:1},{dr:1,dc:-1},{dr:1,dc:1}];
 const POINT_TURN_BONUS = 10;
@@ -57,6 +58,7 @@ let turnCount = 1;
 let currentTurn = 'player'; // 'player' | 'com'
 let gamePhase = 'INIT';
 let winner = null, winReason = '';
+let comGotFountain = false;  // COMがFountainを1つ取得したらtrue → Minimax切替
 
 // Player turn state
 let moveMode = 'cross';
@@ -77,17 +79,30 @@ canvas.height = SCREEN_HEIGHT;
 // ===== Utility =====
 function isValidPosition(r, c) { return r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE; }
 function randDice() { return Math.floor(Math.random() * 3) + 1; }
+function chebyshevDistance(a, b) { return Math.max(Math.abs(a.row - b.row), Math.abs(a.col - b.col)); }
 
 // ===== Board Generation =====
 function generateBoard() {
     board = Array.from({length: BOARD_SIZE}, () => Array(BOARD_SIZE).fill(MARKERS.EMPTY));
     playerPos = {row:4, col:0};
     comPos = {row:4, col:8};
+
+    // Place Fountains (one per player side)
+    const pFountain = findFountainPosition(playerPos, 0, Math.floor(BOARD_SIZE / 2) - 1);
+    const cFountain = findFountainPosition(comPos, Math.floor(BOARD_SIZE / 2) + 2, BOARD_SIZE);
+    board[pFountain.row][pFountain.col] = MARKERS.FOUNTAIN;
+    board[cFountain.row][cFountain.col] = MARKERS.FOUNTAIN;
+
+    // Ban cells around players + fountain positions for stone placement
     const banned = new Set();
+    banned.add(`${pFountain.row},${pFountain.col}`);
+    banned.add(`${cFountain.row},${cFountain.col}`);
     for (const pos of [playerPos, comPos])
         for (let dr = -1; dr <= 1; dr++)
             for (let dc = -1; dc <= 1; dc++)
                 banned.add(`${pos.row+dr},${pos.col+dc}`);
+
+    // Place 3 random stones
     const available = [];
     for (let r = 0; r < BOARD_SIZE; r++)
         for (let c = 0; c < BOARD_SIZE; c++)
@@ -97,6 +112,15 @@ function generateBoard() {
         const {r, c} = available.splice(idx, 1)[0];
         board[r][c] = MARKERS.STONE;
     }
+}
+
+function findFountainPosition(playerPos, colMin, colMax) {
+    const zone = [];
+    for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = colMin; c < colMax; c++)
+            if (chebyshevDistance(playerPos, {row:r, col:c}) > 3)
+                zone.push({row:r, col:c});
+    return zone[Math.floor(Math.random() * zone.length)];
 }
 
 function initDiceQueues() {
@@ -280,13 +304,13 @@ function buildComSearchTree() {
     };
 
     root.children = buildChildren(root.brd, root.pPos, root.oPos, 1,
-        comPoints, playerPoints, pQueue, oQueue, cSaved, hSaved);
+        comPoints, playerPoints, pQueue, oQueue, cSaved, hSaved, MAX_DEPTH);
     propagateScores(root, 0);
     return root;
 }
 
-function buildChildren(brd, pPos, oPos, depth, pPts, oPts, pQueue, oQueue, pSaved, oSaved) {
-    if (depth > MAX_DEPTH) return [];
+function buildChildren(brd, pPos, oPos, depth, pPts, oPts, pQueue, oQueue, pSaved, oSaved, maxDepth) {
+    if (depth > maxDepth) return [];
     const actionType = getActionType(depth);
     const player = getActivePlayer(depth);
     const pos = player === 'player' ? pPos : oPos;
@@ -307,7 +331,7 @@ function buildChildren(brd, pPos, oPos, depth, pPts, oPts, pQueue, oQueue, pSave
             };
             const oldTile = brd[t.row][t.col];
             brd[t.row][t.col] = MARKERS.STONE;
-            node.children = buildChildren(brd, pPos, oPos, depth+1, pPts, oPts, pQueue, oQueue, pSaved, oSaved);
+            node.children = buildChildren(brd, pPos, oPos, depth+1, pPts, oPts, pQueue, oQueue, pSaved, oSaved, maxDepth);
             if (node.children.length === 0) {
                 leafCount++;
                 node.board = brd.map(r=>[...r]);
@@ -318,7 +342,19 @@ function buildChildren(brd, pPos, oPos, depth, pPts, oPts, pQueue, oQueue, pSave
             children.push(node);
         }
         if (tiles.length === 0) {
-            return buildChildren(brd, pPos, oPos, depth+1, pPts, oPts, pQueue, oQueue, pSaved, oSaved);
+            // 配置不能 = そのプレイヤーの敗北
+            const lossScore = (player === 'player') ? -999 : 999;
+            leafCount++;
+            return [{
+                type:'place', player, row:-1, col:-1, depth,
+                moveType:'gameover', diceUsed:null, diceLabel:null,
+                savedDice:null, savedLabel:null,
+                pPts, oPts, pSaved, oSaved,
+                pRemainingDice:[], oRemainingDice:[],
+                children:[], score: lossScore, bestChildIdx:0,
+                board: brd.map(r=>[...r]),
+                leafPPos: {...pPos}, leafOPos: {...oPos}
+            }];
         }
     } else {
         const queue = player === 'player' ? pQueue : oQueue;
@@ -352,8 +388,15 @@ function buildChildren(brd, pPos, oPos, depth, pPts, oPts, pQueue, oQueue, pSave
                     oRemainingDice: [...noQ.map(d=>d.value), ...(oSaved?[oSaved.value]:[])],
                     children:[], score:0, bestChildIdx:0
                 };
-                node.children = buildChildren(brd, childPPos, childOPos, depth+1, nodePPts, nodeOPts, npQ, noQ, pSaved, oSaved);
-                if (node.children.length === 0) { leafCount++; node.board = brd.map(r=>[...r]); node.leafPPos={...childPPos}; node.leafOPos={...childOPos}; }
+                // Fountain到達チェック: COMがFountainに乗ったら終端ノード
+                if (player === 'player' && brd[m.row][m.col] === MARKERS.FOUNTAIN) {
+                    node.score = 999; node.board = brd.map(r=>[...r]);
+                    node.leafPPos = {...childPPos}; node.leafOPos = {...childOPos};
+                    leafCount++;
+                } else {
+                    node.children = buildChildren(brd, childPPos, childOPos, depth+1, nodePPts, nodeOPts, npQ, noQ, pSaved, oSaved, maxDepth);
+                    if (node.children.length === 0) { leafCount++; node.board = brd.map(r=>[...r]); node.leafPPos={...childPPos}; node.leafOPos={...childOPos}; }
+                }
                 children.push(node);
             }
         }
@@ -386,8 +429,15 @@ function buildChildren(brd, pPos, oPos, depth, pPts, oPts, pQueue, oQueue, pSave
                     oRemainingDice: [...noQ.map(d=>d.value), ...(noS?[noS.value]:[])],
                     children:[], score:0, bestChildIdx:0
                 };
-                node.children = buildChildren(brd, childPPos, childOPos, depth+1, nodePPts, nodeOPts, npQ, noQ, npS, noS);
-                if (node.children.length === 0) { leafCount++; node.board = brd.map(r=>[...r]); node.leafPPos={...childPPos}; node.leafOPos={...childOPos}; }
+                // Fountain到達チェック: COMがFountainに乗ったら終端ノード
+                if (player === 'player' && brd[m.row][m.col] === MARKERS.FOUNTAIN) {
+                    node.score = 999; node.board = brd.map(r=>[...r]);
+                    node.leafPPos = {...childPPos}; node.leafOPos = {...childOPos};
+                    leafCount++;
+                } else {
+                    node.children = buildChildren(brd, childPPos, childOPos, depth+1, nodePPts, nodeOPts, npQ, noQ, npS, noS, maxDepth);
+                    if (node.children.length === 0) { leafCount++; node.board = brd.map(r=>[...r]); node.leafPPos={...childPPos}; node.leafOPos={...childOPos}; }
+                }
                 children.push(node);
             }
         }
@@ -416,14 +466,33 @@ function buildChildren(brd, pPos, oPos, depth, pPts, oPts, pQueue, oQueue, pSave
                     oRemainingDice: [...noQ.map(d=>d.value), ...(noS?[noS.value]:[])],
                     children:[], score:0, bestChildIdx:0
                 };
-                node.children = buildChildren(brd, childPPos, childOPos, depth+1, nodePPts, nodeOPts, npQ, noQ, npS, noS);
-                if (node.children.length === 0) { leafCount++; node.board = brd.map(r=>[...r]); node.leafPPos={...childPPos}; node.leafOPos={...childOPos}; }
+                // Fountain到達チェック: COMがFountainに乗ったら終端ノード
+                if (player === 'player' && brd[m.row][m.col] === MARKERS.FOUNTAIN) {
+                    node.score = 999; node.board = brd.map(r=>[...r]);
+                    node.leafPPos = {...childPPos}; node.leafOPos = {...childOPos};
+                    leafCount++;
+                } else {
+                    node.children = buildChildren(brd, childPPos, childOPos, depth+1, nodePPts, nodeOPts, npQ, noQ, npS, noS, maxDepth);
+                    if (node.children.length === 0) { leafCount++; node.board = brd.map(r=>[...r]); node.leafPPos={...childPPos}; node.leafOPos={...childOPos}; }
+                }
                 children.push(node);
             }
         }
 
         if (children.length === 0) {
-            return buildChildren(brd, pPos, oPos, depth+1, pPts, oPts, pQueue, oQueue, pSaved, oSaved);
+            // 移動不能 = そのプレイヤーの敗北
+            const lossScore = (player === 'player') ? -999 : 999;
+            leafCount++;
+            return [{
+                type:'move', player, row:pos.row, col:pos.col, depth,
+                moveType:'gameover', diceUsed:null, diceLabel:null,
+                savedDice:null, savedLabel:null,
+                pPts, oPts, pSaved, oSaved,
+                pRemainingDice:[], oRemainingDice:[],
+                children:[], score: lossScore, bestChildIdx:0,
+                board: brd.map(r=>[...r]),
+                leafPPos: {...pPos}, leafOPos: {...oPos}
+            }];
         }
     }
     return children;
@@ -431,6 +500,7 @@ function buildChildren(brd, pPos, oPos, depth, pPts, oPts, pQueue, oQueue, pSave
 
 function propagateScores(node, depth) {
     if (node.children.length === 0) {
+        if (Math.abs(node.score) >= 900) return; // gameover node — スコア維持
         if (node.board) {
             let totalScore = 0, totalP = 0, totalO = 0, totalB = 0;
             for (let d2 = 1; d2 <= 3; d2++) {
@@ -457,6 +527,102 @@ function propagateScores(node, depth) {
     node.bestChildIdx = bestIdx;
 }
 
+// ===== Fountain Rush Search (depth 5→9 minimax) =====
+function buildComFountainRushTree(maxDepth) {
+    leafCount = 0;
+    const cSaved = comStock !== null ? {value: comStock, label:'Stk'} : null;
+    const hSaved = playerStock !== null ? {value: playerStock, label:'Stk'} : null;
+    // For deeper search, include more dice from the queue
+    const pQueue = [], oQueue = [];
+    const comAvail = cSaved ? comDice.length : comDice.length;
+    const plrAvail = hSaved ? playerDice.length : playerDice.length;
+    for (let i = 0; i < Math.min(comAvail, 3); i++) pQueue.push({value: comDice[i], label:'D'+i});
+    for (let i = 0; i < Math.min(plrAvail, 3); i++) oQueue.push({value: playerDice[i], label:'O'+i});
+    // If stock exists, reduce queue
+    const finalPQ = cSaved ? pQueue.slice(0, Math.max(1, pQueue.length)) : pQueue;
+    const finalOQ = hSaved ? oQueue.slice(0, Math.max(1, oQueue.length)) : oQueue;
+
+    const root = {
+        type: 'root', depth: 0, children: [],
+        brd: board.map(r=>[...r]),
+        pPos: {...comPos}, oPos: {...playerPos},
+        pPts: comPoints, oPts: playerPoints,
+        pSaved: cSaved, oSaved: hSaved,
+        pRemainingDice: [...finalPQ.map(d=>d.value), ...(cSaved?[cSaved.value]:[])],
+        oRemainingDice: [...finalOQ.map(d=>d.value), ...(hSaved?[hSaved.value]:[])],
+        score: 0, bestChildIdx: 0
+    };
+
+    root.children = buildChildren(root.brd, root.pPos, root.oPos, 1,
+        comPoints, playerPoints, finalPQ, finalOQ, cSaved, hSaved, maxDepth);
+    propagateFountainScores(root, 0);
+    return root;
+}
+
+function propagateFountainScores(node, depth) {
+    if (node.children.length === 0) {
+        if (Math.abs(node.score) >= 900) return; // gameover node
+        if (node.board) {
+            // Fountain Rush scoring: check if COM (= pPos in tree) is on Fountain
+            const comP = node.leafPPos;
+            if (node.board[comP.row][comP.col] === MARKERS.FOUNTAIN) {
+                node.score = 999; // COM reached Fountain!
+                return;
+            }
+            // Check if any Fountain remains on board
+            const fountain = findTargetFountainOnBoard(node.board, comP);
+            if (fountain) {
+                // Score based on proximity: closer = higher (max ~80, min ~0)
+                node.score = (BOARD_SIZE - chebyshevDistance(comP, fountain)) * 10;
+            } else {
+                // Fountain was destroyed by stone placement
+                node.score = -500;
+            }
+        }
+        return;
+    }
+    for (const child of node.children) propagateFountainScores(child, depth+1);
+    const childDepth = depth + 1;
+    const isMax = (depth === 0) || getActivePlayer(childDepth) === 'player';
+    let bestIdx = 0;
+    for (let i = 1; i < node.children.length; i++) {
+        if (isMax ? node.children[i].score > node.children[bestIdx].score
+                  : node.children[i].score < node.children[bestIdx].score) bestIdx = i;
+    }
+    node.score = node.children[bestIdx].score;
+    node.bestChildIdx = bestIdx;
+}
+
+function findTargetFountainOnBoard(brd, comP) {
+    let closest = null, minDist = Infinity;
+    for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = 0; c < BOARD_SIZE; c++)
+            if (brd[r][c] === MARKERS.FOUNTAIN) {
+                const d = chebyshevDistance(comP, {row:r, col:c});
+                if (d < minDist) { minDist = d; closest = {row:r, col:c}; }
+            }
+    return closest;
+}
+
+// ===== Fountain Rush AI (helpers) =====
+function findTargetFountain() {
+    let closest = null, minDist = Infinity;
+    for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = 0; c < BOARD_SIZE; c++)
+            if (board[r][c] === MARKERS.FOUNTAIN) {
+                const d = chebyshevDistance(comPos, {row:r, col:c});
+                if (d < minDist) { minDist = d; closest = {row:r, col:c}; }
+            }
+    return closest;
+}
+
+function fountainExists() {
+    for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = 0; c < BOARD_SIZE; c++)
+            if (board[r][c] === MARKERS.FOUNTAIN) return true;
+    return false;
+}
+
 // ===== Game Log =====
 function logMsg(msg) {
     const el = document.getElementById('game-log');
@@ -472,6 +638,7 @@ function newGame() {
     playerStock = null; comStock = null;
     turnCount = 1; currentTurn = 'player';
     winner = null; winReason = '';
+    comGotFountain = false;
     moveMode = 'cross';
     movableTiles = []; placeableTiles = [];
     gamePhase = 'PLAYER_ROLL';
@@ -551,6 +718,13 @@ function playerMove(row, col) {
     playerPos = {row, col};
     movableTiles = [];
 
+    // Fountain pickup
+    if (board[row][col] === MARKERS.FOUNTAIN) {
+        playerPoints += POINT_FOUNTAIN_PICKUP;
+        board[row][col] = MARKERS.EMPTY;
+        logMsg(`Player picks up Fountain! (+${POINT_FOUNTAIN_PICKUP}pt → ${playerPoints}pt)`);
+    }
+
     placeableTiles = findPlaceableTiles(board, playerPos, comPos);
     if (placeableTiles.length === 0) {
         winner = 'com'; winReason = 'Player cannot place a stone!';
@@ -604,6 +778,74 @@ function comThink() {
         return;
     }
 
+    // ===== Phase Detection: Fountain Rush or Territory =====
+    // COMが既にFountainを1つ取得済みならMinimax（盤上にFountainが残っていても）
+    if (fountainExists() && !comGotFountain) {
+        comThinkFountainRush();
+    } else {
+        comThinkMinimax();
+    }
+}
+
+function comThinkFountainRush() {
+    // Phase 1: depth=5 (COM can reach Fountain in 2 moves)
+    let root = buildComFountainRushTree(5);
+
+    if (root.score < 500) {
+        // Phase 2: depth=9 (COM can reach Fountain in 3 moves)
+        logMsg(`COM thinks... [Fountain Rush depth=5: score=${root.score}, trying depth=9]`);
+        root = buildComFountainRushTree(9);
+    }
+
+    if (root.score >= 500 && root.children.length > 0) {
+        // Fountain path found — extract best move+place from tree
+        const bestMove = root.children[root.bestChildIdx];
+        let bestPlace = null;
+        if (bestMove.children.length > 0) {
+            bestPlace = bestMove.children[bestMove.bestChildIdx];
+        }
+
+        comDecision = {
+            moveType: bestMove.moveType,
+            diceUsed: bestMove.diceUsed,
+            moveRow: bestMove.row, moveCol: bestMove.col,
+            isDiagonal: bestMove.isDiagonal,
+            savedDice: bestMove.savedDice,
+            placeRow: bestPlace ? bestPlace.row : null,
+            placeCol: bestPlace ? bestPlace.col : null,
+            score: root.score
+        };
+
+        logMsg(`COM thinks... [Fountain Rush! score=${root.score}, leaves=${leafCount}]`);
+
+        // Execute COM's dice action
+        if (comDecision.moveType === 'stock') {
+            const saved = shiftQueue(comDice);
+            comStock = saved;
+            comPoints -= POINT_STOCK_COST;
+            currentDiceValue = shiftQueue(comDice);
+            logMsg(`COM stocks ${saved}, uses ${currentDiceValue} (-${POINT_STOCK_COST}pt)`);
+        } else if (comDecision.moveType === 'use_stock') {
+            currentDiceValue = comStock;
+            comStock = null;
+            shiftQueue(comDice);
+            logMsg(`COM uses stock: ${currentDiceValue}`);
+        } else {
+            currentDiceValue = shiftQueue(comDice);
+            logMsg(`COM rolls: ${currentDiceValue} (Normal)`);
+        }
+
+        gamePhase = 'COM_MOVE';
+        draw();
+        setTimeout(comExecuteMove, 600);
+    } else {
+        // No Fountain path found — fallback to territory minimax
+        logMsg(`COM thinks... [Fountain Rush: no path (score=${root.score}), fallback to territory]`);
+        comThinkMinimax();
+    }
+}
+
+function comThinkMinimax() {
     // Run minimax
     const root = buildComSearchTree();
 
@@ -656,6 +898,7 @@ function comThink() {
     setTimeout(comExecuteMove, 600);
 }
 
+
 function comExecuteMove() {
     if (winner || !comDecision) return;
     const {moveRow, moveCol, isDiagonal} = comDecision;
@@ -666,6 +909,14 @@ function comExecuteMove() {
         logMsg(`COM moves to (${moveRow},${moveCol})`);
     }
     comPos = {row: moveRow, col: moveCol};
+
+    // Fountain pickup
+    if (board[moveRow][moveCol] === MARKERS.FOUNTAIN) {
+        comPoints += POINT_FOUNTAIN_PICKUP;
+        board[moveRow][moveCol] = MARKERS.EMPTY;
+        comGotFountain = true;
+        logMsg(`COM picks up Fountain! (+${POINT_FOUNTAIN_PICKUP}pt → ${comPoints}pt)`);
+    }
 
     // Check placement
     const places = findPlaceableTiles(board, comPos, playerPos);
@@ -763,6 +1014,20 @@ function drawBoard() {
 
             if (board[r][c] === MARKERS.STONE) {
                 drawOctagon(x + CELL_SIZE/2, y + CELL_SIZE/2, CELL_SIZE * 0.35, '#2a3a4a', '#00E5FF');
+            } else if (board[r][c] === MARKERS.FOUNTAIN) {
+                // Fountain: green diamond with glow
+                const cx = x + CELL_SIZE/2, cy = y + CELL_SIZE/2, s = CELL_SIZE * 0.3;
+                ctx.fillStyle = '#0A2A0A';
+                ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - s); ctx.lineTo(cx + s, cy);
+                ctx.lineTo(cx, cy + s); ctx.lineTo(cx - s, cy);
+                ctx.closePath();
+                ctx.fillStyle = '#00FF88'; ctx.globalAlpha = 0.3; ctx.fill();
+                ctx.globalAlpha = 1.0;
+                ctx.strokeStyle = '#00FF88'; ctx.lineWidth = 2; ctx.stroke();
+                ctx.fillStyle = '#00FF88'; ctx.font = 'bold 11px Arial';
+                ctx.textAlign = 'center'; ctx.fillText('F', cx, cy + 4);
             }
         }
     }

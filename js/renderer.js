@@ -391,7 +391,7 @@ class Renderer {
 
     // --- Panels ---
 
-    drawPanels(player1, player2, currentTurn, phase) {
+    drawPanels(player1, player2, currentTurn, phase, gameMode, skillCosts) {
         // Player 1 panel (left)
         this.ctx.fillStyle = COLORS.P1_PANEL_BG;
         this.ctx.fillRect(0, 0, PANEL_WIDTH, SCREEN_HEIGHT);
@@ -401,19 +401,20 @@ class Renderer {
         this.ctx.fillRect(SCREEN_WIDTH - PANEL_WIDTH, 0, PANEL_WIDTH, SCREEN_HEIGHT);
 
         // Draw player info
-        this.drawPlayerInfo(player1, 20, currentTurn === 1, phase);
-        this.drawPlayerInfo(player2, SCREEN_WIDTH - PANEL_WIDTH + 20, currentTurn === 2, phase);
+        this.drawPlayerInfo(player1, 20, currentTurn === 1, phase, gameMode, skillCosts);
+        this.drawPlayerInfo(player2, SCREEN_WIDTH - PANEL_WIDTH + 20, currentTurn === 2, phase, gameMode, skillCosts);
     }
 
-    drawPlayerInfo(player, panelX, isCurrentTurn, phase) {
+    drawPlayerInfo(player, panelX, isCurrentTurn, phase, gameMode, skillCosts) {
         const textColor = COLORS.WHITE;
 
-        // Player name
+        // Player name (show "COM" for P2 in COM mode)
+        const label = (gameMode === 'com' && player.playerNum === 2) ? 'COM' : `Player ${player.playerNum}`;
         this.ctx.fillStyle = textColor;
         this.ctx.font = 'bold 32px Arial';
         this.ctx.textAlign = 'left';
         this.ctx.fillText(
-            `Player ${player.playerNum}${isCurrentTurn ? ' \u2605' : ''}`,
+            `${label}${isCurrentTurn ? ' \u2605' : ''}`,
             panelX,
             70
         );
@@ -483,6 +484,15 @@ class Renderer {
                 this.ctx.textAlign = 'left';
                 this.ctx.textBaseline = 'middle';
                 this.ctx.fillText(info.name, iconX + iconSize + 4, skillY + badgeH / 2);
+
+                // Show skill cost in replay mode
+                if (skillCosts && info.costKey && skillCosts[info.costKey] !== undefined) {
+                    this.ctx.fillStyle = '#FFD700';
+                    this.ctx.font = '12px Arial';
+                    this.ctx.textAlign = 'right';
+                    this.ctx.fillText(`${skillCosts[info.costKey]}pt`, badgeX + badgeW - 4, skillY + badgeH / 2);
+                    this.ctx.textAlign = 'left';
+                }
                 this.ctx.textBaseline = 'alphabetic';
             }
         }
@@ -511,7 +521,7 @@ class Renderer {
 
     // --- Start Screen ---
 
-    drawStartScreen() {
+    drawStartScreen(showDifficultySelect) {
         this.clear();
 
         this.ctx.fillStyle = COLORS.WHITE;
@@ -525,14 +535,60 @@ class Renderer {
         // PvP Button
         this.drawButton(SCREEN_WIDTH / 2 - 150, 350, 300, 80, '#006400', 'Player vs Player');
 
-        // PvA Button (Coming Soon)
-        this.drawButton(SCREEN_WIDTH / 2 - 150, 470, 300, 80, '#333333', 'Player vs AI');
-        this.ctx.fillStyle = '#FFFF00';
-        this.ctx.font = '16px Arial';
-        this.ctx.fillText('Coming Soon', SCREEN_WIDTH / 2, 530);
+        // COM Button (active)
+        this.drawButton(SCREEN_WIDTH / 2 - 150, 470, 300, 80, '#00224A', 'Player vs COM');
+
+        // Difficulty selector (shown when COM button clicked)
+        if (showDifficultySelect) {
+            this.drawDifficultySelector();
+        }
+
+        // Replay Button
+        this.drawButton(SCREEN_WIDTH / 2 - 150, 640, 300, 60, '#333355', 'Replay');
 
         // Developer Settings gear icon
         this.drawGearIcon(SCREEN_WIDTH / 2 + 205, 390, 18);
+    }
+
+    drawDifficultySelector() {
+        const cx = SCREEN_WIDTH / 2;
+        const btnW = 90, btnH = 50, gap = 10;
+        const startX = cx - (btnW * 3 + gap * 2) / 2;
+        const y = 560;
+
+        // Label
+        this.ctx.fillStyle = '#AAAACC';
+        this.ctx.font = '16px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText('Select Difficulty', cx, y - 8);
+
+        // Easy
+        this.drawButton(startX, y, btnW, btnH, '#1A4A1A', 'Easy');
+        // Normal
+        this.drawButton(startX + btnW + gap, y, btnW, btnH, '#4A3A0A', 'Normal');
+        // Hard (Coming Soon)
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        this.drawButton(startX + 2 * (btnW + gap), y, btnW, btnH, '#222233', 'Hard');
+        ctx.restore();
+        ctx.fillStyle = '#666688';
+        ctx.font = '11px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Coming Soon', startX + 2 * (btnW + gap) + btnW / 2, y + btnH + 14);
+    }
+
+    drawComThinking(now) {
+        const ctx = this.ctx;
+        // Pulsing dots animation
+        const dots = '.'.repeat(Math.floor((now / 500) % 4));
+        const panelCenterX = SCREEN_WIDTH - PANEL_WIDTH / 2;
+
+        ctx.fillStyle = '#FFD700';
+        ctx.font = 'bold 18px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`COM thinking${dots}`, panelCenterX, SCREEN_HEIGHT - 30);
     }
 
     drawButton(x, y, width, height, color, text) {
@@ -552,25 +608,28 @@ class Renderer {
 
     // --- Game Over ---
 
-    drawGameOver(winner, reason) {
+    drawGameOver(winner, reason, gameMode) {
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
         this.ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
+        const winnerLabel = (gameMode === 'com' && winner === 2) ? 'COM' : `Player ${winner}`;
         this.ctx.fillStyle = '#FFD700';
         this.ctx.font = 'bold 48px Arial';
         this.ctx.textAlign = 'center';
-        this.ctx.fillText(`Player ${winner} Wins!`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 60);
+        this.ctx.fillText(`${winnerLabel} Wins!`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 60);
 
         this.ctx.fillStyle = COLORS.WHITE;
         this.ctx.font = '24px Arial';
         this.ctx.fillText(reason, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
 
-        this.drawButton(SCREEN_WIDTH / 2 - 110, SCREEN_HEIGHT / 2 + 50, 220, 70, '#006400', 'Main Menu');
+        // Two buttons side by side
+        this.drawButton(SCREEN_WIDTH / 2 - 230, SCREEN_HEIGHT / 2 + 50, 220, 70, '#006400', 'Main Menu');
+        this.drawButton(SCREEN_WIDTH / 2 + 10, SCREEN_HEIGHT / 2 + 50, 220, 70, '#333355', 'Watch Replay');
     }
 
     // --- Skill Selection ---
 
-    drawSkillSelection(player1, player2) {
+    drawSkillSelection(player1, player2, gameMode) {
         this.clear();
 
         this.ctx.fillStyle = COLORS.WHITE;
@@ -578,8 +637,8 @@ class Renderer {
         this.ctx.textAlign = 'center';
         this.ctx.fillText('Select Special Skill', SCREEN_WIDTH / 2, 50);
 
-        this.drawSkillPanel(player1, 20, COLORS.P1_PANEL_BG);
-        this.drawSkillPanel(player2, SCREEN_WIDTH - PANEL_WIDTH + 20, COLORS.P2_PANEL_BG);
+        this.drawSkillPanel(player1, 20, COLORS.P1_PANEL_BG, gameMode);
+        this.drawSkillPanel(player2, SCREEN_WIDTH - PANEL_WIDTH + 20, COLORS.P2_PANEL_BG, gameMode);
 
         this.ctx.fillStyle = COLORS.WHITE;
         this.ctx.font = '20px Arial';
@@ -591,14 +650,15 @@ class Renderer {
         }
     }
 
-    drawSkillPanel(player, panelX, bgColor) {
+    drawSkillPanel(player, panelX, bgColor, gameMode) {
         this.ctx.fillStyle = bgColor;
         this.ctx.fillRect(panelX - 20, 80, PANEL_WIDTH, SCREEN_HEIGHT - 100);
 
+        const label = (gameMode === 'com' && player.playerNum === 2) ? 'COM' : `Player ${player.playerNum}`;
         this.ctx.fillStyle = COLORS.WHITE;
         this.ctx.font = 'bold 28px Arial';
         this.ctx.textAlign = 'left';
-        this.ctx.fillText(`Player ${player.playerNum}`, panelX, 130);
+        this.ctx.fillText(label, panelX, 130);
 
         if (player.skillConfirmed) {
             this.ctx.fillStyle = '#00FF00';
@@ -867,5 +927,368 @@ class Renderer {
         }
 
         ctx.textBaseline = 'alphabetic';
+    }
+
+    // ─── Replay: Selection Screen ─────────────────────────────
+
+    drawReplaySelect(replays, scrollOffset) {
+        this.clear();
+        const ctx = this.ctx;
+
+        // Title
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = 'bold 36px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('REPLAY', SCREEN_WIDTH / 2, 50);
+
+        // Back button (top-left)
+        this.drawButton(30, 15, 150, 50, '#333344', 'Back');
+
+        // Import Log button (top-right)
+        this.drawButton(SCREEN_WIDTH - 220, 15, 200, 50, '#224466', 'Import Log');
+
+        const listY = 100;
+        const itemH = 70;
+        const listH = SCREEN_HEIGHT - 120;
+        const maxVisible = Math.floor(listH / itemH);
+        const cx = SCREEN_WIDTH / 2;
+
+        if (replays.length === 0) {
+            ctx.fillStyle = '#666688';
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('No saved replays yet.', cx, SCREEN_HEIGHT / 2);
+            ctx.font = '16px Arial';
+            ctx.fillText('Play a game or import a log file.', cx, SCREEN_HEIGHT / 2 + 35);
+            return;
+        }
+
+        // Scroll Up indicator
+        if (scrollOffset > 0) {
+            ctx.fillStyle = '#AAAACC';
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('▲', cx, listY - 8);
+        }
+
+        // Replay entries
+        for (let i = 0; i < maxVisible && i + scrollOffset < replays.length; i++) {
+            const replay = replays[i + scrollOffset];
+            const entryY = listY + i * itemH;
+            const isHover = false; // no hover tracking yet
+
+            // Entry background
+            ctx.fillStyle = '#111122';
+            ctx.fillRect(40, entryY, SCREEN_WIDTH - 80, itemH - 5);
+            ctx.strokeStyle = '#333355';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(40, entryY, SCREEN_WIDTH - 80, itemH - 5);
+
+            // Date
+            const d = new Date(replay.date);
+            const dateStr = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            ctx.fillStyle = '#888899';
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(dateStr, 55, entryY + 20);
+
+            // Mode + Difficulty
+            let modeStr = replay.mode === 'com' ? `COM (${replay.difficulty || '?'})` : 'PvP';
+            ctx.fillStyle = '#AAAACC';
+            ctx.font = 'bold 16px Arial';
+            ctx.fillText(modeStr, 230, entryY + 20);
+
+            // Winner
+            if (replay.winner === null) {
+                ctx.fillStyle = '#CCAA33';
+                ctx.font = 'bold 18px Arial';
+                ctx.fillText('(途中)', 430, entryY + 20);
+            } else {
+                const winnerLabel = (replay.mode === 'com' && replay.winner === 2) ? 'COM' : `P${replay.winner}`;
+                ctx.fillStyle = replay.winner === 1 ? COLORS.P1 : COLORS.P2;
+                ctx.font = 'bold 18px Arial';
+                ctx.fillText(`${winnerLabel} Win`, 430, entryY + 20);
+            }
+
+            // Win reason
+            if (replay.winReason) {
+                ctx.fillStyle = '#888899';
+                ctx.font = '13px Arial';
+                ctx.fillText(replay.winReason, 550, entryY + 20);
+            }
+
+            // Skills
+            const p1Info = SKILL_INFO[replay.p1Skill];
+            const p2Info = SKILL_INFO[replay.p2Skill];
+            ctx.font = '13px Arial';
+            ctx.fillStyle = COLORS.P1;
+            ctx.fillText(`P1: ${p1Info ? p1Info.name : '?'}`, 55, entryY + 45);
+            ctx.fillStyle = COLORS.P2;
+            ctx.fillText(`P2: ${p2Info ? p2Info.name : '?'}`, 230, entryY + 45);
+
+            // Score
+            ctx.fillStyle = '#CCCCDD';
+            ctx.font = '14px Arial';
+            ctx.fillText(`${replay.p1Score} - ${replay.p2Score}`, 430, entryY + 45);
+
+            // Turns
+            ctx.fillStyle = '#888899';
+            ctx.fillText(`${replay.totalTurns} turns`, 550, entryY + 45);
+        }
+
+        // Scroll Down indicator
+        if (scrollOffset + maxVisible < replays.length) {
+            ctx.fillStyle = '#AAAACC';
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('▼', cx, listY + maxVisible * itemH + 15);
+        }
+    }
+
+    // ─── Hover-reveal Menu Bar (shared by skill selection & gameplay) ───
+
+    drawHoverMenuBar(mouseY) {
+        const ctx = this.ctx;
+        const showTopBar = (mouseY !== undefined && mouseY < 70);
+        if (showTopBar) {
+            ctx.save();
+            ctx.globalAlpha = 0.9;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.fillRect(0, 0, SCREEN_WIDTH, 50);
+            this.drawButtonSmall(20, 8, 140, 34, '#333344', '◀ Menu');
+            ctx.restore();
+        } else {
+            ctx.save();
+            ctx.globalAlpha = 0.25;
+            ctx.fillStyle = '#AAAACC';
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('▲ hover for menu', 10, 16);
+            ctx.restore();
+        }
+    }
+
+    // ─── Confirm Dialog ─────────────────────────────────────────
+
+    drawConfirmDialog(title, message) {
+        const ctx = this.ctx;
+
+        // Overlay
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+        // Dialog box
+        const dw = 420, dh = 180;
+        const dx = (SCREEN_WIDTH - dw) / 2;
+        const dy = (SCREEN_HEIGHT - dh) / 2;
+
+        ctx.fillStyle = '#1a1a3a';
+        ctx.fillRect(dx, dy, dw, dh);
+        ctx.strokeStyle = '#555577';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(dx, dy, dw, dh);
+
+        // Title
+        ctx.fillStyle = '#FFD700';
+        ctx.font = 'bold 22px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(title, SCREEN_WIDTH / 2, dy + 40);
+
+        // Message
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(message, SCREEN_WIDTH / 2, dy + 75);
+
+        // Buttons: Save / Discard / Cancel
+        const btnY = dy + 110;
+        const btnW = 110, btnH = 40;
+        const startX = (SCREEN_WIDTH - (btnW * 3 + 10 * 2)) / 2; // 465
+
+        this.drawButton(startX, btnY, btnW, btnH, '#006400', 'Save');
+        this.drawButton(startX + btnW + 10, btnY, btnW, btnH, '#661122', 'Discard');
+        this.drawButton(startX + (btnW + 10) * 2, btnY, btnW, btnH, '#333344', 'Cancel');
+    }
+
+    // ─── Replay: Playback Controls ────────────────────────────
+
+    drawReplayControls(currentIndex, totalSnapshots, actions, gameInfo, snapshot, mouseY, skillCosts) {
+        const ctx = this.ctx;
+        const cx = SCREEN_WIDTH / 2;
+
+        // --- Top bar (hover-reveal: only visible when mouse near top) ---
+        const showTopBar = (mouseY !== undefined && mouseY < 70);
+
+        if (showTopBar) {
+            ctx.save();
+            ctx.globalAlpha = 0.9;
+
+            // Background
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.fillRect(0, 0, SCREEN_WIDTH, 50);
+
+            // Back to Menu button
+            this.drawButtonSmall(20, 8, 140, 34, '#333344', '◀ Menu');
+
+            // Back to List button
+            this.drawButtonSmall(170, 8, 155, 34, '#224466', '◀ Replay List');
+
+            ctx.restore();
+        } else {
+            // Subtle hint when not hovering
+            ctx.save();
+            ctx.globalAlpha = 0.25;
+            ctx.fillStyle = '#AAAACC';
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('▲ hover for menu', 10, 16);
+            ctx.restore();
+        }
+
+        // --- Bottom control bar ---
+        const barY = SCREEN_HEIGHT - 55;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.fillRect(0, barY, SCREEN_WIDTH, 55);
+
+        const btnY = barY + 8;
+        const btnH = 40;
+        const btnW = 55;
+
+        const canGoBack = currentIndex > 0;
+        const canGoForward = currentIndex < totalSnapshots - 1;
+
+        // ◀◀ First
+        this.drawButtonSmall(cx - 325, btnY, btnW, btnH,
+            canGoBack ? '#444466' : '#222233', '◀◀');
+
+        // ◀ Prev Turn
+        this.drawButtonSmall(cx - 260, btnY, btnW, btnH,
+            canGoBack ? '#444466' : '#222233', '◀');
+
+        // ◁ Prev Phase
+        this.drawButtonSmall(cx - 195, btnY, btnW, btnH,
+            canGoBack ? '#3a3a55' : '#222233', '◁');
+
+        // Phase label (centered)
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const phaseName = this._phaseDisplayName(snapshot);
+        const turnNum = snapshot ? snapshot.turnNumber : 0;
+        const turnLabel = turnNum === 0 ? 'Start' :
+            (snapshot && snapshot.winner ? 'End' : `T${turnNum} ${phaseName}`);
+        ctx.fillText(`${turnLabel}  (${currentIndex}/${totalSnapshots - 1})`,
+            cx - 30, btnY + btnH / 2);
+        ctx.textBaseline = 'alphabetic';
+
+        // ▷ Next Phase
+        this.drawButtonSmall(cx + 140, btnY, btnW, btnH,
+            canGoForward ? '#3a3a55' : '#222233', '▷');
+
+        // ▶ Next Turn
+        this.drawButtonSmall(cx + 205, btnY, btnW, btnH,
+            canGoForward ? '#444466' : '#222233', '▶');
+
+        // ▶▶ Last
+        this.drawButtonSmall(cx + 270, btnY, btnW, btnH,
+            canGoForward ? '#444466' : '#222233', '▶▶');
+
+        // Game info (bottom bar, left side)
+        if (gameInfo) {
+            let infoText = gameInfo.mode === 'com' ? `COM (${gameInfo.difficulty || '?'})` : 'PvP';
+            ctx.fillStyle = '#AAAACC';
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(infoText, 30, barY + 32);
+        }
+
+        // Winner indicator (bottom bar, right side)
+        if (snapshot && snapshot.winner) {
+            const winLabel = (gameInfo && gameInfo.mode === 'com' && snapshot.winner === 2) ? 'COM' : `P${snapshot.winner}`;
+            ctx.fillStyle = '#FFD700';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${winLabel} Wins! (${snapshot.winReason})`, SCREEN_WIDTH - 20, barY + 32);
+        }
+
+        // --- Action log panel (right side, below dice panels) ---
+        if (actions && actions.length > 0) {
+            const logX = SCREEN_WIDTH - PANEL_WIDTH + 10;
+            const logY = 520;
+            const logW = PANEL_WIDTH - 20;
+            const maxActions = Math.min(actions.length, 9);
+
+            // Title
+            ctx.fillStyle = '#888899';
+            ctx.font = 'bold 13px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('ACTIONS', logX + 4, logY - 6);
+
+            ctx.fillStyle = 'rgba(0, 0, 20, 0.8)';
+            ctx.fillRect(logX, logY, logW, maxActions * 22 + 15);
+            ctx.strokeStyle = '#333355';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(logX, logY, logW, maxActions * 22 + 15);
+
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'left';
+            for (let i = 0; i < maxActions; i++) {
+                const a = actions[i];
+                // Color code by player
+                if (a.raw && a.raw.data && a.raw.data.player === 1) {
+                    ctx.fillStyle = COLORS.P1;
+                } else if (a.raw && a.raw.data && a.raw.data.player === 2) {
+                    ctx.fillStyle = COLORS.P2;
+                } else {
+                    ctx.fillStyle = '#AAAACC';
+                }
+                let displayText = a.text;
+                if (skillCosts && a.raw && a.raw.action === 'skill' && a.raw.data) {
+                    const costKeyMap = {
+                        'checkpoint_place': 'checkpoint', 'checkpoint_teleport': 'checkpoint',
+                        'domination': 'domination', 'sniper': 'sniper', 'hitokiri': 'hitokiri',
+                        'suriashi': 'suriashi', 'meteor': 'meteor', 'momonga': 'momonga', 'kamakura': 'kamakura'
+                    };
+                    const costKey = costKeyMap[a.raw.data.skill];
+                    if (costKey && skillCosts[costKey] !== undefined) {
+                        displayText += ` (${skillCosts[costKey]}pt)`;
+                    }
+                }
+                ctx.fillText(displayText, logX + 8, logY + 18 + i * 22);
+            }
+            if (actions.length > maxActions) {
+                ctx.fillStyle = '#666688';
+                ctx.fillText(`... +${actions.length - maxActions} more`, logX + 8, logY + 18 + maxActions * 22);
+            }
+        }
+    }
+
+    _phaseDisplayName(snapshot) {
+        if (!snapshot || !snapshot.phase) return '';
+        switch (snapshot.phase) {
+            case 'initial': return '';
+            case 'rolled': return 'Roll';
+            case 'moved': return 'Move';
+            case 'acted': return 'Act';
+            case 'end': return '';
+            default: return snapshot.phase;
+        }
+    }
+
+    drawButtonSmall(x, y, width, height, color, text) {
+        this.ctx.fillStyle = color;
+        this.ctx.fillRect(x, y, width, height);
+
+        this.ctx.strokeStyle = '#555577';
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(x, y, width, height);
+
+        this.ctx.fillStyle = COLORS.WHITE;
+        this.ctx.font = 'bold 16px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(text, x + width / 2, y + height / 2);
+        this.ctx.textBaseline = 'alphabetic';
     }
 }

@@ -3,6 +3,9 @@ let game;
 let renderer;
 let settings;
 let animManager;
+let comPlayer;
+let gameLog;
+let replayEngine;
 
 function init() {
     const canvas = document.getElementById('game-canvas');
@@ -10,12 +13,77 @@ function init() {
     game = new Game();
     settings = new Settings();
     animManager = new AnimationManager();
+    comPlayer = new ComPlayer(game);
+    gameLog = new GameLog();
+    replayEngine = new ReplayEngine();
 
     // Add event listeners
     canvas.addEventListener('click', handleClick);
     canvas.addEventListener('mousedown', handleMouseDown);
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('keydown', handleKeyDown);
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+
+    // Game log copy button
+    const copyBtn = document.getElementById('copy-log-btn');
+    const copyFeedback = document.getElementById('copy-feedback');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', () => {
+            if (typeof gameLog === 'undefined') return;
+            const json = gameLog.toJSON();
+            navigator.clipboard.writeText(json).then(() => {
+                copyFeedback.textContent = 'Copied!';
+                copyFeedback.classList.add('show');
+                setTimeout(() => copyFeedback.classList.remove('show'), 2000);
+            }).catch(() => {
+                const ta = document.createElement('textarea');
+                ta.value = json;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                copyFeedback.textContent = 'Copied!';
+                copyFeedback.classList.add('show');
+                setTimeout(() => copyFeedback.classList.remove('show'), 2000);
+            });
+        });
+    }
+
+    // Replay file import handler
+    const replayFileInput = document.getElementById('replay-file-input');
+    if (replayFileInput) {
+        replayFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                try {
+                    const logData = JSON.parse(evt.target.result);
+                    if (!logData.setup || !logData.log) {
+                        console.warn('Invalid replay file format');
+                        return;
+                    }
+                    replayEngine.load(logData);
+                    replayEngine.first();
+                    // Ensure game has player objects for rendering
+                    if (!game.player1) {
+                        game.player1 = new Player(1, 4, 0);
+                        game.player2 = new Player(2, 4, BOARD_SIZE - 1);
+                    }
+                    game.gameMode = logData.setup.gameMode || null;
+                    replayEngine.applyToGame(game);
+                    game._replayMode = 'playback';
+                    game.phase = PHASES.REPLAY;
+                } catch (err) {
+                    console.warn('Failed to parse replay file:', err);
+                }
+            };
+            reader.readAsText(file);
+            // Reset input so the same file can be re-imported
+            replayFileInput.value = '';
+        });
+    }
 
     // Start game loop
     requestAnimationFrame(gameLoop);
@@ -33,6 +101,10 @@ function handleMouseMove(event) {
     const rect = event.target.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
+
+    // Track mouse position for hover-reveal UI
+    game._mouseX = x;
+    game._mouseY = y;
 
     if (game.phase === PHASES.SETTINGS) {
         settings.handleMouseMove(x, y);
@@ -61,6 +133,85 @@ function handleClick(event) {
     game.handleClick(x, y);
 }
 
+function handleWheel(event) {
+    if (game.phase === PHASES.REPLAY && game._replayMode === 'select') {
+        event.preventDefault();
+        const listH = SCREEN_HEIGHT - 120;
+        const itemH = 70;
+        const maxVisible = Math.floor(listH / itemH);
+        const maxOffset = Math.max(0, game.replaySelectReplays.length - maxVisible);
+
+        if (event.deltaY > 0) {
+            game.replaySelectScrollOffset = Math.min(game.replaySelectScrollOffset + 1, maxOffset);
+        } else if (event.deltaY < 0) {
+            game.replaySelectScrollOffset = Math.max(game.replaySelectScrollOffset - 1, 0);
+        }
+    }
+}
+
+function handleKeyDown(event) {
+    // Escape: confirm dialog cancel
+    if (event.key === 'Escape' && game.showConfirmDialog) {
+        game.showConfirmDialog = null;
+        event.preventDefault();
+        return;
+    }
+
+    // Escape: gameplay → show confirm dialog
+    const gameplayPhases = [PHASES.ROLL, PHASES.MOVE, PHASES.PLACE,
+        PHASES.DRILL_TARGET, PHASES.SKILL_TARGET, PHASES.WARP_SELECT];
+    if (event.key === 'Escape' && gameplayPhases.includes(game.phase)) {
+        game.showConfirmDialog = 'save_log';
+        event.preventDefault();
+        return;
+    }
+
+    // Escape: skill selection → back to menu (no dialog)
+    if (event.key === 'Escape' && game.phase === PHASES.SKILL_SELECTION) {
+        game.phase = PHASES.START_SCREEN;
+        event.preventDefault();
+        return;
+    }
+
+    // Replay keyboard controls
+    if (game.phase !== PHASES.REPLAY || game._replayMode !== 'playback') return;
+    if (!replayEngine) return;
+
+    switch (event.key) {
+        case 'ArrowLeft':
+            if (replayEngine.prev()) replayEngine.applyToGame(game);
+            event.preventDefault();
+            break;
+        case 'ArrowRight':
+            if (replayEngine.next()) replayEngine.applyToGame(game);
+            event.preventDefault();
+            break;
+        case 'PageUp':
+            if (replayEngine.prevTurn()) replayEngine.applyToGame(game);
+            event.preventDefault();
+            break;
+        case 'PageDown':
+            if (replayEngine.nextTurn()) replayEngine.applyToGame(game);
+            event.preventDefault();
+            break;
+        case 'Home':
+            replayEngine.first();
+            replayEngine.applyToGame(game);
+            event.preventDefault();
+            break;
+        case 'End':
+            replayEngine.last();
+            replayEngine.applyToGame(game);
+            event.preventDefault();
+            break;
+        case 'Escape':
+            game.phase = PHASES.START_SCREEN;
+            game._replayMode = null;
+            event.preventDefault();
+            break;
+    }
+}
+
 function gameLoop(timestamp) {
     const now = timestamp || performance.now();
     animManager.update(now);
@@ -73,7 +224,7 @@ function render(now) {
 
     switch (game.phase) {
         case PHASES.START_SCREEN:
-            renderer.drawStartScreen();
+            renderer.drawStartScreen(game.showDifficultySelect);
             break;
 
         case PHASES.SETTINGS:
@@ -81,7 +232,7 @@ function render(now) {
             break;
 
         case PHASES.SKILL_SELECTION:
-            renderer.drawSkillSelection(game.player1, game.player2);
+            renderer.drawSkillSelection(game.player1, game.player2, game.gameMode);
 
             // Draw hover tooltip for hovered skill
             if (game.hoveredSkill) {
@@ -90,11 +241,14 @@ function render(now) {
                     renderer.drawSkillTooltip(info);
                 }
             }
+
+            // Hover-reveal menu bar
+            renderer.drawHoverMenuBar(game._mouseY);
             break;
 
         case PHASES.ANIMATING:
             // Draw panels and board
-            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase);
+            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode);
             renderer.drawBoard(game.board, now);
             renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
 
@@ -116,7 +270,7 @@ function render(now) {
         case PHASES.SKILL_TARGET:
         case PHASES.WARP_SELECT:
             // Draw panels
-            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase);
+            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode);
 
             // Draw board
             renderer.drawBoard(game.board, now);
@@ -161,6 +315,9 @@ function render(now) {
             // Draw roll button or dice result
             drawPhaseUI();
 
+            // Hover-reveal menu bar
+            renderer.drawHoverMenuBar(game._mouseY);
+
             // Sniper animation overlay
             if (game.sniperAnimating) {
                 const elapsed = now - game.sniperAnimStart;
@@ -177,15 +334,181 @@ function render(now) {
 
         case PHASES.GAME_OVER:
             // Draw the game state first
-            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase);
+            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode);
             renderer.drawBoard(game.board, now);
             renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
             renderer.drawPlayer(game.player1, null, now);
             renderer.drawPlayer(game.player2, null, now);
 
             // Draw game over overlay
-            renderer.drawGameOver(game.winner, game.winReason);
+            renderer.drawGameOver(game.winner, game.winReason, game.gameMode);
             break;
+
+        case PHASES.REPLAY:
+            if (game._replayMode === 'select') {
+                renderer.drawReplaySelect(game.replaySelectReplays, game.replaySelectScrollOffset);
+            } else if (game._replayMode === 'playback') {
+                // Draw the board with current snapshot state
+                const replaySkillCosts = (replayEngine && replayEngine.skillCosts) ? replayEngine.skillCosts : null;
+                renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode, replaySkillCosts);
+                renderer.drawBoard(game.board, now);
+                renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
+
+                // Draw movement highlights during 'rolled' phase
+                const replaySnap = replayEngine.getCurrent();
+                if (replaySnap && replaySnap.phase === 'rolled' && replaySnap.diceRoll) {
+                    if (game.moveMode === DIRECTION_TYPE.DIAGONAL) {
+                        renderer.drawHighlights(game.movableTiles, COLORS.DIAGONAL_MOVE_HIGHLIGHT);
+                        renderer.drawHighlights(game.fallTriggerTiles, COLORS.DIAGONAL_FALL_HIGHLIGHT);
+                    } else {
+                        renderer.drawHighlights(game.movableTiles, COLORS.MOVE_HIGHLIGHT);
+                        renderer.drawHighlights(game.fallTriggerTiles, COLORS.FALL_HIGHLIGHT);
+                    }
+                }
+
+                // Draw action highlights during 'moved' phase
+                if (replaySnap && replaySnap.phase === 'moved' && game.replayActionMode) {
+                    if (game.replayActionMode === 'stone') {
+                        renderer.drawHighlights(game.placeableTiles, COLORS.PLACE_HIGHLIGHT);
+                    } else if (game.replayActionMode === 'skill') {
+                        if (game.activeSkillType === SPECIAL_SKILLS.KAMAKURA) {
+                            renderer.drawKamakuraHighlights(
+                                game.kamakuraPatterns,
+                                game.hoveredKamakuraIndex,
+                                COLORS.SKILL_TARGET_HIGHLIGHT,
+                                COLORS.KAMAKURA_PATTERN_HIGHLIGHT
+                            );
+                        } else if (game.placeableTiles.length > 0) {
+                            // Placement-type skills (ice/bomb/swamp/warp) use placeableTiles
+                            renderer.drawHighlights(game.placeableTiles, COLORS.PLACE_HIGHLIGHT);
+                        } else {
+                            renderer.drawHighlights(game.skillTargetTiles, COLORS.SKILL_TARGET_HIGHLIGHT);
+                        }
+                    } else if (game.replayActionMode === 'drill') {
+                        renderer.drawHighlights(game.drillTargetTiles, COLORS.DRILL_TARGET_HIGHLIGHT);
+                    }
+                }
+
+                renderer.drawPlayer(game.player1, null, now);
+                renderer.drawPlayer(game.player2, null, now);
+
+                // Draw dice panels for both players during replay
+                if (game.player1.diceQueue && game.player1.diceQueue.length >= 3) {
+                    drawPlayerDicePanel(renderer.ctx, 40, game.player1);
+                }
+                if (game.player2.diceQueue && game.player2.diceQueue.length >= 3) {
+                    drawPlayerDicePanel(renderer.ctx, SCREEN_WIDTH - PANEL_WIDTH + 40, game.player2);
+                }
+
+                // Draw dice result and mode indicator during 'rolled' phase
+                if (replaySnap && replaySnap.phase === 'rolled' && replaySnap.diceRoll) {
+                    const rctx = renderer.ctx;
+                    const panelX = game.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
+                    // Large dice visual (same as MOVE phase in gameplay)
+                    drawDiceVisual(rctx, panelX + 100, 340, game.diceRoll);
+                    // Mode indicator
+                    rctx.textAlign = 'center';
+                    if (game.moveMode === DIRECTION_TYPE.DIAGONAL) {
+                        rctx.fillStyle = COLORS.DIAGONAL_MOVE_HIGHLIGHT;
+                        rctx.font = 'bold 16px Arial';
+                        rctx.fillText('Diagonal Mode', panelX + 100, 410);
+                    }
+                    rctx.fillStyle = '#888899';
+                    rctx.font = '12px Arial';
+                    rctx.fillText('Click piece to toggle mode', panelX + 100, 430);
+                    rctx.textAlign = 'left';
+                }
+
+                // Draw action buttons during 'moved' phase
+                if (replaySnap && replaySnap.phase === 'moved') {
+                    const rctx = renderer.ctx;
+                    const panelX = game.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
+                    const currentPlayer = game.getCurrentPlayer();
+                    const points = currentPlayer.points;
+                    const isDominated = currentPlayer.isDominated();
+                    const rsc = replaySkillCosts || SKILL_COSTS;
+
+                    // Label
+                    rctx.fillStyle = '#888899';
+                    rctx.font = '14px Arial';
+                    rctx.textAlign = 'left';
+                    rctx.fillText('ACTIONS', panelX, 320);
+
+                    // Stone button (Y: 330-380)
+                    drawSkillButton(rctx, panelX, 330, 200, 50, {
+                        name: 'Stone',
+                        color: COLORS.STONE,
+                        textColor: COLORS.WHITE,
+                        cost: 0,
+                        isSelected: game.replayActionMode === 'stone',
+                        isAffordable: true
+                    });
+
+                    // Skill button (Y: 388-438)
+                    const skillInfo = SKILL_INFO[currentPlayer.specialSkill];
+                    if (skillInfo) {
+                        const skillCost = rsc[skillInfo.costKey] !== undefined
+                            ? rsc[skillInfo.costKey] : SKILL_COSTS[skillInfo.costKey];
+                        drawSkillButton(rctx, panelX, 388, 200, 50, {
+                            name: skillInfo.name,
+                            color: isDominated ? '#333344' : skillInfo.color,
+                            textColor: isDominated ? '#666677' : skillInfo.textColor,
+                            cost: skillCost,
+                            isSelected: game.replayActionMode === 'skill',
+                            isAffordable: !isDominated && points >= skillCost
+                        });
+                    }
+
+                    // Drill button (Y: 446-496)
+                    const drillCost = rsc.drill !== undefined ? rsc.drill : SKILL_COSTS.drill;
+                    drawSkillButton(rctx, panelX, 446, 200, 50, {
+                        name: 'Drill',
+                        color: isDominated ? '#333344' : COLORS.DRILL,
+                        textColor: isDominated ? '#666677' : COLORS.WHITE,
+                        cost: drillCost,
+                        isSelected: game.replayActionMode === 'drill',
+                        isAffordable: !isDominated && points >= drillCost
+                    });
+                }
+
+                // Draw replay controls overlay
+                const snap = replaySnap;
+                renderer.drawReplayControls(
+                    replayEngine.currentIndex,
+                    replayEngine.getTotalSnapshots(),
+                    replayEngine.getActions(),
+                    replayEngine.gameInfo,
+                    snap,
+                    game._mouseY,
+                    replaySkillCosts
+                );
+            }
+            break;
+    }
+
+    // Draw "COM thinking..." indicator during COM's turn
+    if (game.gameMode === 'com' && game.currentTurn === 2 &&
+        game.phase !== PHASES.START_SCREEN &&
+        game.phase !== PHASES.GAME_OVER &&
+        game.phase !== PHASES.SETTINGS &&
+        game.phase !== PHASES.SKILL_SELECTION &&
+        game.phase !== PHASES.REPLAY) {
+        renderer.drawComThinking(now);
+    }
+
+    // Draw confirm dialog overlay (on top of everything)
+    if (game.showConfirmDialog) {
+        renderer.drawConfirmDialog('Return to Menu', 'Save the game log?');
+    }
+
+    // Show/hide game log toolbar
+    const logToolbar = document.getElementById('log-toolbar');
+    if (logToolbar) {
+        const gameActive = game.phase !== PHASES.START_SCREEN &&
+            game.phase !== PHASES.SKILL_SELECTION &&
+            game.phase !== PHASES.SETTINGS &&
+            game.phase !== PHASES.REPLAY;
+        logToolbar.style.display = gameActive ? 'flex' : 'none';
     }
 }
 

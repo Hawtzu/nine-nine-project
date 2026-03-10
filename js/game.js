@@ -6,7 +6,9 @@ class Game {
         this.player2 = null;
         this.currentTurn = 1;
         this.phase = PHASES.START_SCREEN;
-        this.gameMode = null; // 'pvp' or 'pva'
+        this.gameMode = null; // 'pvp' or 'com'
+        this.comDifficulty = null;
+        this.showDifficultySelect = false;
         this.diceRoll = 0;
         this.placementType = 'stone';
         this.movableTiles = [];
@@ -27,6 +29,16 @@ class Game {
         this.hoveredKamakuraIndex = null; // index of hovered pattern
         this.pendingMoveRow = -1;
         this.pendingMoveCol = -1;
+
+        // Replay state
+        this.replaySelectScrollOffset = 0;
+        this.replaySelectReplays = [];
+        this.replayActionMode = null; // 'stone' | 'skill' | 'drill' — replay moved phase only
+        this.showConfirmDialog = null; // null or 'save_log' — menu confirm dialog
+
+        // Mouse tracking (for hover-reveal UI)
+        this._mouseX = 0;
+        this._mouseY = 0;
     }
 
     generateDiceValue() {
@@ -40,6 +52,7 @@ class Game {
         this.currentTurn = 1;
         this.diceRoll = 0;
         this.winner = null;
+        if (typeof gameLog !== 'undefined') gameLog.reset();
         this.winReason = '';
         this.lastMoveDirectionType = DIRECTION_TYPE.CROSS;
         this.moveMode = DIRECTION_TYPE.CROSS;
@@ -50,8 +63,13 @@ class Game {
         this.sniperAnimStart = 0;
         this.kamakuraPatterns = [];
         this.hoveredKamakuraIndex = null;
+        this.showDifficultySelect = false;
+        this.showConfirmDialog = null;
         if (typeof animManager !== 'undefined' && animManager) {
             animManager.reset();
+        }
+        if (typeof comPlayer !== 'undefined' && comPlayer) {
+            comPlayer.reset();
         }
         const gen = () => this.generateDiceValue();
         this.player1.initDiceQueue(gen);
@@ -63,17 +81,27 @@ class Game {
         this.gameMode = mode;
         this.init();
         this.phase = PHASES.SKILL_SELECTION;
+        // In COM mode, trigger COM's skill selection after a delay
+        if (mode === 'com' && typeof comPlayer !== 'undefined' && comPlayer) {
+            comPlayer.difficulty = this.comDifficulty || COM_DIFFICULTY.NORMAL;
+            comPlayer.executeAfterDelay(() => comPlayer.decideSkillSelection(), 'SKILL_SELECTION');
+        }
     }
 
     selectSkill(playerNum, skill) {
         const player = playerNum === 1 ? this.player1 : this.player2;
         if (!player.skillConfirmed) {
             player.setSpecialSkill(skill);
+            if (typeof gameLog !== 'undefined') gameLog.log('skill_select', { player: playerNum, skill });
         }
 
         if (this.player1.skillConfirmed && this.player2.skillConfirmed) {
             this.setupInitialBoard();
             this.phase = PHASES.ROLL;
+            // If COM goes first, trigger COM turn
+            if (this.gameMode === 'com' && this.currentTurn === 2) {
+                comPlayer.startTurn();
+            }
         }
     }
 
@@ -91,6 +119,7 @@ class Game {
             this.board.setTile(pos.row, pos.col, MARKERS.STONE);
         }
         this.currentTurn = Math.random() < 0.5 ? 1 : 2;
+        if (typeof gameLog !== 'undefined') gameLog.recordSetup(this);
     }
 
     findValidFountainPosition(playerNum) {
@@ -193,6 +222,7 @@ class Game {
         this.moveMode = DIRECTION_TYPE.CROSS;
         const currentPlayer = this.getCurrentPlayer();
         this.diceRoll = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
+        if (typeof gameLog !== 'undefined') gameLog.log('roll', { player: this.currentTurn, dice: this.diceRoll, queue: [...currentPlayer.diceQueue] });
         if (!this.hasAnyMovableTile()) {
             this.gameOver(this.currentTurn === 1 ? 2 : 1, 'is blocked and cannot move!');
         } else {
@@ -208,6 +238,7 @@ class Game {
         currentPlayer.deductPoints(SKILL_COSTS.stock);
         const diceValue = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
         currentPlayer.stockDice(diceValue);
+        if (typeof gameLog !== 'undefined') gameLog.log('stock', { player: this.currentTurn, storedDice: diceValue });
         this.rollDice();
         return true;
     }
@@ -216,9 +247,11 @@ class Game {
         this.moveMode = DIRECTION_TYPE.CROSS;
         const currentPlayer = this.getCurrentPlayer();
         // CURRENTをStock値に置き換え、ストック消費
-        currentPlayer.diceQueue[0] = currentPlayer.useStock();
+        const stockVal = currentPlayer.useStock();
+        currentPlayer.diceQueue[0] = stockVal;
         // そのCURRENTでRoll（shiftしてMOVEへ）
         this.diceRoll = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
+        if (typeof gameLog !== 'undefined') gameLog.log('use_stock', { player: this.currentTurn, stockVal, dice: this.diceRoll, queue: [...currentPlayer.diceQueue] });
         if (!this.hasAnyMovableTile()) {
             this.gameOver(this.currentTurn === 1 ? 2 : 1, 'is blocked and cannot move!');
         } else {
@@ -311,6 +344,7 @@ class Game {
             this.moveMode = DIRECTION_TYPE.CROSS;
         }
         this.findMovableTiles();
+        if (typeof gameLog !== 'undefined') gameLog.log('toggle_mode', { player: this.currentTurn, mode: this.moveMode });
         return true;
     }
 
@@ -344,6 +378,7 @@ class Game {
         const fromRow = currentPlayer.row;
         const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
+        if (typeof gameLog !== 'undefined') gameLog.log('move', { player: this.currentTurn, from: { row: fromRow, col: fromCol }, to: { row, col }, mode: this.moveMode });
 
         if (this.moveMode === DIRECTION_TYPE.DIAGONAL) {
             currentPlayer.deductPoints(SKILL_COSTS.diagonal_move);
@@ -369,6 +404,7 @@ class Game {
         if (landedTile === MARKERS.FOUNTAIN) {
             currentPlayer.addPoints(GAME_SETTINGS.fountainPickup);
             this.board.setTile(row, col, MARKERS.EMPTY);
+            if (typeof gameLog !== 'undefined') gameLog.log('fountain', { player: this.currentTurn, pos: { row, col }, pts: GAME_SETTINGS.fountainPickup });
         }
 
         // Warp hole effect: teleport to another warp hole
@@ -378,6 +414,10 @@ class Game {
                 this.clearHighlights();
                 this.warpSelectTiles = otherWarps;
                 this.phase = PHASES.WARP_SELECT;
+                // Trigger COM warp decision
+                if (this.gameMode === 'com' && this.currentTurn === 2 && !this.winner) {
+                    comPlayer.executeAfterDelay(() => comPlayer.decideWarpSelect(), 'WARP');
+                }
                 return;
             }
             // No other warp holes → fall through to normal PLACE
@@ -387,6 +427,11 @@ class Game {
         this.placementType = 'stone';
         this.clearHighlights();
         this.findPlaceableTiles();
+
+        // Trigger COM place decision
+        if (this.gameMode === 'com' && this.currentTurn === 2 && !this.winner) {
+            comPlayer.executeAfterDelay(() => comPlayer.decidePlacePhase(), 'PLACE');
+        }
     }
 
     canUseDrillToSurvive() {
@@ -446,6 +491,7 @@ class Game {
 
     placeObject(row, col) {
         const currentPlayer = this.getCurrentPlayer();
+        if (typeof gameLog !== 'undefined') gameLog.log('place', { player: this.currentTurn, pos: { row, col }, type: this.placementType });
 
         if (this.placementType === 'stone') {
             // Destroy checkpoint if stone is placed on it
@@ -534,6 +580,7 @@ class Game {
     useDrill(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         if (currentPlayer.deductPoints(SKILL_COSTS.drill)) {
+            if (typeof gameLog !== 'undefined') gameLog.log('drill', { player: this.currentTurn, pos: { row, col } });
             this.board.setTile(row, col, MARKERS.EMPTY);
             if (this.drillForSurvival) {
                 this.drillForSurvival = false;
@@ -590,6 +637,7 @@ class Game {
         currentPlayer.deductPoints(SKILL_COSTS.domination);
         const otherPlayer = this.getOtherPlayer();
         otherPlayer.dominationTurnsLeft = 3;
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'domination' });
         this.endTurn();
         return true;
     }
@@ -605,6 +653,7 @@ class Game {
             // Cannot teleport if opponent is on checkpoint
             if (cp.row === otherPos.row && cp.col === otherPos.col) return false;
             currentPlayer.deductPoints(SKILL_COSTS.checkpoint);
+            if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'checkpoint_teleport', to: { row: cp.row, col: cp.col } });
             const fromRow = currentPlayer.row;
             const fromCol = currentPlayer.col;
             currentPlayer.moveTo(cp.row, cp.col);
@@ -617,6 +666,7 @@ class Game {
             // --- Place mode ---
             const pos = currentPlayer.getPosition();
             currentPlayer.deductPoints(SKILL_COSTS.checkpoint);
+            if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'checkpoint_place', pos: { row: pos.row, col: pos.col } });
             this.board.setCheckpoint(pos.row, pos.col, currentPlayer.playerNum);
             currentPlayer.setCheckpoint(pos.row, pos.col);
             // Destroy surrounding 8-direction stones
@@ -676,6 +726,7 @@ class Game {
     executeKamakura(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         currentPlayer.deductPoints(SKILL_COSTS.kamakura);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'kamakura', target: { row, col } });
         const pattern = this.kamakuraPatterns.find(
             p => p.middle.row === row && p.middle.col === col
         );
@@ -733,6 +784,7 @@ class Game {
         if (!currentPlayer.canAfford(SKILL_COSTS.sniper)) return false;
         if (!this.checkSniperCondition()) return false;
         currentPlayer.deductPoints(SKILL_COSTS.sniper);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'sniper' });
         // Start sniper animation instead of immediate game over
         this.sniperAnimating = true;
         this.sniperAnimStart = performance.now();
@@ -756,6 +808,7 @@ class Game {
         if (!currentPlayer.canAfford(SKILL_COSTS.hitokiri)) return false;
         if (!this.checkHitokiriCondition()) return false;
         currentPlayer.deductPoints(SKILL_COSTS.hitokiri);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'hitokiri' });
         this.gameOver(this.currentTurn, 'slashed the opponent!');
         return true;
     }
@@ -786,6 +839,7 @@ class Game {
     executeSuriashi(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         currentPlayer.deductPoints(SKILL_COSTS.suriashi);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'suriashi', target: { row, col } });
         const fromRow = currentPlayer.row;
         const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
@@ -821,6 +875,7 @@ class Game {
     executeMeteor(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         currentPlayer.deductPoints(SKILL_COSTS.meteor);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'meteor', target: { row, col } });
         this.board.setTile(row, col, MARKERS.STONE);
         this.endTurn();
     }
@@ -882,6 +937,7 @@ class Game {
     executeMomonga(row, col) {
         const currentPlayer = this.getCurrentPlayer();
         currentPlayer.deductPoints(SKILL_COSTS.momonga);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'momonga', target: { row, col } });
         const fromRow = currentPlayer.row;
         const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
@@ -895,6 +951,18 @@ class Game {
     // --- Turn Management ---
 
     endTurn() {
+        if (typeof gameLog !== 'undefined') {
+            gameLog.log('end_turn', {
+                player: this.currentTurn,
+                p1pts: this.player1.points,
+                p2pts: this.player2.points,
+                p1Queue: [...this.player1.diceQueue],
+                p2Queue: [...this.player2.diceQueue],
+                p1Stock: this.player1.stockedDice,
+                p2Stock: this.player2.stockedDice
+            });
+            gameLog.incrementTurn();
+        }
         const oldPlayer = this.getCurrentPlayer();
         if (oldPlayer.dominationTurnsLeft > 0) {
             oldPlayer.dominationTurnsLeft--;
@@ -911,6 +979,11 @@ class Game {
         this.phase = PHASES.ROLL;
         this.diceRoll = 0;
         this.clearHighlights();
+
+        // Trigger COM turn
+        if (this.gameMode === 'com' && this.currentTurn === 2 && !this.winner) {
+            comPlayer.startTurn();
+        }
     }
 
     getOtherWarpHoles(currentRow, currentCol) {
@@ -933,6 +1006,7 @@ class Game {
         const fromRow = currentPlayer.row;
         const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
+        if (typeof gameLog !== 'undefined') gameLog.log('warp', { player: this.currentTurn, from: { row: fromRow, col: fromCol }, to: { row, col } });
         animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, row, col, 'teleport');
         this.phase = PHASES.ANIMATING;
         animManager.playerAnims[currentPlayer.playerNum].onComplete = () => {
@@ -967,12 +1041,138 @@ class Game {
         this.hoveredKamakuraIndex = null;
     }
 
+    // Compute skill targets for replay preview (no side effects: no point deduction, no phase change, no logging)
+    computeSkillPreview() {
+        const currentPlayer = this.getCurrentPlayer();
+        const skill = currentPlayer.specialSkill;
+        this.clearHighlights();
+
+        switch (skill) {
+            // Placement skills: reuse findPlaceableTiles() with appropriate type
+            case SPECIAL_SKILLS.ICE:
+                this.placementType = 'ice';
+                this.findPlaceableTiles();
+                break;
+            case SPECIAL_SKILLS.BOMB:
+                this.placementType = 'bomb';
+                this.findPlaceableTiles();
+                break;
+            case SPECIAL_SKILLS.SWAMP:
+                this.placementType = 'swamp';
+                this.findPlaceableTiles();
+                break;
+            case SPECIAL_SKILLS.WARP:
+                this.placementType = 'warp';
+                this.findPlaceableTiles();
+                break;
+
+            // Targeting skills: compute targets without side effects
+            case SPECIAL_SKILLS.SURIASHI: {
+                const pPos = currentPlayer.getPosition();
+                const oPos = this.getOtherPlayer().getPosition();
+                for (const dir of DIAGONAL_DIRECTIONS) {
+                    const r = pPos.row + dir.dr;
+                    const c = pPos.col + dir.dc;
+                    if (!this.board.isValidPosition(r, c)) continue;
+                    if (r === oPos.row && c === oPos.col) continue;
+                    const st = this.board.getTile(r, c);
+                    if (st === MARKERS.STONE || st === MARKERS.SNOW) continue;
+                    this.skillTargetTiles.push({ row: r, col: c });
+                }
+                this.activeSkillType = SPECIAL_SKILLS.SURIASHI;
+                break;
+            }
+            case SPECIAL_SKILLS.METEOR: {
+                const oPos = this.getOtherPlayer().getPosition();
+                const pPos = currentPlayer.getPosition();
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        if (this.board.getTile(r, c) !== MARKERS.EMPTY) continue;
+                        if (r === oPos.row && c === oPos.col) continue;
+                        if (r === pPos.row && c === pPos.col) continue;
+                        this.skillTargetTiles.push({ row: r, col: c });
+                    }
+                }
+                this.activeSkillType = SPECIAL_SKILLS.METEOR;
+                break;
+            }
+            case SPECIAL_SKILLS.MOMONGA: {
+                const nearestStones = this.findNearestStones();
+                const oPos = this.getOtherPlayer().getPosition();
+                const pPos = currentPlayer.getPosition();
+                const seen = new Set();
+                for (const stone of nearestStones) {
+                    for (const dir of CROSS_DIRECTIONS) {
+                        const r = stone.row + dir.dr;
+                        const c = stone.col + dir.dc;
+                        const key = `${r},${c}`;
+                        if (seen.has(key)) continue;
+                        seen.add(key);
+                        if (!this.board.isValidPosition(r, c)) continue;
+                        if (r === oPos.row && c === oPos.col) continue;
+                        if (r === pPos.row && c === pPos.col) continue;
+                        const mt = this.board.getTile(r, c);
+                        if (mt === MARKERS.STONE || mt === MARKERS.SNOW) continue;
+                        this.skillTargetTiles.push({ row: r, col: c });
+                    }
+                }
+                this.activeSkillType = SPECIAL_SKILLS.MOMONGA;
+                break;
+            }
+            case SPECIAL_SKILLS.KAMAKURA: {
+                const patterns = this.findKamakuraPatterns();
+                this.kamakuraPatterns = patterns;
+                this.skillTargetTiles = patterns.map(p => ({ row: p.middle.row, col: p.middle.col }));
+                this.activeSkillType = SPECIAL_SKILLS.KAMAKURA;
+                break;
+            }
+            case SPECIAL_SKILLS.CHECKPOINT: {
+                if (currentPlayer.hasCheckpoint()) {
+                    const cp = currentPlayer.getCheckpoint();
+                    const otherPos = this.getOtherPlayer().getPosition();
+                    if (cp.row !== otherPos.row || cp.col !== otherPos.col) {
+                        this.skillTargetTiles.push({ row: cp.row, col: cp.col });
+                    }
+                } else {
+                    const pos = currentPlayer.getPosition();
+                    this.skillTargetTiles.push({ row: pos.row, col: pos.col });
+                }
+                this.activeSkillType = SPECIAL_SKILLS.CHECKPOINT;
+                break;
+            }
+            // Instant skills: no target tiles to show
+            case SPECIAL_SKILLS.DOMINATION:
+            case SPECIAL_SKILLS.SNIPER:
+            case SPECIAL_SKILLS.HITOKIRI:
+                this.activeSkillType = skill;
+                break;
+        }
+    }
+
     gameOver(winner, reason) {
         if (this.winner === null) {
             const loser = winner === 1 ? 2 : 1;
             this.winner = winner;
-            this.winReason = `Player ${loser} ${reason}`;
+            const loserLabel = (this.gameMode === 'com' && loser === 2) ? 'COM' : `Player ${loser}`;
+            this.winReason = `${loserLabel} ${reason}`;
             this.phase = PHASES.GAME_OVER;
+            if (typeof gameLog !== 'undefined') gameLog.log('game_over', {
+                winner, reason,
+                p1pts: this.player1.points,
+                p2pts: this.player2.points,
+                p1Queue: [...this.player1.diceQueue],
+                p2Queue: [...this.player2.diceQueue],
+                p1Stock: this.player1.stockedDice,
+                p2Stock: this.player2.stockedDice
+            });
+            // Cancel any pending COM actions
+            if (typeof comPlayer !== 'undefined' && comPlayer) {
+                comPlayer.cancelPending();
+            }
+            // Auto-save replay to localStorage
+            if (typeof replayEngine !== 'undefined' && replayEngine && typeof gameLog !== 'undefined') {
+                replayEngine.saveToStorage(gameLog);
+            }
         }
     }
 
@@ -986,9 +1186,78 @@ class Game {
 
     // --- Click Handlers ---
 
+    handleConfirmDialogClick(x, y) {
+        const btnW = 110, btnH = 40;
+        const dh = 180;
+        const dy = (SCREEN_HEIGHT - dh) / 2;
+        const btnY = dy + 110;
+        const startX = (SCREEN_WIDTH - (btnW * 3 + 10 * 2)) / 2; // 465
+
+        // 保存する (Save)
+        if (x >= startX && x <= startX + btnW && y >= btnY && y <= btnY + btnH) {
+            if (typeof replayEngine !== 'undefined' && replayEngine && typeof gameLog !== 'undefined') {
+                replayEngine.saveToStorage(gameLog);
+            }
+            if (typeof comPlayer !== 'undefined' && comPlayer) comPlayer.cancelPending();
+            this.showConfirmDialog = null;
+            this.phase = PHASES.START_SCREEN;
+            return true;
+        }
+
+        // 保存しない (Discard)
+        if (x >= startX + btnW + 10 && x <= startX + btnW * 2 + 10 && y >= btnY && y <= btnY + btnH) {
+            if (typeof comPlayer !== 'undefined' && comPlayer) comPlayer.cancelPending();
+            this.showConfirmDialog = null;
+            this.phase = PHASES.START_SCREEN;
+            return true;
+        }
+
+        // キャンセル (Cancel)
+        if (x >= startX + (btnW + 10) * 2 && x <= startX + btnW * 3 + 10 * 2 && y >= btnY && y <= btnY + btnH) {
+            this.showConfirmDialog = null;
+            return true;
+        }
+
+        // Block clicks outside dialog
+        return true;
+    }
+
     handleClick(x, y) {
         // Block input during animation
         if (this.phase === PHASES.ANIMATING) return false;
+
+        // Confirm dialog takes priority over everything
+        if (this.showConfirmDialog) {
+            return this.handleConfirmDialogClick(x, y);
+        }
+
+        // Hover-menu: skill selection → direct return to menu (no dialog)
+        if (this.phase === PHASES.SKILL_SELECTION && y < 50) {
+            if (x >= 20 && x <= 160 && y >= 8 && y <= 42) {
+                this.phase = PHASES.START_SCREEN;
+                return true;
+            }
+        }
+
+        // Hover-menu: gameplay → show confirm dialog
+        const gameplayPhases = [PHASES.ROLL, PHASES.MOVE, PHASES.PLACE,
+            PHASES.DRILL_TARGET, PHASES.SKILL_TARGET, PHASES.WARP_SELECT];
+        if (gameplayPhases.includes(this.phase) && y < 50) {
+            if (x >= 20 && x <= 160 && y >= 8 && y <= 42) {
+                this.showConfirmDialog = 'save_log';
+                return true;
+            }
+        }
+
+        // Block clicks during COM's turn (except menus and replay)
+        if (this.gameMode === 'com' && this.currentTurn === 2 &&
+            this.phase !== PHASES.START_SCREEN &&
+            this.phase !== PHASES.GAME_OVER &&
+            this.phase !== PHASES.SETTINGS &&
+            this.phase !== PHASES.SKILL_SELECTION &&
+            this.phase !== PHASES.REPLAY) {
+            return false;
+        }
 
         switch (this.phase) {
             case PHASES.START_SCREEN:
@@ -1011,6 +1280,8 @@ class Game {
                 return this.handleWarpSelectClick(x, y);
             case PHASES.GAME_OVER:
                 return this.handleGameOverClick(x, y);
+            case PHASES.REPLAY:
+                return this.handleReplayClick(x, y);
         }
     }
 
@@ -1031,8 +1302,8 @@ class Game {
             }
         }
 
-        // Player 2 panel (right side)
-        if (!this.player2.skillConfirmed) {
+        // Player 2 panel (right side) — skip in COM mode
+        if (!this.player2.skillConfirmed && this.gameMode !== 'com') {
             const panelX = SCREEN_WIDTH - PANEL_WIDTH + 20;
             for (let i = 0; i < SKILL_ORDER.length; i++) {
                 const row = Math.floor(i / 2), col = i % 2;
@@ -1049,19 +1320,66 @@ class Game {
     }
 
     handleStartScreenClick(x, y) {
+        const cx = SCREEN_WIDTH / 2;
+
         // PvP button
-        if (x >= SCREEN_WIDTH / 2 - 150 && x <= SCREEN_WIDTH / 2 + 150 &&
-            y >= 350 && y <= 430) {
+        if (x >= cx - 150 && x <= cx + 150 && y >= 350 && y <= 430) {
+            this.showDifficultySelect = false;
             this.startGame('pvp');
             return true;
         }
+
+        // COM button
+        if (x >= cx - 150 && x <= cx + 150 && y >= 470 && y <= 550) {
+            this.showDifficultySelect = true;
+            return true;
+        }
+
+        // Difficulty buttons (shown when showDifficultySelect is true)
+        if (this.showDifficultySelect) {
+            const btnW = 90, btnH = 50, gap = 10;
+            const startX = cx - (btnW * 3 + gap * 2) / 2;
+            const btnY = 560;
+
+            if (y >= btnY && y <= btnY + btnH) {
+                if (x >= startX && x <= startX + btnW) {
+                    this.comDifficulty = COM_DIFFICULTY.EASY;
+                    this.startGame('com');
+                    return true;
+                }
+                if (x >= startX + btnW + gap && x <= startX + 2 * btnW + gap) {
+                    this.comDifficulty = COM_DIFFICULTY.NORMAL;
+                    this.startGame('com');
+                    return true;
+                }
+                // Hard is disabled (Coming Soon)
+            }
+        }
+
+        // Replay button (below COM/difficulty area)
+        if (x >= cx - 150 && x <= cx + 150 && y >= 640 && y <= 700) {
+            this.enterReplaySelect();
+            return true;
+        }
+
         // Developer Settings gear icon
-        if (x >= SCREEN_WIDTH / 2 + 187 && x <= SCREEN_WIDTH / 2 + 223 &&
-            y >= 372 && y <= 408) {
+        if (x >= cx + 187 && x <= cx + 223 && y >= 372 && y <= 408) {
             this.phase = PHASES.SETTINGS;
             return true;
         }
         return false;
+    }
+
+    enterReplaySelect() {
+        if (typeof replayEngine !== 'undefined' && replayEngine) {
+            this.replaySelectReplays = replayEngine.loadFromStorage();
+        } else {
+            this.replaySelectReplays = [];
+        }
+        this.replaySelectScrollOffset = 0;
+        this.phase = PHASES.REPLAY;
+        this.winner = null;
+        this._replayMode = 'select'; // 'select' or 'playback'
     }
 
     handleSettingsClick(x, y) {
@@ -1224,6 +1542,25 @@ class Game {
             this.findPlaceableTiles();
             return true;
         }
+        // Skill button (Y: 388-438) — cancel skill target, re-activate skill
+        if (x >= panelX && x <= panelX + 200 && y >= 388 && y <= 438) {
+            this.activeSkillType = null;
+            this.skillTargetTiles = [];
+            this.phase = PHASES.PLACE;
+            this.placementType = 'stone';
+            this.findPlaceableTiles();
+            this.activateSkill();
+            return true;
+        }
+        // Drill button (Y: 446-496) — cancel skill target, switch to drill
+        if (x >= panelX && x <= panelX + 200 && y >= 446 && y <= 496) {
+            if (this.getCurrentPlayer().isDominated()) return false;
+            this.activeSkillType = null;
+            this.skillTargetTiles = [];
+            this.phase = PHASES.PLACE;
+            this.setPlacementType('drill');
+            return true;
+        }
 
         // Board click
         const clickedCell = this.getCellFromCoords(x, y);
@@ -1253,11 +1590,214 @@ class Game {
     }
 
     handleGameOverClick(x, y) {
-        if (x >= SCREEN_WIDTH / 2 - 110 && x <= SCREEN_WIDTH / 2 + 110 &&
+        // Main Menu button
+        if (x >= SCREEN_WIDTH / 2 - 230 && x <= SCREEN_WIDTH / 2 - 10 &&
             y >= SCREEN_HEIGHT / 2 + 50 && y <= SCREEN_HEIGHT / 2 + 120) {
             this.phase = PHASES.START_SCREEN;
             return true;
         }
+        // Watch Replay button
+        if (x >= SCREEN_WIDTH / 2 + 10 && x <= SCREEN_WIDTH / 2 + 230 &&
+            y >= SCREEN_HEIGHT / 2 + 50 && y <= SCREEN_HEIGHT / 2 + 120) {
+            if (typeof replayEngine !== 'undefined' && replayEngine && typeof gameLog !== 'undefined') {
+                const logData = { setup: gameLog.setupData, log: gameLog.entries };
+                replayEngine.load(logData);
+                replayEngine.first();
+                replayEngine.applyToGame(this);
+                this._replayMode = 'playback';
+                this.phase = PHASES.REPLAY;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    handleReplayClick(x, y) {
+        if (this._replayMode === 'select') {
+            return this._handleReplaySelectClick(x, y);
+        } else if (this._replayMode === 'playback') {
+            return this._handleReplayPlaybackClick(x, y);
+        }
+        return false;
+    }
+
+    _handleReplaySelectClick(x, y) {
+        const cx = SCREEN_WIDTH / 2;
+
+        // Back button (top-left)
+        if (x >= 30 && x <= 180 && y >= 15 && y <= 65) {
+            this.phase = PHASES.START_SCREEN;
+            return true;
+        }
+
+        // Import Log button (top-right)
+        if (x >= SCREEN_WIDTH - 220 && x <= SCREEN_WIDTH - 20 && y >= 15 && y <= 65) {
+            const fileInput = document.getElementById('replay-file-input');
+            if (fileInput) fileInput.click();
+            return true;
+        }
+
+        // Scroll buttons
+        const listY = 100;
+        const itemH = 70;
+        const listH = SCREEN_HEIGHT - 120;
+        const maxVisible = Math.floor(listH / itemH);
+
+        // Scroll Up (if offset > 0)
+        if (this.replaySelectScrollOffset > 0 &&
+            x >= cx - 30 && x <= cx + 30 && y >= listY - 25 && y <= listY) {
+            this.replaySelectScrollOffset--;
+            return true;
+        }
+
+        // Scroll Down
+        if (this.replaySelectScrollOffset + maxVisible < this.replaySelectReplays.length &&
+            x >= cx - 30 && x <= cx + 30 &&
+            y >= listY + maxVisible * itemH && y <= listY + maxVisible * itemH + 25) {
+            this.replaySelectScrollOffset++;
+            return true;
+        }
+
+        // Click on replay entry
+        const replays = this.replaySelectReplays;
+        for (let i = 0; i < maxVisible && i + this.replaySelectScrollOffset < replays.length; i++) {
+            const entryY = listY + i * itemH;
+            if (x >= 40 && x <= SCREEN_WIDTH - 40 && y >= entryY && y <= entryY + itemH - 5) {
+                const replay = replays[i + this.replaySelectScrollOffset];
+                if (replay && replay.log) {
+                    if (typeof replayEngine !== 'undefined' && replayEngine) {
+                        replayEngine.load(replay.log);
+                        replayEngine.first();
+                        // Need to ensure game objects exist for rendering
+                        if (!this.player1) {
+                            this.player1 = new Player(1, 4, 0);
+                            this.player2 = new Player(2, 4, BOARD_SIZE - 1);
+                        }
+                        this.gameMode = replay.mode || null;
+                        replayEngine.applyToGame(this);
+                        this._replayMode = 'playback';
+                    }
+                }
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    _handleReplayPlaybackClick(x, y) {
+        if (typeof replayEngine === 'undefined' || !replayEngine) return false;
+
+        // Top hover-reveal area (y < 50)
+        if (y < 50) {
+            // Back to Menu button
+            if (x >= 20 && x <= 160 && y >= 8 && y <= 42) {
+                this.phase = PHASES.START_SCREEN;
+                this._replayMode = null;
+                return true;
+            }
+            // Back to List button
+            if (x >= 170 && x <= 325 && y >= 8 && y <= 42) {
+                this.enterReplaySelect();
+                return true;
+            }
+        }
+
+        // Player piece click for movement mode toggle during 'rolled' phase
+        const snap = replayEngine.getCurrent();
+        if (snap && snap.phase === 'rolled' && snap.diceRoll) {
+            const clickedCell = this.getCellFromCoords(x, y);
+            if (clickedCell) {
+                const currentPlayer = this.getCurrentPlayer();
+                if (clickedCell.row === currentPlayer.row && clickedCell.col === currentPlayer.col) {
+                    if (this.moveMode === DIRECTION_TYPE.CROSS) {
+                        this.moveMode = DIRECTION_TYPE.DIAGONAL;
+                    } else {
+                        this.moveMode = DIRECTION_TYPE.CROSS;
+                    }
+                    this.findMovableTiles();
+                    return true;
+                }
+            }
+        }
+
+        // Action buttons during 'moved' phase
+        if (snap && snap.phase === 'moved') {
+            const panelX = this.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
+
+            // Stone button (Y: 330-380)
+            if (x >= panelX && x <= panelX + 200 && y >= 330 && y <= 380) {
+                this.replayActionMode = 'stone';
+                this.clearHighlights();
+                this.placementType = 'stone';
+                this.findPlaceableTiles();
+                return true;
+            }
+            // Skill button (Y: 388-438)
+            if (x >= panelX && x <= panelX + 200 && y >= 388 && y <= 438) {
+                this.replayActionMode = 'skill';
+                this.computeSkillPreview();
+                return true;
+            }
+            // Drill button (Y: 446-496)
+            if (x >= panelX && x <= panelX + 200 && y >= 446 && y <= 496) {
+                this.replayActionMode = 'drill';
+                this.clearHighlights();
+                this.findDrillTargets();
+                return true;
+            }
+        }
+
+        // Control bar at bottom
+        const barY = SCREEN_HEIGHT - 55;
+        const btnY = barY + 8;
+        const btnH = 40;
+        const btnW = 55;
+        const cx = SCREEN_WIDTH / 2;
+
+        if (y >= btnY && y <= btnY + btnH) {
+            // ◀◀ First
+            if (x >= cx - 325 && x <= cx - 325 + btnW) {
+                replayEngine.first();
+                replayEngine.applyToGame(this);
+                return true;
+            }
+            // ◀ Prev Turn
+            if (x >= cx - 260 && x <= cx - 260 + btnW) {
+                if (replayEngine.prevTurn()) {
+                    replayEngine.applyToGame(this);
+                }
+                return true;
+            }
+            // ◁ Prev Phase
+            if (x >= cx - 195 && x <= cx - 195 + btnW) {
+                if (replayEngine.prev()) {
+                    replayEngine.applyToGame(this);
+                }
+                return true;
+            }
+            // ▷ Next Phase
+            if (x >= cx + 140 && x <= cx + 140 + btnW) {
+                if (replayEngine.next()) {
+                    replayEngine.applyToGame(this);
+                }
+                return true;
+            }
+            // ▶ Next Turn
+            if (x >= cx + 205 && x <= cx + 205 + btnW) {
+                if (replayEngine.nextTurn()) {
+                    replayEngine.applyToGame(this);
+                }
+                return true;
+            }
+            // ▶▶ Last
+            if (x >= cx + 270 && x <= cx + 270 + btnW) {
+                replayEngine.last();
+                replayEngine.applyToGame(this);
+                return true;
+            }
+        }
+
         return false;
     }
 

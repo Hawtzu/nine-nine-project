@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Score Evaluation Research</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background: #1a1a2e;
+    color: #ccc;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    padding: 20px;
+}
+h1 { color: #00E5FF; font-size: 22px; margin-bottom: 16px; }
+.container { display: flex; gap: 24px; flex-wrap: wrap; }
+.grid-panel { flex-shrink: 0; }
+.controls { display: flex; flex-direction: column; gap: 12px; min-width: 280px; max-width: 320px; }
+canvas { border: 1px solid #444; cursor: crosshair; }
+.section { background: #0f0f23; border: 1px solid #333; padding: 12px; border-radius: 4px; }
+.section h3 { color: #00E5FF; font-size: 14px; margin-bottom: 8px; }
+.btn-group { display: flex; flex-wrap: wrap; gap: 4px; }
+.btn {
+    padding: 6px 12px; font-size: 12px; cursor: pointer;
+    border: 1px solid #444; background: #1a1a3e; color: #aaa;
+    transition: all 0.15s;
+}
+.btn:hover { border-color: #00E5FF; color: #fff; }
+.btn.active { background: #003344; border-color: #00E5FF; color: #00E5FF; }
+.btn.danger { background: #3a0a0a; border-color: #FF4444; color: #FF4444; }
+label { font-size: 12px; color: #888; display: block; margin-bottom: 2px; }
+input[type=number] {
+    width: 50px; padding: 4px 6px; background: #0f0f23; border: 1px solid #444;
+    color: #fff; font-size: 13px;
+}
+.legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 11px; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-color { width: 14px; height: 14px; border-radius: 2px; border: 1px solid #555; }
+#info-text { font-family: monospace; font-size: 12px; white-space: pre-wrap; color: #aaa; }
+</style>
+</head>
+<body>
+<h1>Score Evaluation Research</h1>
+<div class="container">
+    <div class="grid-panel">
+        <canvas id="board" width="540" height="540"></canvas>
+        <div class="legend">
+            <div class="legend-item"><div class="legend-color" style="background:#00AAFF"></div>Player</div>
+            <div class="legend-item"><div class="legend-color" style="background:#FF4444"></div>Opponent</div>
+            <div class="legend-item"><div class="legend-color" style="background:rgba(0,150,255,0.4)"></div>P reach</div>
+            <div class="legend-item"><div class="legend-color" style="background:rgba(255,60,60,0.4)"></div>O reach</div>
+            <div class="legend-item"><div class="legend-color" style="background:rgba(160,80,220,0.5)"></div>Both</div>
+            <div class="legend-item"><div class="legend-color" style="background:#556677"></div>Stone</div>
+            <div class="legend-item"><div class="legend-color" style="background:#66DDFF"></div>Ice</div>
+            <div class="legend-item"><div class="legend-color" style="background:#668844"></div>Swamp</div>
+            <div class="legend-item"><div class="legend-color" style="background:#AA66FF"></div>Warp</div>
+            <div class="legend-item"><div class="legend-color" style="background:#CCDDEE"></div>Snow</div>
+        </div>
+    </div>
+    <div class="controls">
+        <div class="section">
+            <h3>Placement Mode</h3>
+            <div class="btn-group">
+                <button class="btn active" data-mode="stone">Stone (S)</button>
+                <button class="btn" data-mode="ice">Ice (I)</button>
+                <button class="btn" data-mode="swamp">Swamp (W)</button>
+                <button class="btn" data-mode="warp">Warp (P)</button>
+                <button class="btn" data-mode="snow">Snow (N)</button>
+                <button class="btn" data-mode="erase">Erase (E)</button>
+            </div>
+        </div>
+        <div class="section">
+            <h3>Board Actions</h3>
+            <div class="btn-group">
+                <button class="btn" id="generate-btn">Generate Board</button>
+                <button class="btn danger" id="reset-btn">Reset Board</button>
+            </div>
+        </div>
+        <div class="section">
+            <h3>Initial State</h3>
+            <div style="display:flex; gap:16px; align-items:end; flex-wrap:wrap;">
+                <div>
+                    <label style="color:#0af">Player Pos</label>
+                    <div style="display:flex; gap:4px;">
+                        <input type="number" id="init-p-row" min="0" max="8" value="4" style="width:36px" title="Row">
+                        <input type="number" id="init-p-col" min="0" max="8" value="0" style="width:36px" title="Col">
+                    </div>
+                </div>
+                <div>
+                    <label style="color:#f44">Opponent Pos</label>
+                    <div style="display:flex; gap:4px;">
+                        <input type="number" id="init-o-row" min="0" max="8" value="4" style="width:36px" title="Row">
+                        <input type="number" id="init-o-col" min="0" max="8" value="8" style="width:36px" title="Col">
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex; gap:12px; align-items:end; margin-top:8px;">
+                <div>
+                    <label style="color:#0af">D0</label>
+                    <select id="dice-d0" style="background:#0f0f23; border:1px solid #444; color:#fff; padding:3px 4px; font-size:12px;">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3" selected>3</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="color:#0af">D1</label>
+                    <select id="dice-d1" style="background:#0f0f23; border:1px solid #444; color:#fff; padding:3px 4px; font-size:12px;">
+                        <option value="1">1</option>
+                        <option value="2" selected>2</option>
+                        <option value="3">3</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="color:#f44">O0</label>
+                    <select id="dice-o0" style="background:#0f0f23; border:1px solid #444; color:#fff; padding:3px 4px; font-size:12px;">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3" selected>3</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="color:#f44">O1</label>
+                    <select id="dice-o1" style="background:#0f0f23; border:1px solid #444; color:#fff; padding:3px 4px; font-size:12px;">
+                        <option value="1">1</option>
+                        <option value="2" selected>2</option>
+                        <option value="3">3</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="section">
+            <h3>Score</h3>
+            <div id="score-bar" style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                <span style="color:#0af; font-size:12px; width:20px; text-align:right;" id="score-p">0</span>
+                <div style="flex:1; height:20px; background:#111; border:1px solid #444; position:relative; border-radius:2px;">
+                    <div id="score-fill-p" style="position:absolute; top:1px; bottom:1px; right:50%; background:rgba(0,150,255,0.7); transition:width 0.3s;"></div>
+                    <div id="score-fill-o" style="position:absolute; top:1px; bottom:1px; left:50%; background:rgba(255,60,60,0.7); transition:width 0.3s;"></div>
+                    <div style="position:absolute; left:50%; top:0; bottom:0; width:1px; background:#666;"></div>
+                </div>
+                <span style="color:#f44; font-size:12px; width:20px;" id="score-o">0</span>
+            </div>
+            <div id="score-label" style="text-align:center; font-family:monospace; font-size:14px; font-weight:bold; margin-bottom:6px;"></div>
+            <div id="info-text" style="font-family:monospace; font-size:11px; color:#888;"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ===== Constants =====
+const BOARD_SIZE = 9;
+const CELL_SIZE = 60;
+const MARKERS = { EMPTY: ' ', STONE: 'S', FOUNTAIN: 'F', BOMB: 'B', ICE: 'I', SWAMP: 'W', WARP: 'P', SNOW: 'N', CHECKPOINT: 'C' };
+const CROSS_DIRECTIONS = [{dr:0,dc:1},{dr:0,dc:-1},{dr:1,dc:0},{dr:-1,dc:0}];
+const DIAGONAL_DIRECTIONS = [{dr:-1,dc:-1},{dr:-1,dc:1},{dr:1,dc:-1},{dr:1,dc:1}];
+
+// ===== State =====
+let board = [];
+let playerPos = { row: 4, col: 0 };
+let opponentPos = { row: 4, col: 8 };
+let placementMode = 'stone';
+let dragging = null;
+let dragStartPos = null;
+
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+
+// ===== Utility =====
+function isValidPosition(r, c) { return r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE; }
+
+function chebyshevDistance(a, b) { return Math.max(Math.abs(a.row - b.row), Math.abs(a.col - b.col)); }
+
+// ===== Board =====
+function resetBoard() {
+    board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(MARKERS.EMPTY));
+    applyInitialPositions();
+    draw();
+}
+
+function applyInitialPositions() {
+    const clamp = v => Math.min(8, Math.max(0, parseInt(v) || 0));
+    playerPos = { row: clamp(document.getElementById('init-p-row').value), col: clamp(document.getElementById('init-p-col').value) };
+    opponentPos = { row: clamp(document.getElementById('init-o-row').value), col: clamp(document.getElementById('init-o-col').value) };
+}
+
+function syncPositionInputs() {
+    document.getElementById('init-p-row').value = playerPos.row;
+    document.getElementById('init-p-col').value = playerPos.col;
+    document.getElementById('init-o-row').value = opponentPos.row;
+    document.getElementById('init-o-col').value = opponentPos.col;
+}
+
+function generateBoard() {
+    resetBoard();
+    const banned = new Set();
+    for (const pos of [playerPos, opponentPos])
+        for (let dr = -1; dr <= 1; dr++)
+            for (let dc = -1; dc <= 1; dc++)
+                banned.add(`${pos.row + dr},${pos.col + dc}`);
+    const available = [];
+    for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = 0; c < BOARD_SIZE; c++)
+            if (!banned.has(`${r},${c}`)) available.push({ r, c });
+    for (let i = 0; i < 3 && available.length > 0; i++) {
+        const idx = Math.floor(Math.random() * available.length);
+        const { r, c } = available.splice(idx, 1)[0];
+        board[r][c] = MARKERS.STONE;
+    }
+    draw();
+}
+
+// ===== Movement Simulation =====
+function simulateMovableTiles(brd, pos, diceValue, otherPos, diagonal) {
+    const directions = diagonal ? DIAGONAL_DIRECTIONS : CROSS_DIRECTIONS;
+    const results = [];
+    for (const dir of directions) {
+        let steps = diceValue;
+        let cur = { row: pos.row, col: pos.col };
+        let finalDest = null;
+        const visited = new Set();
+        let step = 1;
+        let isFallTrigger = false;
+        while (step <= steps) {
+            const nr = cur.row + dir.dr, nc = cur.col + dir.dc;
+            if (!isValidPosition(nr, nc)) { isFallTrigger = true; break; }
+            const tile = brd[nr][nc];
+            if (tile === MARKERS.STONE || tile === MARKERS.SNOW || (nr === otherPos.row && nc === otherPos.col)) break;
+            finalDest = { row: nr, col: nc };
+            cur = { row: nr, col: nc };
+            if (tile === MARKERS.WARP) break;
+            const key = `${nr},${nc}`;
+            if (tile === MARKERS.ICE && !visited.has(key)) { steps++; visited.add(key); }
+            if (tile === MARKERS.SWAMP && !visited.has(key)) { steps = Math.max(step, steps - 1); visited.add(key); }
+            step++;
+        }
+        if (finalDest && !isFallTrigger) results.push(finalDest);
+    }
+    const seen = new Set();
+    return results.filter(t => { const k = `${t.row},${t.col}`; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+function getReachableTiles(brd, pos, diceValue, otherPos) {
+    const all = simulateMovableTiles(brd, pos, diceValue, otherPos, false)
+        .concat(simulateMovableTiles(brd, pos, diceValue, otherPos, true));
+    const seen = new Set();
+    return all.filter(t => { const k = `${t.row},${t.col}`; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+// ===== Territory Computation =====
+function computeTerritory() {
+    // Step 1: Dice reachable tiles as seeds (2 dice per player)
+    const d0 = parseInt(document.getElementById('dice-d0').value);
+    const d1 = parseInt(document.getElementById('dice-d1').value);
+    const o0 = parseInt(document.getElementById('dice-o0').value);
+    const o1 = parseInt(document.getElementById('dice-o1').value);
+    const pSeeds = new Set();
+    const oSeeds = new Set();
+    for (const dv of [d0, d1])
+        for (const t of getReachableTiles(board, playerPos, dv, opponentPos)) pSeeds.add(`${t.row},${t.col}`);
+    for (const dv of [o0, o1])
+        for (const t of getReachableTiles(board, opponentPos, dv, playerPos)) oSeeds.add(`${t.row},${t.col}`);
+
+    // Step 2: BFS from each player's seeds to compute distance to all cells
+    function bfsFromSeeds(seeds) {
+        const dist = new Map();
+        const queue = [];
+        for (const key of seeds) {
+            dist.set(key, 0);
+            const [r, c] = key.split(',').map(Number);
+            queue.push({ row: r, col: c, dist: 0 });
+        }
+        let head = 0;
+        while (head < queue.length) {
+            const { row, col, dist: d } = queue[head++];
+            for (const dir of CROSS_DIRECTIONS) {
+                const nr = row + dir.dr, nc = col + dir.dc;
+                if (!isValidPosition(nr, nc)) continue;
+                const key = `${nr},${nc}`;
+                if (dist.has(key)) continue;
+                const tile = board[nr][nc];
+                if (tile === MARKERS.STONE || tile === MARKERS.SNOW) continue;
+                dist.set(key, d + 1);
+                queue.push({ row: nr, col: nc, dist: d + 1 });
+            }
+        }
+        return dist;
+    }
+
+    const pDist = bfsFromSeeds(pSeeds);
+    const oDist = bfsFromSeeds(oSeeds);
+
+    // Step 3: Classify each cell
+    // result: Map<key, { owner: 'p'|'o'|'both', seed: boolean }>
+    const result = new Map();
+    let pCount = 0, oCount = 0, bothCount = 0;
+
+    for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+            const key = `${r},${c}`;
+            const tile = board[r][c];
+            if (tile === MARKERS.STONE || tile === MARKERS.SNOW) continue;
+
+            // Skip player positions from counting
+            const isPlayerCell = (r === playerPos.row && c === playerPos.col);
+            const isOpponentCell = (r === opponentPos.row && c === opponentPos.col);
+
+            const pd = pDist.get(key);
+            const od = oDist.get(key);
+            if (pd === undefined && od === undefined) continue;
+
+            const seed = pSeeds.has(key) || oSeeds.has(key);
+            let owner;
+            if (pd !== undefined && od !== undefined) {
+                if (pd < od) { owner = 'p'; if (!isPlayerCell && !isOpponentCell) pCount++; }
+                else if (od < pd) { owner = 'o'; if (!isPlayerCell && !isOpponentCell) oCount++; }
+                else { owner = 'both'; if (!isPlayerCell && !isOpponentCell) bothCount++; }
+            } else if (pd !== undefined) { owner = 'p'; if (!isPlayerCell && !isOpponentCell) pCount++; }
+            else { owner = 'o'; if (!isPlayerCell && !isOpponentCell) oCount++; }
+
+            result.set(key, { owner, seed });
+        }
+    }
+
+    return { territory: result, pSeeds, oSeeds, pCount, oCount, bothCount };
+}
+
+// ===== Drawing =====
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const { territory, pSeeds, oSeeds, pCount, oCount, bothCount } = computeTerritory();
+
+    // Draw territory overlay
+    for (const [key, { owner, seed }] of territory) {
+        const [r, c] = key.split(',').map(Number);
+        const x = c * CELL_SIZE + 1, y = r * CELL_SIZE + 1, s = CELL_SIZE - 2;
+
+        if (owner === 'both') {
+            ctx.fillStyle = seed ? 'rgba(160, 80, 220, 0.5)' : 'rgba(160, 80, 220, 0.25)';
+        } else if (owner === 'p') {
+            ctx.fillStyle = seed ? 'rgba(0, 150, 255, 0.45)' : 'rgba(0, 150, 255, 0.18)';
+        } else {
+            ctx.fillStyle = seed ? 'rgba(255, 60, 60, 0.45)' : 'rgba(255, 60, 60, 0.18)';
+        }
+        ctx.fillRect(x, y, s, s);
+    }
+
+    // Grid lines
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= BOARD_SIZE; i++) {
+        ctx.beginPath(); ctx.moveTo(i * CELL_SIZE, 0); ctx.lineTo(i * CELL_SIZE, BOARD_SIZE * CELL_SIZE); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i * CELL_SIZE); ctx.lineTo(BOARD_SIZE * CELL_SIZE, i * CELL_SIZE); ctx.stroke();
+    }
+
+    // Tiles
+    for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = 0; c < BOARD_SIZE; c++)
+            if (board[r][c] !== MARKERS.EMPTY)
+                drawTile(board[r][c], c * CELL_SIZE + CELL_SIZE / 2, r * CELL_SIZE + CELL_SIZE / 2);
+
+    // Players
+    drawPlayer(playerPos, '#00AAFF', 'P');
+    drawPlayer(opponentPos, '#FF4444', 'O');
+
+    // Update score
+    const total = pCount + oCount + bothCount;
+    const score = pCount - oCount;
+    const pPct = total > 0 ? (pCount / total * 50) : 0;
+    const oPct = total > 0 ? (oCount / total * 50) : 0;
+
+    document.getElementById('score-fill-p').style.width = pPct + '%';
+    document.getElementById('score-fill-o').style.width = oPct + '%';
+    document.getElementById('score-p').textContent = pCount;
+    document.getElementById('score-o').textContent = oCount;
+
+    const label = document.getElementById('score-label');
+    if (score > 0) { label.textContent = `P +${score}`; label.style.color = '#0af'; }
+    else if (score < 0) { label.textContent = `O +${-score}`; label.style.color = '#f44'; }
+    else { label.textContent = 'EVEN'; label.style.color = '#a860dc'; }
+
+    document.getElementById('info-text').textContent =
+        `P[${d0},${d1}]: ${pSeeds.size} seeds  O[${o0},${o1}]: ${oSeeds.size} seeds  |  P=${pCount}  O=${oCount}  Both=${bothCount}`;
+}
+
+function drawTile(tile, cx, cy) {
+    if (tile === MARKERS.STONE) {
+        ctx.fillStyle = '#556677'; drawOctagon(cx, cy, CELL_SIZE * 0.35); ctx.fill();
+    } else if (tile === MARKERS.ICE) {
+        ctx.fillStyle = '#66DDFF'; drawDiamond(cx, cy, CELL_SIZE * 0.3); ctx.fill();
+        ctx.fillStyle = '#000'; ctx.font = '11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('I', cx, cy);
+    } else if (tile === MARKERS.SWAMP) {
+        ctx.fillStyle = '#668844'; drawDiamond(cx, cy, CELL_SIZE * 0.3); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = '11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('W', cx, cy);
+    } else if (tile === MARKERS.WARP) {
+        ctx.fillStyle = '#AA66FF'; drawDiamond(cx, cy, CELL_SIZE * 0.3); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.font = '11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('P', cx, cy);
+    } else if (tile === MARKERS.SNOW) {
+        ctx.fillStyle = '#CCDDEE'; drawOctagon(cx, cy, CELL_SIZE * 0.35); ctx.fill();
+        ctx.fillStyle = '#333'; ctx.font = '11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('N', cx, cy);
+    }
+}
+
+function drawPlayer(pos, color, label) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(pos.col * CELL_SIZE + CELL_SIZE / 2, pos.row * CELL_SIZE + CELL_SIZE / 2, CELL_SIZE * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, pos.col * CELL_SIZE + CELL_SIZE / 2, pos.row * CELL_SIZE + CELL_SIZE / 2);
+}
+
+function drawOctagon(cx, cy, r) {
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+        const a = Math.PI / 8 + i * Math.PI / 4, x = cx + r * Math.cos(a), y = cy + r * Math.sin(a);
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+}
+
+function drawDiamond(cx, cy, r) {
+    ctx.beginPath(); ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy); ctx.lineTo(cx, cy + r); ctx.lineTo(cx - r, cy); ctx.closePath();
+}
+
+// ===== Events =====
+function getGridPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+        col: Math.floor((e.clientX - rect.left) * (canvas.width / rect.width) / CELL_SIZE),
+        row: Math.floor((e.clientY - rect.top) * (canvas.height / rect.height) / CELL_SIZE)
+    };
+}
+
+canvas.addEventListener('mousedown', e => {
+    const { row, col } = getGridPos(e);
+    if (!isValidPosition(row, col)) return;
+    if (row === playerPos.row && col === playerPos.col) { dragging = 'player'; dragStartPos = { ...playerPos }; canvas.style.cursor = 'grabbing'; }
+    else if (row === opponentPos.row && col === opponentPos.col) { dragging = 'opponent'; dragStartPos = { ...opponentPos }; canvas.style.cursor = 'grabbing'; }
+});
+
+canvas.addEventListener('mousemove', e => {
+    const { row, col } = getGridPos(e);
+    if (!dragging) {
+        canvas.style.cursor = isValidPosition(row, col) &&
+            ((row === playerPos.row && col === playerPos.col) || (row === opponentPos.row && col === opponentPos.col))
+            ? 'grab' : 'crosshair';
+        return;
+    }
+    if (!isValidPosition(row, col)) return;
+    if (dragging === 'player') { if (row === opponentPos.row && col === opponentPos.col) return; playerPos = { row, col }; }
+    else { if (row === playerPos.row && col === playerPos.col) return; opponentPos = { row, col }; }
+    syncPositionInputs();
+    draw();
+});
+
+canvas.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    const moved = dragging === 'player'
+        ? (playerPos.row !== dragStartPos.row || playerPos.col !== dragStartPos.col)
+        : (opponentPos.row !== dragStartPos.row || opponentPos.col !== dragStartPos.col);
+    dragging = null; dragStartPos = null; canvas.style.cursor = 'crosshair';
+    if (moved) draw();
+});
+
+canvas.addEventListener('mouseleave', () => { if (dragging) { dragging = null; dragStartPos = null; canvas.style.cursor = 'crosshair'; } });
+
+canvas.addEventListener('click', e => {
+    const { row, col } = getGridPos(e);
+    if (!isValidPosition(row, col)) return;
+    if (row === playerPos.row && col === playerPos.col) return;
+    if (row === opponentPos.row && col === opponentPos.col) return;
+    const modeMap = { stone: MARKERS.STONE, ice: MARKERS.ICE, swamp: MARKERS.SWAMP, warp: MARKERS.WARP, snow: MARKERS.SNOW };
+    if (placementMode === 'erase') board[row][col] = MARKERS.EMPTY;
+    else if (modeMap[placementMode]) board[row][col] = board[row][col] === modeMap[placementMode] ? MARKERS.EMPTY : modeMap[placementMode];
+    draw();
+});
+
+document.querySelectorAll('[data-mode]').forEach(btn => btn.addEventListener('click', () => {
+    placementMode = btn.dataset.mode;
+    document.querySelectorAll('[data-mode]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+}));
+
+document.getElementById('generate-btn').addEventListener('click', generateBoard);
+document.getElementById('reset-btn').addEventListener('click', resetBoard);
+
+['init-p-row', 'init-p-col', 'init-o-row', 'init-o-col'].forEach(id =>
+    document.getElementById(id).addEventListener('change', () => { applyInitialPositions(); draw(); })
+);
+
+['dice-d0', 'dice-d1', 'dice-o0', 'dice-o1'].forEach(id =>
+    document.getElementById(id).addEventListener('change', draw)
+);
+
+// ===== Init =====
+resetBoard();
+generateBoard();
+</script>
+</body>
+</html>

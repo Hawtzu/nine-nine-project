@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Tree Territory Search</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background: #1a1a2e;
+    color: #ccc;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    padding: 20px;
+}
+h1 { color: #00E5FF; font-size: 22px; margin-bottom: 16px; }
+.container { display: flex; gap: 24px; flex-wrap: wrap; }
+.grid-panel { flex-shrink: 0; }
+.controls { display: flex; flex-direction: column; gap: 10px; min-width: 280px; max-width: 360px; }
+canvas { border: 1px solid #444; cursor: crosshair; }
+.section { background: #0f0f23; border: 1px solid #333; padding: 10px; border-radius: 4px; }
+.section h3 { color: #00E5FF; font-size: 13px; margin-bottom: 6px; }
+.btn-group { display: flex; flex-wrap: wrap; gap: 4px; }
+.btn {
+    padding: 5px 10px; font-size: 11px; cursor: pointer;
+    border: 1px solid #444; background: #1a1a3e; color: #aaa;
+    transition: all 0.15s;
+}
+.btn:hover { border-color: #00E5FF; color: #fff; }
+.btn.active { background: #003344; border-color: #00E5FF; color: #00E5FF; }
+.btn.run { background: #0a3a0a; border-color: #00FF88; color: #00FF88; font-weight: bold; }
+.btn.run:hover { background: #0a5a0a; }
+.btn.browse { background: #1a1a3e; border-color: #FFAA00; color: #FFAA00; }
+.btn.browse:hover { background: #2a2a0a; }
+.btn.danger { background: #3a0a0a; border-color: #FF4444; color: #FF4444; }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+label { font-size: 11px; color: #888; display: block; margin-bottom: 2px; }
+input[type=number] {
+    width: 50px; padding: 3px 5px; background: #0f0f23; border: 1px solid #444;
+    color: #fff; font-size: 12px;
+}
+select {
+    background: #0f0f23; border: 1px solid #444; color: #fff;
+    padding: 3px 4px; font-size: 11px;
+}
+.legend { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; font-size: 10px; }
+.legend-item { display: flex; align-items: center; gap: 3px; }
+.legend-color { width: 12px; height: 12px; border-radius: 2px; border: 1px solid #555; }
+.results { margin-top: 12px; width: 100%; max-width: 900px; }
+#result-text {
+    background: #0a0a1a; border: 1px solid #333; padding: 10px;
+    font-family: monospace; font-size: 11px; white-space: pre-wrap;
+    min-height: 80px; max-height: 350px; overflow-y: auto; color: #aaa;
+}
+.dice-row { display: flex; gap: 6px; align-items: end; flex-wrap: wrap; }
+.dice-row > div { text-align: center; }
+.dice-sep { width: 1px; background: #333; align-self: stretch; margin: 0 2px; }
+.path-display {
+    background: #0a0a1a; border: 1px solid #444; padding: 4px 8px;
+    font-family: monospace; font-size: 10px; color: #FFAA00;
+    min-height: 18px; margin-top: 4px;
+}
+.stock-type-btns { display: none; margin-top: 6px; }
+</style>
+</head>
+<body>
+<h1>Tree Territory Search</h1>
+<div class="container">
+    <div class="grid-panel">
+        <canvas id="board" width="540" height="540"></canvas>
+        <div class="legend">
+            <div class="legend-item"><div class="legend-color" style="background:#00AAFF"></div>Player</div>
+            <div class="legend-item"><div class="legend-color" style="background:#FF4444"></div>Opponent</div>
+            <div class="legend-item"><div class="legend-color" style="background:rgba(0,150,255,0.3)"></div>P terr</div>
+            <div class="legend-item"><div class="legend-color" style="background:rgba(255,60,60,0.3)"></div>O terr</div>
+            <div class="legend-item"><div class="legend-color" style="background:rgba(160,80,220,0.4)"></div>Both</div>
+            <div class="legend-item"><div class="legend-color" style="background:#556677"></div>Stone</div>
+            <div class="legend-item"><div class="legend-color" style="background:#66DDFF"></div>Ice</div>
+            <div class="legend-item"><div class="legend-color" style="background:#668844"></div>Swamp</div>
+            <div class="legend-item"><div class="legend-color" style="background:#AA66FF"></div>Warp</div>
+            <div class="legend-item"><div class="legend-color" style="background:#CCDDEE"></div>Snow</div>
+        </div>
+    </div>
+    <div class="controls">
+        <div class="section">
+            <h3>Placement Mode</h3>
+            <div class="btn-group">
+                <button class="btn active" data-mode="stone">Stone</button>
+                <button class="btn" data-mode="ice">Ice</button>
+                <button class="btn" data-mode="swamp">Swamp</button>
+                <button class="btn" data-mode="warp">Warp</button>
+                <button class="btn" data-mode="snow">Snow</button>
+                <button class="btn" data-mode="erase">Erase</button>
+            </div>
+        </div>
+        <div class="section">
+            <h3>Board</h3>
+            <div class="btn-group">
+                <button class="btn" id="generate-btn">Generate</button>
+                <button class="btn danger" id="reset-btn">Reset</button>
+            </div>
+        </div>
+        <div class="section">
+            <h3>Initial State</h3>
+            <div style="display:flex; gap:12px; align-items:end; flex-wrap:wrap;">
+                <div>
+                    <label style="color:#0af">P Pos</label>
+                    <div style="display:flex;gap:3px;">
+                        <input type="number" id="init-p-row" min="0" max="8" value="4" style="width:32px" title="Row">
+                        <input type="number" id="init-p-col" min="0" max="8" value="0" style="width:32px" title="Col">
+                    </div>
+                </div>
+                <div>
+                    <label style="color:#f44">O Pos</label>
+                    <div style="display:flex;gap:3px;">
+                        <input type="number" id="init-o-row" min="0" max="8" value="4" style="width:32px" title="Row">
+                        <input type="number" id="init-o-col" min="0" max="8" value="8" style="width:32px" title="Col">
+                    </div>
+                </div>
+                <div>
+                    <label style="color:#0af">P Pts</label>
+                    <input type="number" id="init-p-pts" min="0" value="0" style="width:40px">
+                </div>
+                <div>
+                    <label style="color:#f44">O Pts</label>
+                    <input type="number" id="init-o-pts" min="0" value="0" style="width:40px">
+                </div>
+            </div>
+        </div>
+        <div class="section">
+            <h3>Speed Dice (Move)</h3>
+            <div class="dice-row">
+                <div><label style="color:#0af">D0</label><select id="dice-d0"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option></select></div>
+                <div><label style="color:#0af">D1</label><select id="dice-d1"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select></div>
+                <div class="dice-sep"></div>
+                <div><label style="color:#f44">O0</label><select id="dice-o0"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option></select></div>
+                <div><label style="color:#f44">O1</label><select id="dice-o1"><option value="1">1</option><option value="2" selected>2</option><option value="3">3</option></select></div>
+                <div class="dice-sep"></div>
+                <div><label style="color:#0af">P Stk</label><select id="stock-p"><option value="">-</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
+                <div><label style="color:#f44">O Stk</label><select id="stock-o"><option value="">-</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>
+            </div>
+        </div>
+        <div class="section">
+            <h3>Search</h3>
+            <button class="btn run" id="run-btn" style="width:100%; padding:8px; font-size:13px;">&#9654; Run Search</button>
+            <div id="browse-controls" style="display:none; margin-top:6px;">
+                <div class="btn-group">
+                    <button class="btn browse" id="best-btn">&#9654; Best</button>
+                    <button class="btn browse" id="back-btn">&#9664; Back</button>
+                    <button class="btn browse" id="reset-browse-btn">&#8634; Reset</button>
+                </div>
+                <div class="stock-type-btns" id="stock-type-btns">
+                    <label style="color:#FFAA00; margin-bottom:4px;">Move Type:</label>
+                    <div class="btn-group">
+                        <button class="btn active" data-movetype="normal">Normal</button>
+                        <button class="btn" data-movetype="stock">Stock</button>
+                        <button class="btn" data-movetype="use_stock">Use-Stk</button>
+                    </div>
+                </div>
+                <div class="path-display" id="path-display">(root)</div>
+                <div id="points-display" style="font-family:monospace; font-size:11px; color:#888; margin-top:4px;"></div>
+            </div>
+        </div>
+        <div class="section">
+            <h3>Score</h3>
+            <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+                <span style="color:#0af; font-size:11px; width:18px; text-align:right;" id="score-p">0</span>
+                <div style="flex:1; height:18px; background:#111; border:1px solid #444; position:relative; border-radius:2px;">
+                    <div id="score-fill-p" style="position:absolute; top:1px; bottom:1px; right:50%; background:rgba(0,150,255,0.7); transition:width 0.3s;"></div>
+                    <div id="score-fill-o" style="position:absolute; top:1px; bottom:1px; left:50%; background:rgba(255,60,60,0.7); transition:width 0.3s;"></div>
+                    <div style="position:absolute; left:50%; top:0; bottom:0; width:1px; background:#666;"></div>
+                </div>
+                <span style="color:#f44; font-size:11px; width:18px;" id="score-o">0</span>
+            </div>
+            <div id="score-label" style="text-align:center; font-family:monospace; font-size:13px; font-weight:bold; margin-bottom:4px;"></div>
+            <div id="info-text" style="font-family:monospace; font-size:10px; color:#888;"></div>
+        </div>
+    </div>
+</div>
+<div class="results">
+    <div class="section" style="margin-top:12px;">
+        <h3>Results</h3>
+        <div id="result-text">Click "Run Search" to start.</div>
+    </div>
+</div>
+
+<script>
+// ===== Constants =====
+const BOARD_SIZE = 9;
+const CELL_SIZE = 60;
+const MARKERS = { EMPTY: ' ', STONE: 'S', FOUNTAIN: 'F', BOMB: 'B', ICE: 'I', SWAMP: 'W', WARP: 'P', SNOW: 'N', CHECKPOINT: 'C' };
+const CROSS_DIRECTIONS = [{dr:0,dc:1},{dr:0,dc:-1},{dr:1,dc:0},{dr:-1,dc:0}];
+const DIAGONAL_DIRECTIONS = [{dr:-1,dc:-1},{dr:-1,dc:1},{dr:1,dc:-1},{dr:1,dc:1}];
+const POINT_STOCK_COST = 20;
+const POINT_DIAGONAL_COST = 10;
+
+// ===== State =====
+let board = [];
+let playerPos = { row: 4, col: 0 };
+let opponentPos = { row: 4, col: 8 };
+let placementMode = 'stone';
+let dragging = null;
+let dragStartPos = null;
+
+// Search / Browse state
+let searchTree = null;       // root node
+let browseStack = [];        // [root, child1, ...]
+let browseActive = false;
+let browseFilter = 'all';    // 'all' | 'normal' | 'stock' | 'use_stock'
+let leafCount = 0;
+
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+
+// ===== Utility =====
+function isValidPosition(r, c) { return r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE; }
+
+// ===== Board =====
+function resetBoard() {
+    board = Array.from({ length: BOARD_SIZE }, () => Array(BOARD_SIZE).fill(MARKERS.EMPTY));
+    applyInitialPositions();
+    clearSearch();
+    draw();
+}
+
+function clearSearch() {
+    searchTree = null;
+    browseStack = [];
+    browseActive = false;
+    document.getElementById('browse-controls').style.display = 'none';
+    document.getElementById('result-text').textContent = 'Click "Run Search" to start.';
+}
+
+function applyInitialPositions() {
+    const clamp = v => Math.min(8, Math.max(0, parseInt(v) || 0));
+    playerPos = { row: clamp(document.getElementById('init-p-row').value), col: clamp(document.getElementById('init-p-col').value) };
+    opponentPos = { row: clamp(document.getElementById('init-o-row').value), col: clamp(document.getElementById('init-o-col').value) };
+}
+
+function syncPositionInputs() {
+    document.getElementById('init-p-row').value = playerPos.row;
+    document.getElementById('init-p-col').value = playerPos.col;
+    document.getElementById('init-o-row').value = opponentPos.row;
+    document.getElementById('init-o-col').value = opponentPos.col;
+}
+
+function generateBoard() {
+    resetBoard();
+    const banned = new Set();
+    for (const pos of [playerPos, opponentPos])
+        for (let dr = -1; dr <= 1; dr++)
+            for (let dc = -1; dc <= 1; dc++)
+                banned.add(`${pos.row + dr},${pos.col + dc}`);
+    const available = [];
+    for (let r = 0; r < BOARD_SIZE; r++)
+        for (let c = 0; c < BOARD_SIZE; c++)
+            if (!banned.has(`${r},${c}`)) available.push({ r, c });
+    for (let i = 0; i < 3 && available.length > 0; i++) {
+        const idx = Math.floor(Math.random() * available.length);
+        const { r, c } = available.splice(idx, 1)[0];
+        board[r][c] = MARKERS.STONE;
+    }
+    draw();
+}
+
+// ===== Movement Simulation =====
+function simulateMovableTiles(brd, pos, diceValue, otherPos, diagonal) {
+    const directions = diagonal ? DIAGONAL_DIRECTIONS : CROSS_DIRECTIONS;
+    const results = [];
+    for (const dir of directions) {
+        let steps = diceValue;
+        let cur = { row: pos.row, col: pos.col };
+        let finalDest = null;
+        const visited = new Set();
+        let step = 1;
+        let isFallTrigger = false;
+        while (step <= steps) {
+            const nr = cur.row + dir.dr, nc = cur.col + dir.dc;
+            if (!isValidPosition(nr, nc)) { isFallTrigger = true; break; }
+            const tile = brd[nr][nc];
+            if (tile === MARKERS.STONE || tile === MARKERS.SNOW || (nr === otherPos.row && nc === otherPos.col)) break;
+            finalDest = { row: nr, col: nc };
+            cur = { row: nr, col: nc };
+            if (tile === MARKERS.WARP) break;
+            const key = `${nr},${nc}`;
+            if (tile === MARKERS.ICE && !visited.has(key)) { steps++; visited.add(key); }
+            if (tile === MARKERS.SWAMP && !visited.has(key)) { steps = Math.max(step, steps - 1); visited.add(key); }
+            step++;
+        }
+        if (finalDest && !isFallTrigger) results.push(finalDest);
+    }
+    const seen = new Set();
+    return results.filter(t => { const k = `${t.row},${t.col}`; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+function getReachableTiles(brd, pos, diceValue, otherPos) {
+    const all = simulateMovableTiles(brd, pos, diceValue, otherPos, false)
+        .concat(simulateMovableTiles(brd, pos, diceValue, otherPos, true));
+    const seen = new Set();
+    return all.filter(t => { const k = `${t.row},${t.col}`; if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+function generateMoves(brd, pos, diceValue, otherPos, allowDiag) {
+    const cross = simulateMovableTiles(brd, pos, diceValue, otherPos, false)
+        .map(t => ({...t, isDiagonal: false}));
+    const diag = allowDiag
+        ? simulateMovableTiles(brd, pos, diceValue, otherPos, true)
+            .map(t => ({...t, isDiagonal: true}))
+        : [];
+    const all = cross.concat(diag); // cross first → dedup keeps cross version
+    const seen = new Set();
+    return all.filter(t => {
+        const k = `${t.row},${t.col}`;
+        if (seen.has(k)) return false;
+        seen.add(k); return true;
+    });
+}
+
+function findPlaceableTiles(brd, pos, otherPos) {
+    const tiles = [];
+    for (const dir of CROSS_DIRECTIONS) {
+        const r = pos.row + dir.dr, c = pos.col + dir.dc;
+        if (!isValidPosition(r, c)) continue;
+        if (r === otherPos.row && c === otherPos.col) continue;
+        if (brd[r][c] !== MARKERS.STONE && brd[r][c] !== MARKERS.SNOW) tiles.push({ row: r, col: c });
+    }
+    return tiles;
+}
+
+// ===== Depth Logic =====
+function getActionType(depth) { return (depth % 2 === 1) ? 'move' : 'place'; }
+function getActivePlayer(depth) { return (Math.floor((depth - 1) / 2) % 2 === 0) ? 'player' : 'opponent'; }
+function getDepthLabel(depth) {
+    const p = getActivePlayer(depth) === 'player' ? 'P' : 'O';
+    return `${p} ${getActionType(depth) === 'move' ? 'Move' : 'Place'}`;
+}
+
+// ===== Territory Score =====
+function computeTerritoryScore(brd, pPos, oPos, pDice, oDice) {
+    const pSeeds = new Set(), oSeeds = new Set();
+    for (const dv of pDice)
+        for (const t of getReachableTiles(brd, pPos, dv, oPos)) pSeeds.add(`${t.row},${t.col}`);
+    for (const dv of oDice)
+        for (const t of getReachableTiles(brd, oPos, dv, pPos)) oSeeds.add(`${t.row},${t.col}`);
+
+    function bfsFromSeeds(seeds) {
+        const dist = new Map(), queue = [];
+        for (const key of seeds) { dist.set(key, 0); const [r,c]=key.split(',').map(Number); queue.push({row:r,col:c,d:0}); }
+        let head = 0;
+        while (head < queue.length) {
+            const {row,col,d} = queue[head++];
+            for (const dir of CROSS_DIRECTIONS) {
+                const nr=row+dir.dr, nc=col+dir.dc;
+                if (!isValidPosition(nr,nc)) continue;
+                const key=`${nr},${nc}`;
+                if (dist.has(key)) continue;
+                if (brd[nr][nc]===MARKERS.STONE||brd[nr][nc]===MARKERS.SNOW) continue;
+                dist.set(key, d+1); queue.push({row:nr,col:nc,d:d+1});
+            }
+        }
+        return dist;
+    }
+
+    const pDist = bfsFromSeeds(pSeeds), oDist = bfsFromSeeds(oSeeds);
+    let pCount=0, oCount=0, bothCount=0;
+    for (let r=0;r<BOARD_SIZE;r++) for (let c=0;c<BOARD_SIZE;c++) {
+        const key=`${r},${c}`, tile=brd[r][c];
+        if (tile===MARKERS.STONE||tile===MARKERS.SNOW) continue;
+        if ((r===pPos.row&&c===pPos.col)||(r===oPos.row&&c===oPos.col)) continue;
+        const pd=pDist.get(key), od=oDist.get(key);
+        if (pd===undefined&&od===undefined) continue;
+        if (pd!==undefined&&od!==undefined) { if(pd<od)pCount++; else if(od<pd)oCount++; else bothCount++; }
+        else if (pd!==undefined) pCount++; else oCount++;
+    }
+    return { score: pCount-oCount, pCount, oCount, bothCount };
+}
+
+// ===== Compute territory map for display =====
+function computeTerritoryMap(brd, pPos, oPos, pDice, oDice) {
+    const pSeeds = new Set(), oSeeds = new Set();
+    for (const dv of pDice)
+        for (const t of getReachableTiles(brd, pPos, dv, oPos)) pSeeds.add(`${t.row},${t.col}`);
+    for (const dv of oDice)
+        for (const t of getReachableTiles(brd, oPos, dv, pPos)) oSeeds.add(`${t.row},${t.col}`);
+
+    function bfsFromSeeds(seeds) {
+        const dist = new Map(), queue = [];
+        for (const key of seeds) { dist.set(key,0); const [r,c]=key.split(',').map(Number); queue.push({row:r,col:c,d:0}); }
+        let head=0;
+        while(head<queue.length) {
+            const {row,col,d}=queue[head++];
+            for (const dir of CROSS_DIRECTIONS) {
+                const nr=row+dir.dr, nc=col+dir.dc;
+                if (!isValidPosition(nr,nc)) continue;
+                const key=`${nr},${nc}`;
+                if (dist.has(key)) continue;
+                if (brd[nr][nc]===MARKERS.STONE||brd[nr][nc]===MARKERS.SNOW) continue;
+                dist.set(key,d+1); queue.push({row:nr,col:nc,d:d+1});
+            }
+        }
+        return dist;
+    }
+
+    const pDist=bfsFromSeeds(pSeeds), oDist=bfsFromSeeds(oSeeds);
+    const result = new Map();
+    let pCount=0, oCount=0, bothCount=0;
+    for (let r=0;r<BOARD_SIZE;r++) for (let c=0;c<BOARD_SIZE;c++) {
+        const key=`${r},${c}`, tile=brd[r][c];
+        if (tile===MARKERS.STONE||tile===MARKERS.SNOW) continue;
+        const isP=(r===pPos.row&&c===pPos.col), isO=(r===oPos.row&&c===oPos.col);
+        const pd=pDist.get(key), od=oDist.get(key);
+        if (pd===undefined&&od===undefined) continue;
+        const seed=pSeeds.has(key)||oSeeds.has(key);
+        let owner;
+        if (pd!==undefined&&od!==undefined) {
+            if(pd<od){owner='p'; if(!isP&&!isO)pCount++;}
+            else if(od<pd){owner='o'; if(!isP&&!isO)oCount++;}
+            else{owner='both'; if(!isP&&!isO)bothCount++;}
+        } else if(pd!==undefined){owner='p'; if(!isP&&!isO)pCount++;}
+        else{owner='o'; if(!isP&&!isO)oCount++;}
+        result.set(key, {owner, seed});
+    }
+    return { territory:result, pSeeds, oSeeds, pCount, oCount, bothCount };
+}
+
+// ===== Read UI inputs =====
+function readInputs() {
+    const v = id => parseInt(document.getElementById(id).value) || 0;
+    const sv = id => { const val = document.getElementById(id).value; return val === '' ? null : parseInt(val); };
+    return {
+        d0: Math.max(1,Math.min(3,v('dice-d0'))), d1: Math.max(1,Math.min(3,v('dice-d1'))),
+        o0: Math.max(1,Math.min(3,v('dice-o0'))), o1: Math.max(1,Math.min(3,v('dice-o1'))),
+        pStk: sv('stock-p'), oStk: sv('stock-o'),
+        pPts: Math.max(0, v('init-p-pts')), oPts: Math.max(0, v('init-o-pts'))
+    };
+}
+
+// ===== Build Search Tree =====
+const MAX_DEPTH = 4;
+
+function buildSearchTree() {
+    const inp = readInputs();
+    leafCount = 0;
+
+    // Build dice queues — when stock already exists, D1/O1 is not in queue
+    const pSaved = inp.pStk !== null ? {value:inp.pStk, label:'Stk'} : null;
+    const oSaved = inp.oStk !== null ? {value:inp.oStk, label:'Stk'} : null;
+    const pQueue = pSaved
+        ? [{value:inp.d0,label:'D0'}]
+        : [{value:inp.d0,label:'D0'},{value:inp.d1,label:'D1'}];
+    const oQueue = oSaved
+        ? [{value:inp.o0,label:'O0'}]
+        : [{value:inp.o0,label:'O0'},{value:inp.o1,label:'O1'}];
+
+    // Root node
+    const root = {
+        type: 'root', depth: 0,
+        children: [],
+        brd: board.map(r=>[...r]),
+        pPos: {...playerPos}, oPos: {...opponentPos},
+        pPts: inp.pPts, oPts: inp.oPts,
+        pSaved, oSaved,
+        pQueue: [...pQueue], oQueue: [...oQueue],
+        pRemainingDice: [...pQueue.map(d => d.value), ...(pSaved ? [pSaved.value] : [])],
+        oRemainingDice: [...oQueue.map(d => d.value), ...(oSaved ? [oSaved.value] : [])],
+        score: 0, bestChildIdx: 0
+    };
+
+    root.children = buildChildren(root.brd, root.pPos, root.oPos, 1,
+        inp.pPts, inp.oPts, pQueue, oQueue, pSaved, oSaved);
+
+    // Propagate minimax scores
+    propagateScores(root, 0);
+
+    return root;
+}
+
+function buildChildren(brd, pPos, oPos, depth, pPts, oPts, pQueue, oQueue, pSaved, oSaved) {
+    if (depth > MAX_DEPTH) return [];
+
+    const actionType = getActionType(depth);
+    const player = getActivePlayer(depth);
+    const pos = player === 'player' ? pPos : oPos;
+    const otherPos = player === 'player' ? oPos : pPos;
+    const children = [];
+
+    if (actionType === 'place') {
+        const tiles = findPlaceableTiles(brd, pos, otherPos);
+        for (const t of tiles) {
+            const node = {
+                type: 'place', player, row: t.row, col: t.col, depth,
+                moveType: 'normal', diceUsed: null, diceLabel: null,
+                savedDice: null, savedLabel: null,
+                pPts, oPts, pSaved, oSaved,
+                pRemainingDice: [...pQueue.map(d => d.value), ...(pSaved ? [pSaved.value] : [])],
+                oRemainingDice: [...oQueue.map(d => d.value), ...(oSaved ? [oSaved.value] : [])],
+                children: [], score: 0, bestChildIdx: 0
+            };
+            const oldTile = brd[t.row][t.col];
+            brd[t.row][t.col] = MARKERS.STONE;
+
+            node.children = buildChildren(brd, pPos, oPos, depth+1,
+                pPts, oPts, pQueue, oQueue, pSaved, oSaved);
+
+            if (node.children.length === 0) {
+                // Leaf
+                leafCount++;
+                node.board = brd.map(r=>[...r]);
+                node.leafPPos = {...pPos};
+                node.leafOPos = {...oPos};
+            }
+
+            brd[t.row][t.col] = oldTile;
+            children.push(node);
+        }
+        if (tiles.length === 0) {
+            // No place possible, skip this depth
+            return buildChildren(brd, pPos, oPos, depth+1,
+                pPts, oPts, pQueue, oQueue, pSaved, oSaved);
+        }
+    } else {
+        // Move action
+        const queue = player === 'player' ? pQueue : oQueue;
+        const saved = player === 'player' ? pSaved : oSaved;
+        const activePts = player === 'player' ? pPts : oPts;
+
+        // Option A: Normal — use queue[0]
+        if (queue.length >= 1) {
+            const dice = queue[0];
+            const remainQueue = queue.slice(1);
+            const npQ = player==='player' ? remainQueue : pQueue;
+            const noQ = player==='player' ? oQueue : remainQueue;
+            const allowDiag = activePts >= POINT_DIAGONAL_COST;
+
+            const moves = generateMoves(brd, pos, dice.value, otherPos, allowDiag);
+            if (moves.length === 0) moves.push({row:pos.row, col:pos.col, isDiagonal:false}); // pass
+
+            for (const m of moves) {
+                let childPPos = {...pPos}, childOPos = {...oPos};
+                if (player==='player') childPPos = {row:m.row, col:m.col};
+                else childOPos = {row:m.row, col:m.col};
+
+                // Diagonal move costs points
+                let nodePPts = pPts, nodeOPts = oPts;
+                if (m.isDiagonal) {
+                    if (player==='player') nodePPts -= POINT_DIAGONAL_COST;
+                    else nodeOPts -= POINT_DIAGONAL_COST;
+                }
+
+                const node = {
+                    type: 'move', player, row: m.row, col: m.col, depth,
+                    moveType: 'normal', diceUsed: dice.value, diceLabel: dice.label,
+                    savedDice: null, savedLabel: null, isDiagonal: !!m.isDiagonal,
+                    pPts: nodePPts, oPts: nodeOPts, pSaved, oSaved,
+                    pRemainingDice: [...npQ.map(d => d.value), ...(pSaved ? [pSaved.value] : [])],
+                    oRemainingDice: [...noQ.map(d => d.value), ...(oSaved ? [oSaved.value] : [])],
+                    children: [], score: 0, bestChildIdx: 0
+                };
+
+                node.children = buildChildren(brd, childPPos, childOPos, depth+1,
+                    nodePPts, nodeOPts, npQ, noQ, pSaved, oSaved);
+
+                if (node.children.length === 0) {
+                    leafCount++;
+                    node.board = brd.map(r=>[...r]);
+                    node.leafPPos = {...childPPos};
+                    node.leafOPos = {...childOPos};
+                }
+                children.push(node);
+            }
+        }
+
+        // Option B: Stock — save queue[0], use queue[1], costs 20pt
+        if (saved === null && activePts >= POINT_STOCK_COST && queue.length >= 2) {
+            const savedDice = queue[0];
+            const useDice = queue[1];
+            const remainQueue = queue.slice(2);
+            let stockPPts = pPts, stockOPts = oPts;
+            if (player==='player') stockPPts -= POINT_STOCK_COST;
+            else stockOPts -= POINT_STOCK_COST;
+            const stockActivePts = player==='player' ? stockPPts : stockOPts;
+
+            const npQ = player==='player' ? remainQueue : pQueue;
+            const noQ = player==='player' ? oQueue : remainQueue;
+            const npS = player==='player' ? savedDice : pSaved;
+            const noS = player==='player' ? oSaved : savedDice;
+            const allowDiag = stockActivePts >= POINT_DIAGONAL_COST;
+
+            const moves = generateMoves(brd, pos, useDice.value, otherPos, allowDiag);
+            if (moves.length === 0) moves.push({row:pos.row, col:pos.col, isDiagonal:false});
+
+            for (const m of moves) {
+                let childPPos = {...pPos}, childOPos = {...oPos};
+                if (player==='player') childPPos = {row:m.row, col:m.col};
+                else childOPos = {row:m.row, col:m.col};
+
+                let nodePPts = stockPPts, nodeOPts = stockOPts;
+                if (m.isDiagonal) {
+                    if (player==='player') nodePPts -= POINT_DIAGONAL_COST;
+                    else nodeOPts -= POINT_DIAGONAL_COST;
+                }
+
+                const node = {
+                    type: 'move', player, row: m.row, col: m.col, depth,
+                    moveType: 'stock', diceUsed: useDice.value, diceLabel: useDice.label,
+                    savedDice: savedDice.value, savedLabel: savedDice.label, isDiagonal: !!m.isDiagonal,
+                    pPts: nodePPts, oPts: nodeOPts, pSaved: npS, oSaved: noS,
+                    pRemainingDice: [...npQ.map(d => d.value), ...(npS ? [npS.value] : [])],
+                    oRemainingDice: [...noQ.map(d => d.value), ...(noS ? [noS.value] : [])],
+                    children: [], score: 0, bestChildIdx: 0
+                };
+
+                node.children = buildChildren(brd, childPPos, childOPos, depth+1,
+                    nodePPts, nodeOPts, npQ, noQ, npS, noS);
+
+                if (node.children.length === 0) {
+                    leafCount++;
+                    node.board = brd.map(r=>[...r]);
+                    node.leafPPos = {...childPPos};
+                    node.leafOPos = {...childOPos};
+                }
+                children.push(node);
+            }
+        }
+
+        // Option C: Use-Stock — discard queue[0], use saved
+        if (saved !== null && queue.length >= 1) {
+            const remainQueue = queue.slice(1);
+            const npQ = player==='player' ? remainQueue : pQueue;
+            const noQ = player==='player' ? oQueue : remainQueue;
+            const npS = player==='player' ? null : pSaved;
+            const noS = player==='player' ? oSaved : null;
+            const allowDiag = activePts >= POINT_DIAGONAL_COST;
+
+            const moves = generateMoves(brd, pos, saved.value, otherPos, allowDiag);
+            if (moves.length === 0) moves.push({row:pos.row, col:pos.col, isDiagonal:false});
+
+            for (const m of moves) {
+                let childPPos = {...pPos}, childOPos = {...oPos};
+                if (player==='player') childPPos = {row:m.row, col:m.col};
+                else childOPos = {row:m.row, col:m.col};
+
+                let nodePPts = pPts, nodeOPts = oPts;
+                if (m.isDiagonal) {
+                    if (player==='player') nodePPts -= POINT_DIAGONAL_COST;
+                    else nodeOPts -= POINT_DIAGONAL_COST;
+                }
+
+                const node = {
+                    type: 'move', player, row: m.row, col: m.col, depth,
+                    moveType: 'use_stock', diceUsed: saved.value, diceLabel: saved.label,
+                    savedDice: null, savedLabel: null, isDiagonal: !!m.isDiagonal,
+                    pPts: nodePPts, oPts: nodeOPts, pSaved: npS, oSaved: noS,
+                    pRemainingDice: [...npQ.map(d => d.value), ...(npS ? [npS.value] : [])],
+                    oRemainingDice: [...noQ.map(d => d.value), ...(noS ? [noS.value] : [])],
+                    children: [], score: 0, bestChildIdx: 0
+                };
+
+                node.children = buildChildren(brd, childPPos, childOPos, depth+1,
+                    nodePPts, nodeOPts, npQ, noQ, npS, noS);
+
+                if (node.children.length === 0) {
+                    leafCount++;
+                    node.board = brd.map(r=>[...r]);
+                    node.leafPPos = {...childPPos};
+                    node.leafOPos = {...childOPos};
+                }
+                children.push(node);
+            }
+        }
+
+        // If no moves at all (empty queue), pass
+        if (children.length === 0) {
+            return buildChildren(brd, pPos, oPos, depth+1,
+                pPts, oPts, pQueue, oQueue, pSaved, oSaved);
+        }
+    }
+
+    return children;
+}
+
+// ===== Minimax Propagation =====
+function propagateScores(node, depth) {
+    if (node.children.length === 0) {
+        // Leaf node — enumerate D2 × O2 (3×3 = 9 combinations)
+        if (node.board) {
+            let totalScore = 0, totalP = 0, totalO = 0, totalB = 0;
+            const combos = 9;
+            for (let d2 = 1; d2 <= 3; d2++) {
+                for (let o2 = 1; o2 <= 3; o2++) {
+                    const pEval = [...node.pRemainingDice, d2];
+                    const oEval = [...node.oRemainingDice, o2];
+                    const r = computeTerritoryScore(node.board, node.leafPPos, node.leafOPos, pEval, oEval);
+                    totalScore += r.score;
+                    totalP += r.pCount; totalO += r.oCount; totalB += r.bothCount;
+                }
+            }
+            node.score = totalScore / combos;
+            node.territoryResult = {
+                score: totalScore / combos,
+                pCount: Math.round(totalP / combos),
+                oCount: Math.round(totalO / combos),
+                bothCount: Math.round(totalB / combos)
+            };
+        }
+        return;
+    }
+    for (const child of node.children) propagateScores(child, depth+1);
+
+    // Root (depth 0) acts as maximizer for the first child level
+    const childDepth = depth + 1;
+    const isMax = (depth === 0) || getActivePlayer(childDepth) === 'player';
+
+    let bestIdx = 0;
+    for (let i = 1; i < node.children.length; i++) {
+        if (isMax ? node.children[i].score > node.children[bestIdx].score
+                  : node.children[i].score < node.children[bestIdx].score) bestIdx = i;
+    }
+    node.score = node.children[bestIdx].score;
+    node.bestChildIdx = bestIdx;
+}
+
+// ===== Run Search =====
+function runSearch() {
+    const t0 = performance.now();
+    searchTree = buildSearchTree();
+    const elapsed = performance.now() - t0;
+
+    browseActive = true;
+    browseStack = [searchTree];
+    browseFilter = 'all';
+
+    document.getElementById('browse-controls').style.display = '';
+    updateStockTypeButtons();
+    updateBrowseResults(elapsed);
+    updatePathDisplay();
+    updatePointsDisplay();
+    draw();
+}
+
+// ===== Browse: State from path =====
+function getStateFromBrowse() {
+    let brd = board.map(r=>[...r]);
+    let pPos = {...playerPos}, oPos = {...opponentPos};
+    for (const node of browseStack.slice(1)) {
+        if (node.type === 'move') {
+            if (node.player === 'player') pPos = {row:node.row, col:node.col};
+            else oPos = {row:node.row, col:node.col};
+        } else if (node.type === 'place') {
+            brd[node.row][node.col] = MARKERS.STONE;
+        }
+    }
+    return { brd, pPos, oPos };
+}
+
+// ===== Browse: Navigation =====
+function drillDown(childIdx) {
+    const current = browseStack[browseStack.length-1];
+    if (childIdx < 0 || childIdx >= current.children.length) return;
+    browseStack.push(current.children[childIdx]);
+    browseFilter = 'all';
+    updateStockTypeButtons();
+    updateBrowseResults();
+    updatePathDisplay();
+    updatePointsDisplay();
+    draw();
+}
+
+function browseBack() {
+    if (browseStack.length <= 1) return;
+    browseStack.pop();
+    browseFilter = 'all';
+    updateStockTypeButtons();
+    updateBrowseResults();
+    updatePathDisplay();
+    updatePointsDisplay();
+    draw();
+}
+
+function browseReset() {
+    if (!searchTree) return;
+    browseStack = [searchTree];
+    browseFilter = 'all';
+    updateStockTypeButtons();
+    updateBrowseResults();
+    updatePathDisplay();
+    updatePointsDisplay();
+    draw();
+}
+
+function browseBest() {
+    const current = browseStack[browseStack.length-1];
+    if (current.children.length === 0) return;
+    drillDown(current.bestChildIdx);
+}
+
+// ===== Get filtered children for display =====
+function getDisplayChildren() {
+    const current = browseStack[browseStack.length-1];
+    if (browseFilter === 'all') return current.children;
+    return current.children.filter(c => c.moveType === browseFilter);
+}
+
+// ===== Stock type buttons =====
+function updateStockTypeButtons() {
+    const container = document.getElementById('stock-type-btns');
+    const current = browseStack[browseStack.length-1];
+    const nextDepth = browseStack.length;
+    if (nextDepth > MAX_DEPTH || getActionType(nextDepth) !== 'move' || current.children.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = '';
+    const types = new Set(current.children.map(c => c.moveType));
+
+    document.querySelectorAll('[data-movetype]').forEach(btn => {
+        const mt = btn.dataset.movetype;
+        btn.disabled = !types.has(mt);
+        btn.classList.toggle('active', browseFilter === 'all' ? mt === 'normal' : mt === browseFilter);
+    });
+}
+
+// ===== Update Browse Results =====
+function updateBrowseResults(searchTime) {
+    const current = browseStack[browseStack.length-1];
+    const nextDepth = browseStack.length;
+    const out = document.getElementById('result-text');
+
+    if (searchTime !== undefined) {
+        let text = `=== Search Complete ===\n`;
+        text += `Leaves: ${leafCount}  Time: ${searchTime.toFixed(1)}ms\n`;
+        text += `Root Score: ${formatScore(searchTree.score)}\n`;
+        const stockN = countMoveTypes(searchTree, 'stock');
+        const useStkN = countMoveTypes(searchTree, 'use_stock');
+        if (stockN || useStkN) text += `Stock nodes: ${stockN}  Use-stock nodes: ${useStkN}\n`;
+        text += '\n';
+    }
+
+    let text = out.textContent.includes('Search Complete') && searchTime !== undefined
+        ? out.textContent.split('\n\n').slice(0, 1).join('\n\n') + '\n\n'
+        : '';
+
+    if (current.children.length === 0) {
+        // Leaf
+        text += `=== Leaf Reached (Depth ${nextDepth - 1}) ===\n`;
+        text += `Score: ${formatScore(current.score)}  (avg over D2×O2)\n`;
+        if (current.territoryResult) {
+            const tr = current.territoryResult;
+            text += `Territory(avg): P=${tr.pCount}  O=${tr.oCount}  Both=${tr.bothCount}\n`;
+        }
+        text += `P eval dice: [${current.pRemainingDice.join(',')}]+D2?  O eval dice: [${current.oRemainingDice.join(',')}]+O2?\n`;
+        text += '\nPath:\n';
+        browseStack.slice(1).forEach((node, i) => {
+            text += formatNodeLine(node, i+1) + '\n';
+        });
+    } else {
+        text += `=== Depth ${nextDepth}: ${getDepthLabel(nextDepth)} ===\n`;
+        const displayed = getDisplayChildren();
+        text += `${displayed.length} option(s)  [click tile or use Best]\n\n`;
+        for (let i = 0; i < displayed.length; i++) {
+            const opt = displayed[i];
+            const isBest = current.children.indexOf(opt) === current.bestChildIdx;
+            text += formatOptionLine(opt, isBest) + '\n';
+        }
+    }
+
+    out.textContent = text;
+}
+
+function countMoveTypes(root, moveType) {
+    let count = 0;
+    function dfs(node) {
+        if (node.moveType === moveType) count++;
+        for (const c of node.children) dfs(c);
+    }
+    dfs(root);
+    return count;
+}
+
+function formatScore(score) {
+    const s = Number.isInteger(score) ? score : parseFloat(score.toFixed(1));
+    if (s > 0) return `P +${s}`;
+    if (s < 0) return `O +${-s}`;
+    return 'EVEN';
+}
+
+function formatNodeLine(node, depthIdx) {
+    const p = node.player === 'player' ? 'P' : 'O';
+    const diagMark = node.isDiagonal ? ' ↗' : '';
+    if (node.type === 'place') {
+        return `  D${depthIdx}: ${p} Place -> (${node.row},${node.col})`;
+    }
+    if (node.moveType === 'stock') {
+        return `  D${depthIdx}: ${p} Move [STOCK save ${node.savedLabel}=${node.savedDice}, use ${node.diceLabel}=${node.diceUsed}]${diagMark} -> (${node.row},${node.col})  [P:${node.pPts} O:${node.oPts}]`;
+    } else if (node.moveType === 'use_stock') {
+        return `  D${depthIdx}: ${p} Move [USE-STK ${node.diceLabel}=${node.diceUsed}]${diagMark} -> (${node.row},${node.col})`;
+    }
+    return `  D${depthIdx}: ${p} Move (${node.diceLabel}=${node.diceUsed})${diagMark} -> (${node.row},${node.col})`;
+}
+
+function formatOptionLine(opt, isBest) {
+    const marker = isBest ? '★' : ' ';
+    const pos = `(${opt.row},${opt.col})`;
+    const scoreStr = `[${formatScore(opt.score)}]`;
+
+    if (opt.type === 'place') {
+        return `${marker} ${pos} ${scoreStr}`;
+    }
+    const diagStr = opt.isDiagonal ? ' ↗' : '';
+    if (opt.moveType === 'stock') {
+        const costParts = [`-${POINT_STOCK_COST}pt(stk)`];
+        if (opt.isDiagonal) costParts.push(`-${POINT_DIAGONAL_COST}pt(diag)`);
+        return `${marker} ${pos} [STOCK save ${opt.savedLabel}=${opt.savedDice}, use ${opt.diceLabel}=${opt.diceUsed}] ${scoreStr}  ${costParts.join(' ')}`;
+    } else if (opt.moveType === 'use_stock') {
+        const costStr = opt.isDiagonal ? `  -${POINT_DIAGONAL_COST}pt(diag)` : '';
+        return `${marker} ${pos} [USE-STK ${opt.diceLabel}=${opt.diceUsed}] ${scoreStr}${costStr}`;
+    }
+    const costStr = opt.isDiagonal ? `  -${POINT_DIAGONAL_COST}pt(diag)` : '';
+    return `${marker} ${pos} (${opt.diceLabel}=${opt.diceUsed})${diagStr} ${scoreStr}${costStr}`;
+}
+
+// ===== Path Display =====
+function updatePathDisplay() {
+    const el = document.getElementById('path-display');
+    const path = browseStack.slice(1);
+    if (path.length === 0) { el.textContent = '(root)'; return; }
+    const parts = path.map(node => {
+        const p = node.player === 'player' ? 'P' : 'O';
+        if (node.type === 'place') return `${p} Place(${node.row},${node.col})`;
+        if (node.moveType === 'stock') return `${p} Stock[${node.savedLabel}](${node.diceLabel}=${node.diceUsed}->${node.row},${node.col})`;
+        if (node.moveType === 'use_stock') return `${p} UseStk(${node.diceLabel}=${node.diceUsed}->${node.row},${node.col})`;
+        return `${p} Move(${node.diceLabel}=${node.diceUsed}->${node.row},${node.col})`;
+    });
+    el.textContent = parts.join(' -> ');
+}
+
+function updatePointsDisplay() {
+    const el = document.getElementById('points-display');
+    if (!browseActive) { el.textContent = ''; return; }
+    const current = browseStack[browseStack.length-1];
+    const pPts = current.pPts !== undefined ? current.pPts : readInputs().pPts;
+    const oPts = current.oPts !== undefined ? current.oPts : readInputs().oPts;
+    const pSaved = current.pSaved;
+    const oSaved = current.oSaved;
+    let text = `P: ${pPts}pts`;
+    if (pSaved) text += ` [stk:${pSaved.value}]`;
+    text += `  |  O: ${oPts}pts`;
+    if (oSaved) text += ` [stk:${oSaved.value}]`;
+    el.textContent = text;
+}
+
+// ===== Drawing =====
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const inp = readInputs();
+
+    // Determine what to draw
+    let drawBrd, drawPPos, drawOPos;
+    let territory, pCount, oCount, bothCount, pSeeds, oSeeds;
+    let dispPDice, dispODice; // dice used for territory display
+
+    if (browseActive && browseStack.length > 0) {
+        const state = getStateFromBrowse();
+        drawBrd = state.brd; drawPPos = state.pPos; drawOPos = state.oPos;
+        // Use current node's remaining dice + D2=2, O2=2 (median) for display
+        const current = browseStack[browseStack.length - 1];
+        dispPDice = [...current.pRemainingDice, 2];
+        dispODice = [...current.oRemainingDice, 2];
+        const tm = computeTerritoryMap(drawBrd, drawPPos, drawOPos, dispPDice, dispODice);
+        territory = tm.territory; pCount = tm.pCount; oCount = tm.oCount;
+        bothCount = tm.bothCount; pSeeds = tm.pSeeds; oSeeds = tm.oSeeds;
+    } else {
+        drawBrd = board; drawPPos = playerPos; drawOPos = opponentPos;
+        // Use speed dice for current display — include stock if present
+        dispPDice = inp.pStk !== null ? [inp.d0, inp.pStk] : [inp.d0, inp.d1];
+        dispODice = inp.oStk !== null ? [inp.o0, inp.oStk] : [inp.o0, inp.o1];
+        const tm = computeTerritoryMap(board, playerPos, opponentPos, dispPDice, dispODice);
+        territory = tm.territory; pCount = tm.pCount; oCount = tm.oCount;
+        bothCount = tm.bothCount; pSeeds = tm.pSeeds; oSeeds = tm.oSeeds;
+    }
+
+    // Territory overlay
+    for (const [key, {owner, seed}] of territory) {
+        const [r,c] = key.split(',').map(Number);
+        const x=c*CELL_SIZE+1, y=r*CELL_SIZE+1, s=CELL_SIZE-2;
+        if (owner==='both') ctx.fillStyle = seed ? 'rgba(160,80,220,0.5)' : 'rgba(160,80,220,0.25)';
+        else if (owner==='p') ctx.fillStyle = seed ? 'rgba(0,150,255,0.45)' : 'rgba(0,150,255,0.18)';
+        else ctx.fillStyle = seed ? 'rgba(255,60,60,0.45)' : 'rgba(255,60,60,0.18)';
+        ctx.fillRect(x, y, s, s);
+    }
+
+    // Grid
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+    for (let i=0;i<=BOARD_SIZE;i++) {
+        ctx.beginPath(); ctx.moveTo(i*CELL_SIZE,0); ctx.lineTo(i*CELL_SIZE,BOARD_SIZE*CELL_SIZE); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0,i*CELL_SIZE); ctx.lineTo(BOARD_SIZE*CELL_SIZE,i*CELL_SIZE); ctx.stroke();
+    }
+
+    // Tiles
+    for (let r=0;r<BOARD_SIZE;r++) for (let c=0;c<BOARD_SIZE;c++)
+        if (drawBrd[r][c] !== MARKERS.EMPTY) drawTile(drawBrd[r][c], c*CELL_SIZE+CELL_SIZE/2, r*CELL_SIZE+CELL_SIZE/2);
+
+    // Browse: highlight candidates
+    if (browseActive && browseStack.length > 0) {
+        const current = browseStack[browseStack.length-1];
+        const displayed = getDisplayChildren();
+        const nextDepth = browseStack.length;
+        if (nextDepth <= MAX_DEPTH) {
+            const player = getActivePlayer(nextDepth);
+            const actionType = getActionType(nextDepth);
+            for (const opt of displayed) {
+                const x = opt.col*CELL_SIZE, y = opt.row*CELL_SIZE;
+                const color = player === 'player' ? '#00FF88' : '#FF8800';
+                if (actionType === 'move') {
+                    ctx.strokeStyle = color; ctx.lineWidth = 3;
+                    ctx.strokeRect(x+3, y+3, CELL_SIZE-6, CELL_SIZE-6);
+                } else {
+                    ctx.strokeStyle = color; ctx.lineWidth = 2;
+                    ctx.setLineDash([4,4]);
+                    ctx.strokeRect(x+3, y+3, CELL_SIZE-6, CELL_SIZE-6);
+                    ctx.setLineDash([]);
+                }
+                // Score label
+                ctx.fillStyle = color;
+                ctx.font = 'bold 10px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+                const sDisp = Number.isInteger(opt.score) ? opt.score : opt.score.toFixed(1);
+                ctx.fillText(opt.score >= 0 ? `+${sDisp}` : `${sDisp}`, x+CELL_SIZE/2, y+CELL_SIZE-4);
+                // Best marker
+                if (current.children.indexOf(opt) === current.bestChildIdx) {
+                    ctx.fillStyle = '#FFD700'; ctx.font = 'bold 11px Arial';
+                    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+                    ctx.fillText('★', x+3, y+2);
+                }
+            }
+        }
+
+        // Highlight path taken so far
+        for (const node of browseStack.slice(1)) {
+            const x = node.col*CELL_SIZE, y = node.row*CELL_SIZE;
+            const color = node.player === 'player' ? 'rgba(0,255,136,0.3)' : 'rgba(255,136,0,0.3)';
+            ctx.fillStyle = color;
+            ctx.fillRect(x+1, y+1, CELL_SIZE-2, CELL_SIZE-2);
+        }
+    }
+
+    // Players
+    drawPlayer(drawPPos, '#00AAFF', 'P');
+    drawPlayer(drawOPos, '#FF4444', 'O');
+
+    // Score bar
+    const total = pCount+oCount+bothCount;
+    const score = pCount-oCount;
+    document.getElementById('score-fill-p').style.width = (total>0 ? pCount/total*50 : 0)+'%';
+    document.getElementById('score-fill-o').style.width = (total>0 ? oCount/total*50 : 0)+'%';
+    document.getElementById('score-p').textContent = pCount;
+    document.getElementById('score-o').textContent = oCount;
+    const lbl = document.getElementById('score-label');
+    const scoreDisp = Number.isInteger(score) ? score : parseFloat(score.toFixed(1));
+    if (score>0) { lbl.textContent=`P +${scoreDisp}`; lbl.style.color='#0af'; }
+    else if (score<0) { lbl.textContent=`O +${-scoreDisp}`; lbl.style.color='#f44'; }
+    else { lbl.textContent='EVEN'; lbl.style.color='#a860dc'; }
+
+    const stateLabel = browseActive ? '(browse)' : '(current)';
+    const pDiceStr = dispPDice.map(d => d).join(',');
+    const oDiceStr = dispODice.map(d => d).join(',');
+    document.getElementById('info-text').textContent =
+        `${stateLabel}  P eval:[${pDiceStr}]+D2?  O eval:[${oDiceStr}]+O2?  |  P=${pCount}  O=${oCount}  Both=${bothCount}`;
+}
+
+function drawTile(tile, cx, cy) {
+    if (tile===MARKERS.STONE) { ctx.fillStyle='#556677'; drawOctagon(cx,cy,CELL_SIZE*0.35); ctx.fill(); }
+    else if (tile===MARKERS.ICE) { ctx.fillStyle='#66DDFF'; drawDiamond(cx,cy,CELL_SIZE*0.3); ctx.fill(); ctx.fillStyle='#000'; ctx.font='11px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('I',cx,cy); }
+    else if (tile===MARKERS.SWAMP) { ctx.fillStyle='#668844'; drawDiamond(cx,cy,CELL_SIZE*0.3); ctx.fill(); ctx.fillStyle='#fff'; ctx.font='11px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('W',cx,cy); }
+    else if (tile===MARKERS.WARP) { ctx.fillStyle='#AA66FF'; drawDiamond(cx,cy,CELL_SIZE*0.3); ctx.fill(); ctx.fillStyle='#fff'; ctx.font='11px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('P',cx,cy); }
+    else if (tile===MARKERS.SNOW) { ctx.fillStyle='#CCDDEE'; drawOctagon(cx,cy,CELL_SIZE*0.35); ctx.fill(); ctx.fillStyle='#333'; ctx.font='11px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('N',cx,cy); }
+}
+
+function drawPlayer(pos, color, label) {
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(pos.col*CELL_SIZE+CELL_SIZE/2, pos.row*CELL_SIZE+CELL_SIZE/2, CELL_SIZE*0.32, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.font='bold 16px Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(label, pos.col*CELL_SIZE+CELL_SIZE/2, pos.row*CELL_SIZE+CELL_SIZE/2);
+}
+
+function drawOctagon(cx,cy,r) {
+    ctx.beginPath();
+    for (let i=0;i<8;i++) { const a=Math.PI/8+i*Math.PI/4,x=cx+r*Math.cos(a),y=cy+r*Math.sin(a); i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }
+    ctx.closePath();
+}
+
+function drawDiamond(cx,cy,r) { ctx.beginPath(); ctx.moveTo(cx,cy-r); ctx.lineTo(cx+r,cy); ctx.lineTo(cx,cy+r); ctx.lineTo(cx-r,cy); ctx.closePath(); }
+
+// ===== Events =====
+function getGridPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+        col: Math.floor((e.clientX-rect.left)*(canvas.width/rect.width)/CELL_SIZE),
+        row: Math.floor((e.clientY-rect.top)*(canvas.height/rect.height)/CELL_SIZE)
+    };
+}
+
+canvas.addEventListener('mousedown', e => {
+    if (browseActive) return; // no drag during browse
+    const {row,col} = getGridPos(e);
+    if (!isValidPosition(row,col)) return;
+    if (row===playerPos.row&&col===playerPos.col) { dragging='player'; dragStartPos={...playerPos}; canvas.style.cursor='grabbing'; }
+    else if (row===opponentPos.row&&col===opponentPos.col) { dragging='opponent'; dragStartPos={...opponentPos}; canvas.style.cursor='grabbing'; }
+});
+
+canvas.addEventListener('mousemove', e => {
+    if (browseActive) return;
+    const {row,col} = getGridPos(e);
+    if (!dragging) {
+        canvas.style.cursor = isValidPosition(row,col) &&
+            ((row===playerPos.row&&col===playerPos.col)||(row===opponentPos.row&&col===opponentPos.col))
+            ? 'grab' : 'crosshair';
+        return;
+    }
+    if (!isValidPosition(row,col)) return;
+    if (dragging==='player') { if(row===opponentPos.row&&col===opponentPos.col) return; playerPos={row,col}; }
+    else { if(row===playerPos.row&&col===playerPos.col) return; opponentPos={row,col}; }
+    syncPositionInputs();
+    clearSearch();
+    draw();
+});
+
+canvas.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging=null; dragStartPos=null; canvas.style.cursor='crosshair';
+});
+
+canvas.addEventListener('mouseleave', () => { if(dragging){ dragging=null; dragStartPos=null; canvas.style.cursor='crosshair'; }});
+
+canvas.addEventListener('click', e => {
+    const {row,col} = getGridPos(e);
+    if (!isValidPosition(row,col)) return;
+
+    // Browse mode: click on candidate to drill down
+    if (browseActive && browseStack.length > 0) {
+        const displayed = getDisplayChildren();
+        const idx = displayed.findIndex(c => c.row===row && c.col===col);
+        if (idx >= 0) {
+            // Find actual index in children array
+            const current = browseStack[browseStack.length-1];
+            const actualIdx = current.children.indexOf(displayed[idx]);
+            if (actualIdx >= 0) drillDown(actualIdx);
+        }
+        return;
+    }
+
+    // Normal mode: tile placement
+    if (row===playerPos.row&&col===playerPos.col) return;
+    if (row===opponentPos.row&&col===opponentPos.col) return;
+    const modeMap = { stone:MARKERS.STONE, ice:MARKERS.ICE, swamp:MARKERS.SWAMP, warp:MARKERS.WARP, snow:MARKERS.SNOW };
+    if (placementMode==='erase') board[row][col]=MARKERS.EMPTY;
+    else if (modeMap[placementMode]) board[row][col] = board[row][col]===modeMap[placementMode] ? MARKERS.EMPTY : modeMap[placementMode];
+    clearSearch();
+    draw();
+});
+
+// Placement mode
+document.querySelectorAll('[data-mode]').forEach(btn => btn.addEventListener('click', () => {
+    placementMode = btn.dataset.mode;
+    document.querySelectorAll('[data-mode]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+}));
+
+// Move type filter buttons
+document.querySelectorAll('[data-movetype]').forEach(btn => btn.addEventListener('click', () => {
+    if (btn.disabled) return;
+    browseFilter = btn.dataset.movetype;
+    document.querySelectorAll('[data-movetype]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    updateBrowseResults();
+    draw();
+}));
+
+// Board actions
+document.getElementById('generate-btn').addEventListener('click', generateBoard);
+document.getElementById('reset-btn').addEventListener('click', resetBoard);
+
+// Position inputs
+['init-p-row','init-p-col','init-o-row','init-o-col'].forEach(id =>
+    document.getElementById(id).addEventListener('change', () => { applyInitialPositions(); clearSearch(); draw(); })
+);
+
+// All dice/stock/points inputs
+['dice-d0','dice-d1','dice-o0','dice-o1','stock-p','stock-o',
+ 'init-p-pts','init-o-pts'].forEach(id =>
+    document.getElementById(id).addEventListener('change', () => { clearSearch(); draw(); })
+);
+
+// Search buttons
+document.getElementById('run-btn').addEventListener('click', () => {
+    document.getElementById('result-text').textContent = 'Searching...';
+    setTimeout(runSearch, 10);
+});
+document.getElementById('best-btn').addEventListener('click', browseBest);
+document.getElementById('back-btn').addEventListener('click', browseBack);
+document.getElementById('reset-browse-btn').addEventListener('click', browseReset);
+
+// ===== Init =====
+resetBoard();
+generateBoard();
+</script>
+</body>
+</html>

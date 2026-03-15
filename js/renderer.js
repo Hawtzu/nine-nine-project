@@ -207,7 +207,7 @@ class Renderer {
         const phase = ((row + col) * 0.15 + (now || 0) / ANIM.GRID_PULSE_SPEED) % 1.0;
         const glowAlpha = 0.06 + 0.10 * Math.sin(phase * Math.PI * 2);
 
-        ctx.strokeStyle = `rgba(0, 229, 255, ${glowAlpha})`;
+        ctx.strokeStyle = `rgba(${NEON.RGB[0]}, ${NEON.RGB[1]}, ${NEON.RGB[2]}, ${glowAlpha})`;
         ctx.lineWidth = 1;
         ctx.strokeRect(x + 0.5, y + 0.5, CELL_SIZE - 1, CELL_SIZE - 1);
     }
@@ -410,28 +410,100 @@ class Renderer {
         this.ctx.fillStyle = COLORS.P2_PANEL_BG;
         this.ctx.fillRect(SCREEN_WIDTH - PANEL_WIDTH, 0, PANEL_WIDTH, SCREEN_HEIGHT);
 
+        // Active turn neon glow on panel
+        this._drawPanelNeonGlow(currentTurn);
+
         // Draw player info
         this.drawPlayerInfo(player1, 20, currentTurn === 1, phase, gameMode, skillCosts);
         this.drawPlayerInfo(player2, SCREEN_WIDTH - PANEL_WIDTH + 20, currentTurn === 2, phase, gameMode, skillCosts);
     }
 
-    drawPlayerInfo(player, panelX, isCurrentTurn, phase, gameMode, skillCosts) {
-        const textColor = COLORS.WHITE;
+    // Neon glow overlay for the active player's panel
+    _drawPanelNeonGlow(currentTurn) {
+        const color = currentTurn === 1 ? COLORS.P1 : COLORS.P2;
+        const isP1 = currentTurn === 1;
+        const px = isP1 ? 0 : SCREEN_WIDTH - PANEL_WIDTH;
+        const ctx = this.ctx;
+        const r = parseInt(color.slice(1,3), 16);
+        const g = parseInt(color.slice(3,5), 16);
+        const b = parseInt(color.slice(5,7), 16);
 
-        // Player name (show "COM" for P2 in COM mode)
+        ctx.save();
+
+        // 1. Full panel glow overlay — radial gradient from center
+        const cx = px + PANEL_WIDTH / 2;
+        const cy = SCREEN_HEIGHT / 2;
+        const gradR = ctx.createRadialGradient(cx, cy, 0, cx, cy, PANEL_WIDTH);
+        gradR.addColorStop(0, `rgba(${r},${g},${b},0.12)`);
+        gradR.addColorStop(0.6, `rgba(${r},${g},${b},0.05)`);
+        gradR.addColorStop(1, `rgba(${r},${g},${b},0.02)`);
+        ctx.fillStyle = gradR;
+        ctx.fillRect(px, 0, PANEL_WIDTH, SCREEN_HEIGHT);
+
+        // 2. Neon border — full rectangle around the panel
+        ctx.strokeStyle = color;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 20;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(px + 1, 1, PANEL_WIDTH - 2, SCREEN_HEIGHT - 2);
+
+        // 3. Diffuse outer glow layer
+        ctx.globalAlpha = 0.25;
+        ctx.shadowBlur = 45;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(px, 0, PANEL_WIDTH, SCREEN_HEIGHT);
+
+        ctx.restore();
+    }
+
+    drawPlayerInfo(player, panelX, isCurrentTurn, phase, gameMode, skillCosts) {
+        const playerColor = player.playerNum === 1 ? COLORS.P1 : COLORS.P2;
+
+        // Player name — neon glow style
         const label = (gameMode === 'com' && player.playerNum === 2) ? 'COM' : `Player ${player.playerNum}`;
-        this.ctx.fillStyle = textColor;
+        this.ctx.save();
         this.ctx.font = 'bold 32px Arial';
         this.ctx.textAlign = 'left';
-        this.ctx.fillText(
-            `${label}${isCurrentTurn ? ' \u2605' : ''}`,
-            panelX,
-            70
-        );
+        this.ctx.textBaseline = 'middle';
+        // Neon glow text
+        this.ctx.fillStyle = playerColor;
+        this.ctx.shadowColor = playerColor;
+        this.ctx.shadowBlur = 15;
+        this.ctx.fillText(label, panelX, 55);
+        // White overlay for brightness
+        this.ctx.shadowBlur = 0;
+        this.ctx.fillStyle = COLORS.WHITE;
+        this.ctx.globalAlpha = 0.5;
+        this.ctx.fillText(label, panelX, 55);
+        this.ctx.globalAlpha = 1;
+
+        // Neon underline
+        const textWidth = this.ctx.measureText(label).width;
+        this.ctx.strokeStyle = playerColor;
+        this.ctx.shadowColor = playerColor;
+        this.ctx.shadowBlur = 8;
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.moveTo(panelX, 72);
+        this.ctx.lineTo(panelX + textWidth, 72);
+        this.ctx.stroke();
+        this.ctx.shadowBlur = 0;
+
+        // YOUR TURN indicator
+        if (isCurrentTurn) {
+            this.ctx.fillStyle = playerColor;
+            this.ctx.font = 'bold 18px Arial';
+            this.ctx.shadowColor = playerColor;
+            this.ctx.shadowBlur = 10;
+            this.ctx.fillText('YOUR TURN', panelX, 95);
+            this.ctx.shadowBlur = 0;
+        }
+        this.ctx.textBaseline = 'alphabetic';
+        this.ctx.restore();
 
         // Points bar
         const barX = panelX;
-        const barY = 90;
+        const barY = 125;
         const barWidth = PANEL_WIDTH - 40;
         const barHeight = 28;
         const maxPoints = GAME_SETTINGS.maxPointsDisplay;
@@ -1600,5 +1672,333 @@ class Renderer {
     cleanupFallEffect() {
         this.fallLightning = [];
         this.fallSparks = [];
+    }
+
+    // ============================================================
+    //  開始アニメーション (Start Animation — Grid Build B)
+    // ============================================================
+
+    // イージング関数
+    _easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+    _easeOutBack(t) {
+        const c1 = 1.70158, c3 = c1 + 1;
+        return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+    }
+
+    // タイトルフラッシュ "NINE-NINE"
+    drawStartTitle(alpha, scale) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = NEON.COLOR;
+        ctx.font = `bold ${Math.round(64 * scale)}px 'Segoe UI', Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = NEON.COLOR;
+        ctx.shadowBlur = 30;
+        ctx.fillText('NINE-NINE', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.globalAlpha = alpha * 0.7;
+        ctx.fillText('NINE-NINE', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+        ctx.restore();
+    }
+
+    // パネルスライドイン
+    drawStartPanelsSlide(progress) {
+        const ctx = this.ctx;
+        const eased = this._easeOutCubic(progress);
+        ctx.fillStyle = COLORS.P1_PANEL_BG;
+        ctx.fillRect(-PANEL_WIDTH + PANEL_WIDTH * eased, 0, PANEL_WIDTH, SCREEN_HEIGHT);
+        ctx.fillStyle = COLORS.P2_PANEL_BG;
+        ctx.fillRect(SCREEN_WIDTH - PANEL_WIDTH * eased, 0, PANEL_WIDTH, SCREEN_HEIGHT);
+    }
+
+    // グリッド線を1本ずつ描画（アニメーション用）
+    drawStartGridBuild(progress, board) {
+        const ctx = this.ctx;
+        const totalLines = (BOARD_SIZE + 1) * 2;
+        const linesDrawn = Math.floor(progress * totalLines);
+        const lineFrac = (progress * totalLines) % 1;
+
+        // 描画済みセルのチェッカーボード背景
+        const revealedCols = Math.min(Math.floor(linesDrawn / 2), BOARD_SIZE);
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < revealedCols; c++) {
+                const x = BOARD_OFFSET_X + c * CELL_SIZE;
+                const y = BOARD_OFFSET_Y + r * CELL_SIZE;
+                const isAlt = (r + c) % 2 === 0;
+                ctx.fillStyle = isAlt ? COLORS.CELL_BG : COLORS.CELL_BG_ALT;
+                ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+            }
+        }
+
+        // グリッド線（最新の線は白く光る）
+        for (let i = 0; i < linesDrawn && i < totalLines; i++) {
+            const isVertical = i % 2 === 0;
+            const idx = Math.floor(i / 2);
+            const isLatest = (i === linesDrawn - 1);
+
+            ctx.save();
+            if (isLatest) {
+                ctx.strokeStyle = COLORS.WHITE;
+                ctx.shadowColor = NEON.COLOR;
+                ctx.shadowBlur = 20;
+                ctx.lineWidth = 2;
+                ctx.globalAlpha = 0.5 + 0.5 * (1 - lineFrac);
+            } else {
+                ctx.strokeStyle = COLORS.GRID;
+                ctx.lineWidth = 1;
+            }
+
+            if (isVertical && idx <= BOARD_SIZE) {
+                const x = BOARD_OFFSET_X + idx * CELL_SIZE;
+                ctx.beginPath();
+                ctx.moveTo(x, BOARD_OFFSET_Y);
+                ctx.lineTo(x, BOARD_OFFSET_Y + BOARD_WIDTH);
+                ctx.stroke();
+            } else if (!isVertical && idx <= BOARD_SIZE) {
+                const y = BOARD_OFFSET_Y + idx * CELL_SIZE;
+                ctx.beginPath();
+                ctx.moveTo(BOARD_OFFSET_X, y);
+                ctx.lineTo(BOARD_OFFSET_X + BOARD_WIDTH, y);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+    }
+
+    // 静的なグリッド線のみ描画（タイルなし）
+    drawStartStaticGrid() {
+        const ctx = this.ctx;
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                const x = BOARD_OFFSET_X + c * CELL_SIZE;
+                const y = BOARD_OFFSET_Y + r * CELL_SIZE;
+                const isAlt = (r + c) % 2 === 0;
+                ctx.fillStyle = isAlt ? COLORS.CELL_BG : COLORS.CELL_BG_ALT;
+                ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+            }
+        }
+        ctx.save();
+        ctx.strokeStyle = COLORS.GRID;
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= BOARD_SIZE; i++) {
+            const x = BOARD_OFFSET_X + i * CELL_SIZE;
+            ctx.beginPath(); ctx.moveTo(x, BOARD_OFFSET_Y); ctx.lineTo(x, BOARD_OFFSET_Y + BOARD_WIDTH); ctx.stroke();
+            const y = BOARD_OFFSET_Y + i * CELL_SIZE;
+            ctx.beginPath(); ctx.moveTo(BOARD_OFFSET_X, y); ctx.lineTo(BOARD_OFFSET_X + BOARD_WIDTH, y); ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    // タイルを1つずつ光りながら出現させる
+    drawStartTileReveal(board, tileOrder, progress, now) {
+        const ctx = this.ctx;
+        const totalTiles = tileOrder.length;
+        const tilesRevealed = Math.floor(progress * (totalTiles + 2));
+        const tileFrac = (progress * (totalTiles + 2)) % 1;
+
+        // 全セル背景
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                const x = BOARD_OFFSET_X + c * CELL_SIZE;
+                const y = BOARD_OFFSET_Y + r * CELL_SIZE;
+                const isAlt = (r + c) % 2 === 0;
+                ctx.fillStyle = isAlt ? COLORS.CELL_BG : COLORS.CELL_BG_ALT;
+                ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+            }
+        }
+
+        // 出現済みタイルを描画
+        for (let i = 0; i < Math.min(tilesRevealed, totalTiles); i++) {
+            const tile = tileOrder[i];
+            this.drawCell(tile.row, tile.col, tile.type, now);
+
+            // 最新タイルにフラッシュエフェクト
+            if (i === tilesRevealed - 1 && i < totalTiles) {
+                const x = BOARD_OFFSET_X + tile.col * CELL_SIZE;
+                const y = BOARD_OFFSET_Y + tile.row * CELL_SIZE;
+                ctx.save();
+                ctx.globalAlpha = (1 - tileFrac) * 0.6;
+                ctx.fillStyle = NEON.COLOR;
+                ctx.shadowColor = NEON.COLOR;
+                ctx.shadowBlur = 25;
+                ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+                ctx.restore();
+            }
+        }
+
+        // グリッド線（グロー付き）
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                const x = BOARD_OFFSET_X + c * CELL_SIZE;
+                const y = BOARD_OFFSET_Y + r * CELL_SIZE;
+                this.drawGlowGridLine(x, y, r, c, now);
+            }
+        }
+    }
+
+    // "YOUR TURN" テキストを画面中央に表示
+    drawStartYourTurnText(alpha) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = 'bold 48px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = NEON.COLOR;
+        ctx.shadowBlur = 20;
+        ctx.fillText('YOUR TURN', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+        ctx.restore();
+    }
+
+    // "YOUR TURN" 布フローエフェクト — 選ばれたプレイヤーのパネルへ流れる
+    drawStartClothFlow(t, now, firstTurnPlayer, gameMode) {
+        const ctx = this.ctx;
+        const isP1 = firstTurnPlayer === 1;
+        const color = isP1 ? COLORS.P1 : COLORS.P2;
+        const targetX = isP1 ? 20 + 80 : (SCREEN_WIDTH - PANEL_WIDTH) + 20 + 80;
+        const targetY = 95; // YOUR TURN の定位置 Y
+        const panelEdgeX = isP1 ? PANEL_WIDTH : SCREEN_WIDTH - PANEL_WIDTH;
+        const labelX = isP1 ? 20 : SCREEN_WIDTH - PANEL_WIDTH + 20;
+        const startX = SCREEN_WIDTH / 2;
+        const startY = SCREEN_HEIGHT / 2;
+
+        ctx.save();
+
+        if (t < 0.1) {
+            // 中央で揺れる YOUR TURN
+            const wobble = Math.sin(now * 0.015) * 2;
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = COLORS.WHITE;
+            ctx.font = 'bold 48px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.shadowColor = NEON.COLOR;
+            ctx.shadowBlur = 20;
+            ctx.fillText('YOUR TURN', startX + wobble, startY);
+        }
+        else if (t < 0.7) {
+            const ft = (t - 0.1) / 0.6;
+
+            // リボンストリップ
+            const textWidth = 300;
+            const textHeight = 48;
+            const stripH = textHeight / START_ANIM_CLOTH_STRIPS;
+
+            for (let i = 0; i < START_ANIM_CLOTH_STRIPS; i++) {
+                const stripProgress = i / START_ANIM_CLOTH_STRIPS;
+                const delay = stripProgress * 0.3;
+                const st = Math.max(0, Math.min(1, (ft - delay) / (1 - delay)));
+                const easedSt = this._easeOutCubic(st);
+
+                const wave = Math.sin(now * 0.01 + i * 0.8) * (1 - st) * 15;
+                const sx = startX + (targetX - startX) * easedSt + wave;
+                const sy = startY - textHeight/2 + stripH * i + (targetY - startY) * easedSt;
+
+                const scale = 1 - easedSt * 0.6;
+                const a = st < 0.8 ? 1 : (1 - (st - 0.8) / 0.2);
+                const skewX = (1 - st) * (i / START_ANIM_CLOTH_STRIPS) * 0.4 * (isP1 ? 1 : -1);
+
+                ctx.save();
+                ctx.translate(sx, sy + stripH / 2);
+                ctx.scale(scale, 1);
+                ctx.transform(1, 0, skewX, 1, 0, 0);
+                ctx.globalAlpha = a * (0.7 + 0.3 * (1 - stripProgress));
+                ctx.beginPath();
+                ctx.rect(-textWidth, -stripH / 2, textWidth * 2, stripH);
+                ctx.clip();
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.font = 'bold 48px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = NEON.COLOR;
+                ctx.shadowBlur = 15 * (1 - st);
+                ctx.fillText('YOUR TURN', 0, -(stripH * i - textHeight / 2 + stripH / 2));
+                ctx.restore();
+            }
+
+            // トレイルパーティクル
+            const trailCount = 10;
+            for (let i = 0; i < trailCount; i++) {
+                const tp = (ft + i * 0.04) % 1;
+                const tx = startX + (targetX - startX) * this._easeOutCubic(tp);
+                const ty = startY + (targetY - startY) * this._easeOutCubic(tp);
+                const ta = Math.max(0, 1 - tp) * ft * 0.6;
+                ctx.globalAlpha = ta;
+                ctx.fillStyle = color;
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 8;
+                ctx.beginPath();
+                ctx.arc(tx + (Math.random()-0.5)*10, ty + (Math.random()-0.5)*10, 2 + Math.random()*2, 0, Math.PI*2);
+                ctx.fill();
+            }
+        }
+        else {
+            // パネルが光り、YOUR TURN が定位置に着地
+            const gt = (t - 0.7) / 0.3;
+
+            // パネルエッジグロー
+            const panelGlowAlpha = (1 - gt) * 0.6;
+            ctx.globalAlpha = panelGlowAlpha;
+            ctx.strokeStyle = color;
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 30;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(panelEdgeX, 0);
+            ctx.lineTo(panelEdgeX, SCREEN_HEIGHT);
+            ctx.stroke();
+
+            // 横方向グローバー
+            const barWidth = PANEL_WIDTH * this._easeOutCubic(gt);
+            const barAlpha = (1 - gt * 0.5) * 0.3;
+            const r = parseInt(color.slice(1,3), 16);
+            const g = parseInt(color.slice(3,5), 16);
+            const b = parseInt(color.slice(5,7), 16);
+            const barGrad = ctx.createLinearGradient(0, targetY - 25, 0, targetY + 25);
+            barGrad.addColorStop(0, 'rgba(0,0,0,0)');
+            barGrad.addColorStop(0.5, `rgba(${r},${g},${b},${barAlpha})`);
+            barGrad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = barGrad;
+            if (isP1) {
+                ctx.fillRect(0, targetY - 25, barWidth, 50);
+            } else {
+                ctx.fillRect(SCREEN_WIDTH - barWidth, targetY - 25, barWidth, 50);
+            }
+
+            // YOUR TURN テキストが定位置にフェードイン
+            if (gt > 0.3) {
+                const subAlpha = this._easeOutCubic((gt - 0.3) / 0.7);
+                ctx.globalAlpha = subAlpha;
+                ctx.fillStyle = color;
+                ctx.font = 'bold 18px Arial';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = color;
+                ctx.shadowBlur = 10;
+                ctx.fillText('YOUR TURN', labelX, targetY);
+            }
+        }
+
+        ctx.restore();
+    }
+
+    // パネル背景のみ描画（プレイヤー情報なし、ネオングローなし）
+    drawStartPanelsBg() {
+        this.ctx.fillStyle = COLORS.P1_PANEL_BG;
+        this.ctx.fillRect(0, 0, PANEL_WIDTH, SCREEN_HEIGHT);
+        this.ctx.fillStyle = COLORS.P2_PANEL_BG;
+        this.ctx.fillRect(SCREEN_WIDTH - PANEL_WIDTH, 0, PANEL_WIDTH, SCREEN_HEIGHT);
+    }
+
+    // パネル背景 + プレイヤーラベル（YOUR TURN なし）
+    drawStartPanelsWithLabels(player1, player2, gameMode) {
+        this.drawStartPanelsBg();
+        this.drawPlayerInfo(player1, 20, false, PHASES.ROLL, gameMode);
+        this.drawPlayerInfo(player2, SCREEN_WIDTH - PANEL_WIDTH + 20, false, PHASES.ROLL, gameMode);
     }
 }

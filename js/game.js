@@ -47,6 +47,10 @@ class Game {
         // Mouse tracking (for hover-reveal UI)
         this._mouseX = 0;
         this._mouseY = 0;
+
+        // Start animation state
+        this.startAnimStart = 0;
+        this.startAnimTileRevealOrder = [];
     }
 
     generateDiceValue() {
@@ -113,11 +117,10 @@ class Game {
 
         if (this.player1.skillConfirmed && this.player2.skillConfirmed) {
             this.setupInitialBoard();
-            this.phase = PHASES.ROLL;
-            // If COM goes first, trigger COM turn
-            if (this.gameMode === 'com' && this.currentTurn === 2) {
-                comPlayer.startTurn();
-            }
+            // 開始アニメーションフェーズへ遷移
+            this.phase = PHASES.START_ANIM;
+            this.startAnimStart = performance.now();
+            this.startAnimTileRevealOrder = this._buildTileRevealOrder();
         }
     }
 
@@ -136,6 +139,36 @@ class Game {
         }
         this.currentTurn = Math.random() < 0.5 ? 1 : 2;
         if (typeof gameLog !== 'undefined') gameLog.recordSetup(this);
+    }
+
+    // 開始アニメーション用: 盤面上のタイル（石・ファウンテン）の出現順序をランダムに生成
+    _buildTileRevealOrder() {
+        const order = [];
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                const tile = this.board.getTile(r, c);
+                if (tile !== MARKERS.EMPTY) {
+                    order.push({ row: r, col: c, type: tile });
+                }
+            }
+        }
+        // Fisher-Yates shuffle
+        for (let i = order.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [order[i], order[j]] = [order[j], order[i]];
+        }
+        return order;
+    }
+
+    // 開始アニメーション完了 → ゲーム開始
+    finishStartAnim() {
+        this.phase = PHASES.ROLL;
+        // COM先攻の場合、COMターンを開始
+        if (this.gameMode === 'com' && this.currentTurn === 2) {
+            if (typeof comPlayer !== 'undefined' && comPlayer) {
+                comPlayer.startTurn();
+            }
+        }
     }
 
     findValidFountainPosition(playerNum) {
@@ -1261,6 +1294,7 @@ class Game {
     handleClick(x, y) {
         // Block input during animation
         if (this.phase === PHASES.ANIMATING) return false;
+        if (this.phase === PHASES.START_ANIM) return false;
 
         // Confirm dialog takes priority over everything
         if (this.showConfirmDialog) {
@@ -1439,35 +1473,35 @@ class Game {
 
         if (isDominated) {
             // Domination: only Roll Dice is available
-            if (x >= panelX && x <= panelX + 200 && y >= 350 && y <= 400) {
+            if (x >= panelX && x <= panelX + 200 && y >= 385 && y <= 435) {
                 this.rollDice();
                 return true;
             }
         } else if (this.stockedThisTurn) {
             // Stock直後はSelectのみ
-            if (x >= panelX && x <= panelX + 200 && y >= 350 && y <= 400) {
+            if (x >= panelX && x <= panelX + 200 && y >= 385 && y <= 435) {
                 this.rollDice();
                 return true;
             }
         } else if (currentPlayer.hasStock()) {
-            // Roll Dice button (Y: 350-400)
-            if (x >= panelX && x <= panelX + 200 && y >= 350 && y <= 400) {
+            // Roll Dice button (Y: 385-435)
+            if (x >= panelX && x <= panelX + 200 && y >= 385 && y <= 435) {
                 this.rollDice();
                 return true;
             }
-            // Use Stock button (Y: 408-458)
-            if (x >= panelX && x <= panelX + 200 && y >= 408 && y <= 458) {
+            // Use Stock button (Y: 443-493)
+            if (x >= panelX && x <= panelX + 200 && y >= 443 && y <= 493) {
                 this.useStockedDice();
                 return true;
             }
         } else {
-            // Roll Dice button (Y: 350-400)
-            if (x >= panelX && x <= panelX + 200 && y >= 350 && y <= 400) {
+            // Roll Dice button (Y: 385-435)
+            if (x >= panelX && x <= panelX + 200 && y >= 385 && y <= 435) {
                 this.rollDice();
                 return true;
             }
-            // Stock button (Y: 408-458)
-            if (x >= panelX && x <= panelX + 200 && y >= 408 && y <= 458) {
+            // Stock button (Y: 443-493)
+            if (x >= panelX && x <= panelX + 200 && y >= 443 && y <= 493) {
                 if (!currentPlayer.canAfford(SKILL_COSTS.stock)) return false;
                 this.stockCurrentDice();
                 return true;
@@ -1529,18 +1563,18 @@ class Game {
     handlePlacePhaseClick(x, y) {
         const panelX = this.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
 
-        // Stone button (Y: 330-380)
-        if (x >= panelX && x <= panelX + 200 && y >= 330 && y <= 380) {
+        // Stone button (Y: 365-415)
+        if (x >= panelX && x <= panelX + 200 && y >= 365 && y <= 415) {
             this.setPlacementType('stone');
             return true;
         }
-        // Skill button (Y: 388-438)
-        if (x >= panelX && x <= panelX + 200 && y >= 388 && y <= 438) {
+        // Skill button (Y: 423-473)
+        if (x >= panelX && x <= panelX + 200 && y >= 423 && y <= 473) {
             this.activateSkill();
             return true;
         }
-        // Drill button (Y: 446-496)
-        if (x >= panelX && x <= panelX + 200 && y >= 446 && y <= 496) {
+        // Drill button (Y: 481-531)
+        if (x >= panelX && x <= panelX + 200 && y >= 481 && y <= 531) {
             if (this.getCurrentPlayer().isDominated()) return false;
             this.setPlacementType('drill');
             return true;
@@ -1563,20 +1597,20 @@ class Game {
     handleDrillPhaseClick(x, y) {
         const panelX = this.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
 
-        // Stone button (Y: 330-380)
-        if (x >= panelX && x <= panelX + 200 && y >= 330 && y <= 380) {
+        // Stone button (Y: 365-415)
+        if (x >= panelX && x <= panelX + 200 && y >= 365 && y <= 415) {
             this.drillForSurvival = false;
             this.setPlacementType('stone');
             return true;
         }
-        // Skill button (Y: 388-438)
-        if (x >= panelX && x <= panelX + 200 && y >= 388 && y <= 438) {
+        // Skill button (Y: 423-473)
+        if (x >= panelX && x <= panelX + 200 && y >= 423 && y <= 473) {
             this.drillForSurvival = false;
             this.activateSkill();
             return true;
         }
-        // Drill button (Y: 446-496) — already in drill mode
-        if (x >= panelX && x <= panelX + 200 && y >= 446 && y <= 496) {
+        // Drill button (Y: 481-531) — already in drill mode
+        if (x >= panelX && x <= panelX + 200 && y >= 481 && y <= 531) {
             return true;
         }
 
@@ -1597,8 +1631,8 @@ class Game {
     handleSkillTargetClick(x, y) {
         const panelX = this.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
 
-        // Stone button (Y: 330-380) — cancel skill target
-        if (x >= panelX && x <= panelX + 200 && y >= 330 && y <= 380) {
+        // Stone button (Y: 365-415) — cancel skill target
+        if (x >= panelX && x <= panelX + 200 && y >= 365 && y <= 415) {
             this.activeSkillType = null;
             this.skillTargetTiles = [];
             this.phase = PHASES.PLACE;
@@ -1606,8 +1640,8 @@ class Game {
             this.findPlaceableTiles();
             return true;
         }
-        // Skill button (Y: 388-438) — cancel skill target, re-activate skill
-        if (x >= panelX && x <= panelX + 200 && y >= 388 && y <= 438) {
+        // Skill button (Y: 423-473) — cancel skill target, re-activate skill
+        if (x >= panelX && x <= panelX + 200 && y >= 423 && y <= 473) {
             this.activeSkillType = null;
             this.skillTargetTiles = [];
             this.phase = PHASES.PLACE;
@@ -1616,8 +1650,8 @@ class Game {
             this.activateSkill();
             return true;
         }
-        // Drill button (Y: 446-496) — cancel skill target, switch to drill
-        if (x >= panelX && x <= panelX + 200 && y >= 446 && y <= 496) {
+        // Drill button (Y: 481-531) — cancel skill target, switch to drill
+        if (x >= panelX && x <= panelX + 200 && y >= 481 && y <= 531) {
             if (this.getCurrentPlayer().isDominated()) return false;
             this.activeSkillType = null;
             this.skillTargetTiles = [];
@@ -1789,22 +1823,22 @@ class Game {
         if (snap && snap.phase === 'moved') {
             const panelX = this.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
 
-            // Stone button (Y: 330-380)
-            if (x >= panelX && x <= panelX + 200 && y >= 330 && y <= 380) {
+            // Stone button (Y: 365-415)
+            if (x >= panelX && x <= panelX + 200 && y >= 365 && y <= 415) {
                 this.replayActionMode = 'stone';
                 this.clearHighlights();
                 this.placementType = 'stone';
                 this.findPlaceableTiles();
                 return true;
             }
-            // Skill button (Y: 388-438)
-            if (x >= panelX && x <= panelX + 200 && y >= 388 && y <= 438) {
+            // Skill button (Y: 423-473)
+            if (x >= panelX && x <= panelX + 200 && y >= 423 && y <= 473) {
                 this.replayActionMode = 'skill';
                 this.computeSkillPreview();
                 return true;
             }
-            // Drill button (Y: 446-496)
-            if (x >= panelX && x <= panelX + 200 && y >= 446 && y <= 496) {
+            // Drill button (Y: 481-531)
+            if (x >= panelX && x <= panelX + 200 && y >= 481 && y <= 531) {
                 this.replayActionMode = 'drill';
                 this.clearHighlights();
                 this.findDrillTargets();

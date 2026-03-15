@@ -8,7 +8,10 @@ const ANIM = {
     TRAIL_LIFETIME: 400,
     TRAIL_SPAWN_INTERVAL: 40,
     PULSE_SPEED: 2000,
-    GRID_PULSE_SPEED: 4000
+    GRID_PULSE_SPEED: 4000,
+    DICE_REVEAL_DURATION: 700,
+    DICE_TRANSITION_DURATION: 350,
+    DICE_STOCK_DURATION: 400
 };
 
 // Easing function: smooth acceleration/deceleration
@@ -24,6 +27,8 @@ class AnimationManager {
         this.playerAnims = {};
         this.ripples = [];
         this.trails = [];
+        this.diceReveal = {};
+        this.diceTransition = {};
         this.globalTime = 0;
     }
 
@@ -73,6 +78,24 @@ class AnimationManager {
         // Prune expired trails
         this.trails = this.trails.filter(t =>
             currentTime - t.startTime < ANIM.TRAIL_LIFETIME);
+
+        // Update dice reveal animations
+        for (const key in this.diceReveal) {
+            const reveal = this.diceReveal[key];
+            if (!reveal.active) continue;
+            if (currentTime - reveal.startTime >= reveal.duration) {
+                reveal.active = false;
+            }
+        }
+
+        // Update dice transition animations
+        for (const key in this.diceTransition) {
+            const trans = this.diceTransition[key];
+            if (!trans.active) continue;
+            if (currentTime - trans.startTime >= trans.duration) {
+                trans.active = false;
+            }
+        }
     }
 
     getDisplayPosition(playerNum, player) {
@@ -143,9 +166,57 @@ class AnimationManager {
         }
     }
 
+    // --- Dice Transition (Queue Slide + Stock Arc) ---
+
+    startDiceTransition(playerNum, type, data) {
+        const duration = type === 'stock'
+            ? ANIM.DICE_STOCK_DURATION
+            : ANIM.DICE_TRANSITION_DURATION;
+        this.diceTransition[playerNum] = {
+            active: true,
+            type: type, // 'roll', 'stock', 'useStock'
+            startTime: performance.now(),
+            duration: duration,
+            ...data // oldQueue, newQueue, stockValue, oldStock
+        };
+    }
+
+    getDiceTransitionState(playerNum) {
+        const trans = this.diceTransition[playerNum];
+        if (!trans || !trans.active) return null;
+        const elapsed = this.globalTime - trans.startTime;
+        const t = Math.min(elapsed / trans.duration, 1.0);
+        return { ...trans, t: t };
+    }
+
+    // --- Dice Reveal (Slot Reel) ---
+
+    startDiceReveal(playerNum, finalValue) {
+        this.diceReveal[playerNum] = {
+            active: true,
+            finalValue: finalValue,
+            startTime: performance.now(),
+            duration: ANIM.DICE_REVEAL_DURATION
+        };
+    }
+
+    getDiceRevealState(playerNum) {
+        const reveal = this.diceReveal[playerNum];
+        if (!reveal || !reveal.active) return null;
+        const elapsed = this.globalTime - reveal.startTime;
+        const t = Math.min(elapsed / reveal.duration, 1.0);
+        return {
+            t: t,
+            finalValue: reveal.finalValue,
+            active: true
+        };
+    }
+
     reset() {
         this.playerAnims = {};
         this.ripples = [];
         this.trails = [];
+        this.diceReveal = {};
+        this.diceTransition = {};
     }
 }

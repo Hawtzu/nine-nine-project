@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Hover Preview Design Test</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; color: #ccc; font-family: 'Segoe UI', Tahoma, sans-serif; padding: 20px; }
+h1 { color: #00E5FF; font-size: 22px; margin-bottom: 8px; }
+.desc { color: #888; font-size: 13px; margin-bottom: 16px; }
+.container { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+canvas { border: 1px solid #333; border-radius: 4px; cursor: default; }
+.design-selector { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.design-btn {
+    padding: 8px 14px; font-size: 12px; cursor: pointer;
+    border: 1px solid #444; background: #1a1a3e; color: #888;
+    border-radius: 4px; transition: all 0.15s;
+}
+.design-btn:hover { border-color: #00E5FF; color: #ccc; }
+.design-btn.active { border-color: #00E5FF; color: #00E5FF; background: #1a2a3e; }
+.label { color: #666; font-size: 12px; }
+.info { background: #0f0f23; border: 1px solid #333; padding: 8px 16px; border-radius: 4px; font-size: 12px; color: #888; max-width: 700px; text-align: center; }
+</style>
+</head>
+<body>
+<h1>Hover Preview Design Comparison</h1>
+<p class="desc">Roll Dice / Stock / Use Stock ボタンにマウスを合わせてプレビューを確認</p>
+<div class="container">
+    <canvas id="cv" width="700" height="340"></canvas>
+    <div class="label">Preview Design:</div>
+    <div class="design-selector">
+        <button class="design-btn active" onclick="setDesign('ghost')" id="d-ghost">A: Ghost Move</button>
+        <button class="design-btn" onclick="setDesign('pulse')" id="d-pulse">B: Pulse Highlight</button>
+        <button class="design-btn" onclick="setDesign('nudge')" id="d-nudge">C: Slide Nudge</button>
+        <button class="design-btn" onclick="setDesign('label')" id="d-label">D: Label Change</button>
+        <button class="design-btn" onclick="setDesign('conveyor')" id="d-conveyor">E: Conveyor Line</button>
+    </div>
+    <div class="info" id="info">A: Ghost — 半透明のサイコロが移動先に表示される</div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+
+const SLOTS = {
+    STOCK:   { x: 100, y: 160, label: 'STOCK',   labelY: 80 },
+    CURRENT: { x: 270, y: 160, label: 'CURRENT', labelY: 80 },
+    NEXT1:   { x: 420, y: 160, label: 'NEXT',    labelY: 80 },
+    NEXT2:   { x: 540, y: 160, label: '',         labelY: 80 },
+    SPAWN:   { x: 660, y: 160 }
+};
+
+// Button areas
+const BUTTONS = {
+    ROLL:  { x: 180, y: 260, w: 160, h: 40, label: 'Roll Dice', color: '#006400', hoverColor: '#007700' },
+    STOCK: { x: 370, y: 260, w: 160, h: 40, label: 'Stock (-20pt)', color: '#665500', hoverColor: '#776600' },
+    USE:   { x: 370, y: 260, w: 160, h: 40, label: 'Use Stock', color: '#8B6914', hoverColor: '#A07B18' }
+};
+
+let diceQueue = [2, 1, 3];
+let stockedDice = null;
+let hoverBtn = null; // 'roll', 'stock', 'useStock'
+let previewDesign = 'ghost';
+let mouseX = 0, mouseY = 0;
+
+const descriptions = {
+    ghost: 'A: Ghost — 半透明のサイコロが移動先に表示される',
+    pulse: 'B: Pulse — 動くサイコロの枠がシアンで点滅、移動先にも薄い枠',
+    nudge: 'C: Nudge — サイコロが移動先方向に少しだけずれる',
+    label: 'D: Label — ラベルが「→ CURRENT」のように変化して対応を示す',
+    conveyor: 'E: Conveyor — サイコロの下にベルトコンベアの流れるライン'
+};
+
+function setDesign(name) {
+    previewDesign = name;
+    document.querySelectorAll('.design-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('d-' + name).classList.add('active');
+    document.getElementById('info').textContent = descriptions[name];
+}
+
+function easeInOutCubic(t) {
+    return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
+}
+
+// --- Drawing helpers ---
+
+function drawDice(cx, cy, value, size, opts = {}) {
+    const alpha = opts.alpha !== undefined ? opts.alpha : 1.0;
+    const borderColor = opts.borderColor || '#444466';
+    const glow = opts.glow || false;
+    const x = cx - size/2, y = cy - size/2;
+    const r = 6;
+    const dotR = size * 0.1;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    ctx.fillStyle = '#1A1A2E';
+    ctx.beginPath();
+    ctx.moveTo(x+r, y); ctx.lineTo(x+size-r, y);
+    ctx.arcTo(x+size, y, x+size, y+r, r);
+    ctx.lineTo(x+size, y+size-r);
+    ctx.arcTo(x+size, y+size, x+size-r, y+size, r);
+    ctx.lineTo(x+r, y+size);
+    ctx.arcTo(x, y+size, x, y+size-r, r);
+    ctx.lineTo(x, y+r);
+    ctx.arcTo(x, y, x+r, y, r);
+    ctx.closePath();
+    ctx.fill();
+
+    if (glow) { ctx.shadowColor = borderColor; ctx.shadowBlur = 10; }
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = glow ? 2 : 1;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = opts.dotColor || '#CCCCDD';
+    const off = size * 0.26;
+    if (value === 0) {
+        ctx.font = `bold ${size * 0.55}px Arial`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#666688';
+        ctx.fillText('?', cx, cy + 1);
+    } else if (value === 1) {
+        drawDot(cx, cy, dotR);
+    } else if (value === 2) {
+        drawDot(cx-off, cy-off, dotR);
+        drawDot(cx+off, cy+off, dotR);
+    } else if (value === 3) {
+        drawDot(cx-off, cy-off, dotR);
+        drawDot(cx, cy, dotR);
+        drawDot(cx+off, cy+off, dotR);
+    }
+    ctx.restore();
+}
+
+function drawDot(x, y, r) {
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+}
+
+function drawRoundedRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x+r, y); ctx.lineTo(x+w-r, y);
+    ctx.arcTo(x+w, y, x+w, y+r, r);
+    ctx.lineTo(x+w, y+h-r);
+    ctx.arcTo(x+w, y+h, x+w-r, y+h, r);
+    ctx.lineTo(x+r, y+h);
+    ctx.arcTo(x, y+h, x, y+h-r, r);
+    ctx.lineTo(x, y+r);
+    ctx.arcTo(x, y, x+r, y, r);
+    ctx.closePath();
+}
+
+function drawButton(btn, hover) {
+    ctx.save();
+    ctx.fillStyle = hover ? btn.hoverColor : btn.color;
+    ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
+    ctx.strokeStyle = hover ? '#00E5FF' : '#666688';
+    ctx.lineWidth = hover ? 2 : 1;
+    ctx.strokeRect(btn.x, btn.y, btn.w, btn.h);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(btn.label, btn.x + btn.w/2, btn.y + btn.h/2);
+    ctx.restore();
+}
+
+// --- Preview renderers ---
+
+function drawPreviewGhost(hoverType, now) {
+    const alpha = 0.25;
+    if (hoverType === 'roll' || hoverType === 'stock') {
+        // Ghosts at destination positions
+        drawDice(SLOTS.CURRENT.x, SLOTS.CURRENT.y, diceQueue[1], 60, { alpha, borderColor: '#00E5FF', glow: true });
+        drawDice(SLOTS.NEXT1.x, SLOTS.NEXT1.y, diceQueue[2], 60, { alpha, borderColor: '#00E5FF', glow: true });
+        drawDice(SLOTS.NEXT2.x, SLOTS.NEXT2.y, 0, 50, { alpha: alpha * 0.7, borderColor: '#00E5FF', glow: true });
+        if (hoverType === 'stock') {
+            // Ghost at stock position
+            drawDice(SLOTS.STOCK.x, SLOTS.STOCK.y, diceQueue[0], 60, { alpha, borderColor: '#FFD700', glow: true });
+        }
+        // Fade X on current
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        ctx.strokeStyle = '#FF4444'; ctx.lineWidth = 3;
+        const cx = SLOTS.CURRENT.x, cy = SLOTS.CURRENT.y;
+        ctx.beginPath();
+        ctx.moveTo(cx-15, cy-15); ctx.lineTo(cx+15, cy+15);
+        ctx.moveTo(cx+15, cy-15); ctx.lineTo(cx-15, cy+15);
+        ctx.stroke();
+        ctx.restore();
+    } else if (hoverType === 'useStock') {
+        // Ghost of stock at current position
+        drawDice(SLOTS.CURRENT.x, SLOTS.CURRENT.y, stockedDice, 60, { alpha, borderColor: '#FF8C00', glow: true });
+        // Fade X on stock
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        ctx.strokeStyle = '#FF4444'; ctx.lineWidth = 3;
+        const sx = SLOTS.STOCK.x, sy = SLOTS.STOCK.y;
+        ctx.beginPath();
+        ctx.moveTo(sx-15, sy-15); ctx.lineTo(sx+15, sy+15);
+        ctx.moveTo(sx+15, sy-15); ctx.lineTo(sx-15, sy+15);
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
+function drawPreviewPulse(hoverType, now) {
+    const pulse = (Math.sin(now / 200) + 1) / 2; // 0-1 pulsing
+    const alpha = 0.2 + pulse * 0.4;
+
+    if (hoverType === 'roll' || hoverType === 'stock') {
+        // Pulse borders on dice that will move
+        for (const key of ['CURRENT', 'NEXT1', 'NEXT2']) {
+            const s = SLOTS[key];
+            const sz = key === 'NEXT2' ? 50 : 60;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.shadowColor = '#00E5FF';
+            ctx.shadowBlur = 8 + pulse * 8;
+            ctx.strokeStyle = '#00E5FF';
+            ctx.lineWidth = 2;
+            drawRoundedRect(s.x - sz/2, s.y - sz/2, sz, sz, 6);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+        // Pulse on destination for new dice
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.5;
+        ctx.strokeStyle = '#00E5FF';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        drawRoundedRect(SLOTS.NEXT2.x - 25, SLOTS.NEXT2.y - 25, 50, 50, 6);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        if (hoverType === 'stock') {
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.shadowColor = '#FFD700';
+            ctx.shadowBlur = 8 + pulse * 8;
+            ctx.strokeStyle = '#FFD700';
+            ctx.lineWidth = 2;
+            drawRoundedRect(SLOTS.STOCK.x - 30, SLOTS.STOCK.y - 30, 60, 60, 6);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+    } else if (hoverType === 'useStock') {
+        // Pulse on stock and current
+        for (const [key, color] of [['STOCK', '#FF8C00'], ['CURRENT', '#FF8C00']]) {
+            const s = SLOTS[key];
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 8 + pulse * 8;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            drawRoundedRect(s.x - 30, s.y - 30, 60, 60, 6);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+    }
+}
+
+function drawPreviewNudge(hoverType, now) {
+    const nudge = 10; // pixels to nudge
+
+    if (hoverType === 'roll' || hoverType === 'stock') {
+        // Nudge each dice slightly toward its destination
+        // Draw nudged versions on top (semi-transparent)
+        ctx.save();
+        ctx.globalAlpha = 0.5;
+        // CURRENT nudges left (fading away)
+        drawDice(SLOTS.CURRENT.x - nudge, SLOTS.CURRENT.y, diceQueue[0], 60, { alpha: 0.3 });
+        // NEXT1 nudges left toward CURRENT
+        drawDice(SLOTS.NEXT1.x - nudge, SLOTS.NEXT1.y, diceQueue[1], 60, { alpha: 0.5 });
+        // NEXT2 nudges left toward NEXT1
+        drawDice(SLOTS.NEXT2.x - nudge, SLOTS.NEXT2.y, diceQueue[2], 50, { alpha: 0.4 });
+        ctx.restore();
+
+        if (hoverType === 'stock') {
+            // CURRENT also nudges down toward stock
+            ctx.save();
+            drawDice(SLOTS.CURRENT.x, SLOTS.CURRENT.y + nudge, diceQueue[0], 60, { alpha: 0.3, borderColor: '#FFD700' });
+            ctx.restore();
+        }
+    } else if (hoverType === 'useStock') {
+        // Stock nudges up toward current
+        ctx.save();
+        drawDice(SLOTS.STOCK.x, SLOTS.STOCK.y - nudge, stockedDice, 60, { alpha: 0.4, borderColor: '#FF8C00' });
+        ctx.restore();
+    }
+}
+
+function drawPreviewLabel(hoverType, now) {
+    ctx.save();
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'center';
+
+    if (hoverType === 'roll' || hoverType === 'stock') {
+        // Change labels to show flow
+        ctx.fillStyle = '#FF4444';
+        ctx.globalAlpha = 0.7;
+        ctx.fillText('✕ USED', SLOTS.CURRENT.x, SLOTS.CURRENT.y + 45);
+
+        ctx.fillStyle = '#00E5FF';
+        ctx.fillText('→ CURRENT', SLOTS.NEXT1.x, SLOTS.NEXT1.y + 45);
+        ctx.fillText('→ NEXT', SLOTS.NEXT2.x, SLOTS.NEXT2.y + 40);
+
+        ctx.fillStyle = '#888899';
+        ctx.globalAlpha = 0.5;
+        ctx.fillText('NEW ?', SLOTS.SPAWN.x - 20, SLOTS.SPAWN.y + 40);
+
+        if (hoverType === 'stock') {
+            ctx.fillStyle = '#FFD700';
+            ctx.globalAlpha = 0.7;
+            ctx.fillText('→ STOCK', SLOTS.CURRENT.x, SLOTS.CURRENT.y - 45);
+        }
+    } else if (hoverType === 'useStock') {
+        ctx.fillStyle = '#FF8C00';
+        ctx.globalAlpha = 0.7;
+        ctx.fillText('→ CURRENT', SLOTS.STOCK.x, SLOTS.STOCK.y + 45);
+
+        ctx.fillStyle = '#FF4444';
+        ctx.fillText('✕ REPLACED', SLOTS.CURRENT.x, SLOTS.CURRENT.y + 45);
+    }
+    ctx.restore();
+}
+
+function drawPreviewConveyor(hoverType, now) {
+    if (hoverType === 'roll' || hoverType === 'stock') {
+        // Animated conveyor line under the dice queue
+        const lineY = SLOTS.CURRENT.y + 40;
+        const startX = SLOTS.CURRENT.x - 35;
+        const endX = SLOTS.SPAWN.x;
+        const speed = now / 300;
+
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        ctx.strokeStyle = '#00E5FF';
+        ctx.lineWidth = 2;
+
+        // Main line
+        ctx.beginPath();
+        ctx.moveTo(startX, lineY);
+        ctx.lineTo(endX, lineY);
+        ctx.stroke();
+
+        // Moving chevrons (< < < direction)
+        ctx.globalAlpha = 0.5;
+        ctx.fillStyle = '#00E5FF';
+        const chevronSpacing = 30;
+        const chevronCount = Math.ceil((endX - startX) / chevronSpacing) + 2;
+        const offset = (speed * chevronSpacing) % chevronSpacing;
+
+        for (let i = 0; i < chevronCount; i++) {
+            const cx = endX - i * chevronSpacing - offset;
+            if (cx < startX - 10 || cx > endX + 10) continue;
+            // Draw < shaped chevron
+            ctx.beginPath();
+            ctx.moveTo(cx + 5, lineY - 5);
+            ctx.lineTo(cx, lineY);
+            ctx.lineTo(cx + 5, lineY + 5);
+            ctx.stroke();
+        }
+
+        // Fade-out arrow at left end
+        ctx.globalAlpha = 0.3;
+        ctx.beginPath();
+        ctx.moveTo(startX, lineY);
+        ctx.lineTo(startX - 15, lineY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(startX - 15, lineY);
+        ctx.lineTo(startX - 10, lineY - 4);
+        ctx.lineTo(startX - 10, lineY + 4);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+
+        if (hoverType === 'stock') {
+            // Vertical conveyor for stock
+            const sLineX = SLOTS.CURRENT.x - 40;
+            const sStartY = SLOTS.CURRENT.y - 35;
+            const sEndY = SLOTS.STOCK.y + 35;
+            ctx.save();
+            ctx.globalAlpha = 0.35;
+            ctx.strokeStyle = '#FFD700';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(sLineX, sStartY);
+            ctx.lineTo(sLineX, sEndY);
+            ctx.stroke();
+
+            // Down chevrons
+            const vOffset = (speed * 20) % 20;
+            for (let i = 0; i < 8; i++) {
+                const cy = sStartY + i * 20 + vOffset;
+                if (cy > sEndY) continue;
+                ctx.beginPath();
+                ctx.moveTo(sLineX - 4, cy);
+                ctx.lineTo(sLineX, cy + 5);
+                ctx.lineTo(sLineX + 4, cy);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+    } else if (hoverType === 'useStock') {
+        // Vertical conveyor from stock to current (upward)
+        const sLineX = SLOTS.STOCK.x + 40;
+        const sStartY = SLOTS.STOCK.y - 35;
+        const sEndY = SLOTS.CURRENT.y + 35;
+        const speed = now / 300;
+
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        ctx.strokeStyle = '#FF8C00';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(sLineX, sEndY);
+        ctx.lineTo(sLineX, sStartY);
+        ctx.stroke();
+
+        // Up chevrons
+        const vOffset = (speed * 20) % 20;
+        for (let i = 0; i < 8; i++) {
+            const cy = sEndY - i * 20 - vOffset;
+            if (cy < sStartY) continue;
+            ctx.beginPath();
+            ctx.moveTo(sLineX - 4, cy);
+            ctx.lineTo(sLineX, cy - 5);
+            ctx.lineTo(sLineX + 4, cy);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+}
+
+// --- Main draw ---
+
+function draw(now) {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    // Detect hover
+    hoverBtn = null;
+    const rollBtn = BUTTONS.ROLL;
+    if (mouseX >= rollBtn.x && mouseX <= rollBtn.x + rollBtn.w &&
+        mouseY >= rollBtn.y && mouseY <= rollBtn.y + rollBtn.h) {
+        hoverBtn = 'roll';
+    }
+    const secBtn = stockedDice !== null ? BUTTONS.USE : BUTTONS.STOCK;
+    if (mouseX >= secBtn.x && mouseX <= secBtn.x + secBtn.w &&
+        mouseY >= secBtn.y && mouseY <= secBtn.y + secBtn.h) {
+        hoverBtn = stockedDice !== null ? 'useStock' : 'stock';
+    }
+
+    // Labels
+    ctx.font = 'bold 13px Arial';
+    ctx.textAlign = 'center';
+    for (const key of ['STOCK', 'CURRENT', 'NEXT1']) {
+        const s = SLOTS[key];
+        if (!s.label) continue;
+        ctx.fillStyle = key === 'STOCK' ? '#FFD700' : '#888899';
+        ctx.fillText(s.label, s.x, s.labelY);
+    }
+    // NEXT label for NEXT1 position
+    ctx.fillStyle = '#888899';
+    ctx.fillText('NEXT', SLOTS.NEXT1.x, SLOTS.NEXT1.labelY);
+
+    // Draw static dice
+    drawDice(SLOTS.CURRENT.x, SLOTS.CURRENT.y, diceQueue[0], 60);
+    drawDice(SLOTS.NEXT1.x, SLOTS.NEXT1.y, diceQueue[1], 60);
+    drawDice(SLOTS.NEXT2.x, SLOTS.NEXT2.y, diceQueue[2], 50, { alpha: 0.6 });
+
+    if (stockedDice !== null) {
+        drawDice(SLOTS.STOCK.x, SLOTS.STOCK.y, stockedDice, 60, { borderColor: '#FFD700', glow: true });
+    } else {
+        ctx.save();
+        ctx.strokeStyle = '#333355'; ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(SLOTS.STOCK.x - 30, SLOTS.STOCK.y - 30, 60, 60);
+        ctx.setLineDash([]);
+        ctx.restore();
+    }
+
+    // Draw hover preview
+    if (hoverBtn) {
+        switch (previewDesign) {
+            case 'ghost': drawPreviewGhost(hoverBtn, now); break;
+            case 'pulse': drawPreviewPulse(hoverBtn, now); break;
+            case 'nudge': drawPreviewNudge(hoverBtn, now); break;
+            case 'label': drawPreviewLabel(hoverBtn, now); break;
+            case 'conveyor': drawPreviewConveyor(hoverBtn, now); break;
+        }
+    }
+
+    // Draw buttons
+    drawButton(BUTTONS.ROLL, hoverBtn === 'roll');
+    const secBtnDraw = stockedDice !== null ? BUTTONS.USE : BUTTONS.STOCK;
+    drawButton(secBtnDraw, hoverBtn === 'stock' || hoverBtn === 'useStock');
+
+    // Toggle stock button
+    ctx.save();
+    ctx.font = '11px Arial'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#555';
+    ctx.fillText('(Click to toggle stock state)', 350, 320);
+    ctx.restore();
+
+    requestAnimationFrame(draw);
+}
+
+// Mouse tracking
+cv.addEventListener('mousemove', (e) => {
+    const rect = cv.getBoundingClientRect();
+    mouseX = e.clientX - rect.left;
+    mouseY = e.clientY - rect.top;
+});
+
+cv.addEventListener('mouseleave', () => {
+    mouseX = -1; mouseY = -1;
+});
+
+// Click to toggle stock state for testing
+cv.addEventListener('click', (e) => {
+    const rect = cv.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    // Click anywhere in lower area toggles stock
+    if (y > 250) {
+        if (stockedDice === null) {
+            stockedDice = 2;
+        } else {
+            stockedDice = null;
+        }
+    }
+});
+
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

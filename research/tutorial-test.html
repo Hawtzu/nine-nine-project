@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nine Nine - Tutorial Slideshow Prototype</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; color: #ccc; font-family: 'Segoe UI', Tahoma, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+.slideshow { background: #0a0a1a; border: 1px solid #333; border-radius: 8px; padding: 20px; width: 900px; }
+.slide-title { color: #00E5FF; font-size: 20px; font-weight: bold; text-align: center; margin: 12px 0 6px; }
+.slide-desc { color: #ccc; font-size: 14px; text-align: center; line-height: 1.6; margin-bottom: 12px; min-height: 44px; }
+.nav-bar { display: flex; align-items: center; justify-content: space-between; }
+.btn { padding: 8px 20px; font-size: 14px; cursor: pointer; border: 1px solid #444; background: #1a1a3e; color: #aaa; border-radius: 4px; transition: all 0.15s; user-select: none; }
+.btn:hover { border-color: #00E5FF; color: #fff; }
+.btn.skip { border-color: #FF4444; color: #FF4444; }
+.btn.skip:hover { background: #3a0a0a; }
+.btn:disabled { opacity: 0.3; cursor: default; }
+.btn:disabled:hover { border-color: #444; color: #aaa; }
+.dots { display: flex; gap: 8px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: #333355; cursor: pointer; transition: all 0.2s; }
+.dot.active { background: #00E5FF; }
+canvas { display: block; margin: 0 auto; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="slideshow">
+    <canvas id="slideCanvas" width="840" height="420"></canvas>
+    <div class="slide-title" id="slideTitle"></div>
+    <div class="slide-desc" id="slideDesc"></div>
+    <div class="nav-bar">
+        <button class="btn" id="btnPrev" onclick="goToSlide(currentSlide-1)">&lt; Prev</button>
+        <div class="dots" id="dotsContainer"></div>
+        <div style="display:flex;gap:8px;">
+            <button class="btn" id="btnNext" onclick="goToSlide(currentSlide+1)">Next &gt;</button>
+            <button class="btn skip" id="btnSkip" onclick="skipTutorial()">Skip &times;</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('slideCanvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+// ── Colors ──
+const COL_BG      = '#1a1a2e';
+const COL_CANVAS   = '#0a0a1a';
+const COL_CYAN     = '#00E5FF';
+const COL_P1       = '#00AAFF';
+const COL_P2       = '#FF4444';
+const COL_STONE_BODY = '#2A2A3A';
+const COL_STONE_BORDER = '#00E5FF';
+const COL_GRID     = '#1A3A4A';
+const COL_CELL_A   = '#0A0A14';
+const COL_CELL_B   = '#0D0D1A';
+const COL_TEXT     = '#ccc';
+
+const CELL = 40;
+
+// ── Helpers ──
+
+function drawMiniBoard(ctx, ox, oy, rows, cols) {
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const x = ox + c * CELL;
+            const y = oy + r * CELL;
+            ctx.fillStyle = (r + c) % 2 === 0 ? COL_CELL_A : COL_CELL_B;
+            ctx.fillRect(x, y, CELL, CELL);
+        }
+    }
+    // Grid lines
+    ctx.strokeStyle = COL_GRID;
+    ctx.lineWidth = 1;
+    for (let r = 0; r <= rows; r++) {
+        ctx.beginPath();
+        ctx.moveTo(ox, oy + r * CELL);
+        ctx.lineTo(ox + cols * CELL, oy + r * CELL);
+        ctx.stroke();
+    }
+    for (let c = 0; c <= cols; c++) {
+        ctx.beginPath();
+        ctx.moveTo(ox + c * CELL, oy);
+        ctx.lineTo(ox + c * CELL, oy + rows * CELL);
+        ctx.stroke();
+    }
+    // Glow border
+    ctx.save();
+    ctx.shadowColor = COL_CYAN;
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = COL_CYAN;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(ox, oy, cols * CELL, rows * CELL);
+    ctx.restore();
+}
+
+function drawPiece(ctx, cx, cy, color, radius) {
+    ctx.save();
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // Inner highlight
+    const grad = ctx.createRadialGradient(cx - radius * 0.25, cy - radius * 0.25, 0, cx, cy, radius);
+    grad.addColorStop(0, 'rgba(255,255,255,0.35)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawStone(ctx, cx, cy, size) {
+    const s = size / 2;
+    const cut = s * 0.38;
+    ctx.save();
+    ctx.shadowColor = COL_STONE_BORDER;
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.moveTo(cx - s + cut, cy - s);
+    ctx.lineTo(cx + s - cut, cy - s);
+    ctx.lineTo(cx + s, cy - s + cut);
+    ctx.lineTo(cx + s, cy + s - cut);
+    ctx.lineTo(cx + s - cut, cy + s);
+    ctx.lineTo(cx - s + cut, cy + s);
+    ctx.lineTo(cx - s, cy + s - cut);
+    ctx.lineTo(cx - s, cy - s + cut);
+    ctx.closePath();
+    ctx.fillStyle = COL_STONE_BODY;
+    ctx.fill();
+    ctx.strokeStyle = COL_STONE_BORDER;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawDice(ctx, cx, cy, value, size) {
+    const half = size / 2;
+    ctx.save();
+    ctx.fillStyle = '#1a1a3e';
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 2;
+    roundRect(ctx, cx - half, cy - half, size, size, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff';
+    const dotR = size * 0.08;
+    const off = size * 0.25;
+    const positions = {
+        1: [[0, 0]],
+        2: [[-off, -off], [off, off]],
+        3: [[-off, -off], [0, 0], [off, off]],
+        4: [[-off, -off], [off, -off], [-off, off], [off, off]],
+        5: [[-off, -off], [off, -off], [0, 0], [-off, off], [off, off]],
+        6: [[-off, -off], [off, -off], [-off, 0], [off, 0], [-off, off], [off, off]]
+    };
+    (positions[value] || positions[1]).forEach(([dx, dy]) => {
+        ctx.beginPath();
+        ctx.arc(cx + dx, cy + dy, dotR, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    ctx.restore();
+}
+
+function drawArrow(ctx, fromX, fromY, toX, toY, color, lineWidth) {
+    lineWidth = lineWidth || 2;
+    const headLen = 10;
+    const angle = Math.atan2(toY - fromY, toX - fromX);
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(toX - headLen * Math.cos(angle - 0.4), toY - headLen * Math.sin(angle - 0.4));
+    ctx.lineTo(toX - headLen * Math.cos(angle + 0.4), toY - headLen * Math.sin(angle + 0.4));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+}
+
+function drawText(ctx, text, x, y, color, size, align, bold) {
+    ctx.save();
+    ctx.fillStyle = color || COL_TEXT;
+    ctx.font = (bold ? 'bold ' : '') + (size || 14) + 'px "Segoe UI", Tahoma, sans-serif';
+    ctx.textAlign = align || 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+    ctx.restore();
+}
+
+function clearCanvas() {
+    ctx.fillStyle = COL_CANVAS;
+    ctx.fillRect(0, 0, W, H);
+}
+
+function highlightCell(ctx, ox, oy, r, c, color, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha || 0.3;
+    ctx.fillStyle = color;
+    ctx.fillRect(ox + c * CELL + 1, oy + r * CELL + 1, CELL - 2, CELL - 2);
+    ctx.restore();
+}
+
+// ── Slide definitions ──
+
+const slides = [
+    // Slide 1: Welcome
+    {
+        title: 'Nine Nine へようこそ',
+        description: '9x9のボードで戦うターン制ストラテジーゲーム',
+        draw(ctx, w, h, now) {
+            const ox = (w - 9 * CELL) / 2;
+            const oy = (h - 9 * CELL) / 2;
+            drawMiniBoard(ctx, ox, oy, 9, 9);
+
+            // Random stones for atmosphere
+            const stonePositions = [[1,2],[2,5],[3,7],[5,1],[6,4],[7,6],[0,8],[8,0],[4,4]];
+            stonePositions.forEach(([r,c]) => {
+                drawStone(ctx, ox + c * CELL + CELL/2, oy + r * CELL + CELL/2, CELL * 0.7);
+            });
+
+            // Player pieces
+            const pulse = Math.sin(now / 500) * 2;
+            drawPiece(ctx, ox + 0 * CELL + CELL/2, oy + 4 * CELL + CELL/2, COL_P1, 14 + pulse);
+            drawPiece(ctx, ox + 8 * CELL + CELL/2, oy + 4 * CELL + CELL/2, COL_P2, 14 + pulse);
+
+            // Labels
+            drawText(ctx, 'P1', ox + 0 * CELL + CELL/2, oy + 4 * CELL - 8, COL_P1, 11, 'center', true);
+            drawText(ctx, 'P2', ox + 8 * CELL + CELL/2, oy + 4 * CELL - 8, COL_P2, 11, 'center', true);
+        }
+    },
+
+    // Slide 2: Dice & Movement
+    {
+        title: 'サイコロと移動',
+        description: '1〜3の目が出るサイコロを振って、出た目の数だけ上下左右に移動します',
+        draw(ctx, w, h, now) {
+            const boardSize = 5;
+            const bx = w / 2 - (boardSize * CELL) / 2 + 60;
+            const by = (h - boardSize * CELL) / 2;
+            drawMiniBoard(ctx, bx, by, boardSize, boardSize);
+
+            // Piece at center
+            const pc = 2, pr = 2;
+            drawPiece(ctx, bx + pc * CELL + CELL/2, by + pr * CELL + CELL/2, COL_P1, 14);
+
+            // Highlight reachable cells (2 steps)
+            const reach = [[0,2],[1,2],[3,2],[4,2],[2,0],[2,1],[2,3],[2,4]];
+            reach.forEach(([r,c]) => {
+                const pulse = 0.15 + 0.1 * Math.sin(now / 400 + r + c);
+                highlightCell(ctx, bx, by, r, c, '#FFD700', pulse);
+            });
+
+            // Dice on the left
+            const diceX = bx - 80;
+            const diceY = h / 2;
+            drawDice(ctx, diceX, diceY, 2, 50);
+            drawText(ctx, 'Dice', diceX, diceY - 38, COL_TEXT, 12, 'center');
+
+            // Animated arrow from dice to piece
+            const t = (now % 2000) / 2000;
+            const arrowEnd = diceX + 30 + t * (bx + pc * CELL + CELL/2 - diceX - 50);
+            ctx.save();
+            ctx.globalAlpha = 1 - t * 0.5;
+            drawArrow(ctx, diceX + 30, diceY, arrowEnd, by + pr * CELL + CELL/2, '#FFD700', 2);
+            ctx.restore();
+
+            // Direction labels
+            drawText(ctx, '↑↓←→', bx + boardSize * CELL / 2, by + boardSize * CELL + 20, '#FFD700', 16, 'center', true);
+        }
+    },
+
+    // Slide 3: Stone Placement
+    {
+        title: '石の配置',
+        description: '移動した後、元いた場所に石が自動で置かれます。石は障害物になります',
+        draw(ctx, w, h, now) {
+            const cycle = (now % 3000) / 3000;
+            const showAfter = cycle > 0.5;
+            const boardW = 4, boardH = 3;
+
+            // Before side
+            const lx = 80, ly = (h - boardH * CELL) / 2;
+            drawMiniBoard(ctx, lx, ly, boardH, boardW);
+            drawText(ctx, 'Before', lx + boardW * CELL / 2, ly - 20, COL_TEXT, 14, 'center', true);
+
+            // After side
+            const rx = w - 80 - boardW * CELL, ry = ly;
+            drawMiniBoard(ctx, rx, ry, boardH, boardW);
+            drawText(ctx, 'After', rx + boardW * CELL / 2, ry - 20, COL_TEXT, 14, 'center', true);
+
+            // Center arrow
+            drawArrow(ctx, lx + boardW * CELL + 20, h / 2, rx - 20, h / 2, COL_CYAN, 3);
+
+            // Before: piece at (1,1)
+            if (!showAfter) {
+                drawPiece(ctx, lx + 1 * CELL + CELL/2, ly + 1 * CELL + CELL/2, COL_P1, 14);
+                highlightCell(ctx, lx, ly, 1, 2, '#FFD700', 0.3);
+                drawArrow(ctx, lx + 1 * CELL + CELL/2, ly + 1 * CELL + CELL/2, lx + 2 * CELL + CELL/2, ly + 1 * CELL + CELL/2, '#FFD700', 2);
+            } else {
+                // Faded piece position
+                ctx.save();
+                ctx.globalAlpha = 0.2;
+                drawPiece(ctx, lx + 1 * CELL + CELL/2, ly + 1 * CELL + CELL/2, COL_P1, 14);
+                ctx.restore();
+            }
+
+            // After: stone at (1,1), piece at (1,2)
+            const afterAlpha = showAfter ? 1 : 0.2;
+            ctx.save();
+            ctx.globalAlpha = afterAlpha;
+            drawStone(ctx, rx + 1 * CELL + CELL/2, ry + 1 * CELL + CELL/2, CELL * 0.7);
+            drawPiece(ctx, rx + 2 * CELL + CELL/2, ry + 1 * CELL + CELL/2, COL_P1, 14);
+            ctx.restore();
+
+            // Phase indicator
+            const phase = showAfter ? 'Stone placed!' : 'Moving...';
+            const phaseCol = showAfter ? COL_CYAN : '#FFD700';
+            drawText(ctx, phase, w / 2, h - 30, phaseCol, 16, 'center', true);
+        }
+    },
+
+    // Slide 4: Edge Danger
+    {
+        title: '端に注意！',
+        description: 'ボードの外に出ると即負け！赤く光るマスは落下の危険があります',
+        draw(ctx, w, h, now) {
+            const rows = 4, cols = 5;
+            const ox = (w - cols * CELL) / 2;
+            const oy = (h - rows * CELL) / 2 + 10;
+            drawMiniBoard(ctx, ox, oy, rows, cols);
+
+            // Red glow on top edge
+            const edgePulse = 0.3 + 0.2 * Math.sin(now / 300);
+            for (let c = 0; c < cols; c++) {
+                highlightCell(ctx, ox, oy, 0, c, '#FF4444', edgePulse);
+            }
+
+            // Red neon border on top
+            ctx.save();
+            ctx.shadowColor = '#FF4444';
+            ctx.shadowBlur = 15 + 5 * Math.sin(now / 300);
+            ctx.strokeStyle = '#FF4444';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(ox, oy);
+            ctx.lineTo(ox + cols * CELL, oy);
+            ctx.stroke();
+            ctx.restore();
+
+            // Piece animation: slides off edge
+            const cycle = (now % 3000) / 3000;
+            const pieceCol = 2;
+            let pieceRow, pieceAlpha;
+            if (cycle < 0.5) {
+                // Piece on row 0
+                pieceRow = 0;
+                pieceAlpha = 1;
+            } else if (cycle < 0.75) {
+                // Sliding off
+                const t = (cycle - 0.5) / 0.25;
+                pieceRow = -t * 1.5;
+                pieceAlpha = 1 - t;
+            } else {
+                // Gone, then reappear
+                const t = (cycle - 0.75) / 0.25;
+                pieceRow = 1;
+                pieceAlpha = t;
+            }
+
+            ctx.save();
+            ctx.globalAlpha = pieceAlpha;
+            drawPiece(ctx, ox + pieceCol * CELL + CELL/2, oy + pieceRow * CELL + CELL/2, COL_P1, 14);
+            ctx.restore();
+
+            // Red X outside the board
+            if (cycle >= 0.5 && cycle < 0.75) {
+                const t = (cycle - 0.5) / 0.25;
+                ctx.save();
+                ctx.globalAlpha = t;
+                const xPos = ox + pieceCol * CELL + CELL/2;
+                const yPos = oy - 30;
+                ctx.strokeStyle = '#FF4444';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(xPos - 12, yPos - 12);
+                ctx.lineTo(xPos + 12, yPos + 12);
+                ctx.moveTo(xPos + 12, yPos - 12);
+                ctx.lineTo(xPos - 12, yPos + 12);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // Danger label
+            drawText(ctx, '⚠ FALL = LOSE', w / 2, oy + rows * CELL + 30, '#FF4444', 18, 'center', true);
+
+            // Arrow pointing off edge
+            drawArrow(ctx, ox + pieceCol * CELL + CELL/2 + 40, oy + CELL/2, ox + pieceCol * CELL + CELL/2 + 40, oy - 25, '#FF4444', 2);
+        }
+    },
+
+    // Slide 5: Dice Queue & Stock
+    {
+        title: 'サイコロキュー＆ストック',
+        description: '次に来るサイコロが見えます。20ポイントで今のサイコロを保存（ストック）できます',
+        draw(ctx, w, h, now) {
+            const cycle = (now % 4000) / 4000;
+            const showStock = cycle > 0.5;
+
+            const queueY = h / 2 - 10;
+            const startX = 120;
+
+            // Current dice
+            const curX = startX;
+            ctx.save();
+            ctx.shadowColor = COL_CYAN;
+            ctx.shadowBlur = 6;
+            ctx.strokeStyle = COL_CYAN;
+            ctx.lineWidth = 2;
+            roundRect(ctx, curX - 32, queueY - 32, 64, 64, 8);
+            ctx.stroke();
+            ctx.restore();
+            drawDice(ctx, curX, queueY, 2, 50);
+            drawText(ctx, 'CURRENT', curX, queueY - 48, COL_CYAN, 12, 'center', true);
+
+            // Next 1
+            const n1X = curX + 110;
+            drawDice(ctx, n1X, queueY, 1, 40);
+            drawText(ctx, 'NEXT', n1X, queueY - 38, '#888', 11, 'center');
+
+            // Next 2
+            const n2X = n1X + 80;
+            drawDice(ctx, n2X, queueY, 3, 40);
+            drawText(ctx, 'NEXT', n2X, queueY - 38, '#888', 11, 'center');
+
+            // Arrows between queue items
+            drawArrow(ctx, n1X - 18, queueY, curX + 38, queueY, '#555', 1);
+            drawArrow(ctx, n2X - 18, queueY, n1X + 24, queueY, '#555', 1);
+
+            // Stock slot
+            const stockX = w - 180;
+            ctx.save();
+            ctx.shadowColor = '#FFD700';
+            ctx.shadowBlur = 6;
+            ctx.strokeStyle = '#FFD700';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 3]);
+            roundRect(ctx, stockX - 32, queueY - 32, 64, 64, 8);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+            drawText(ctx, 'STOCK', stockX, queueY - 48, '#FFD700', 12, 'center', true);
+
+            if (showStock) {
+                // Show stocked dice
+                drawDice(ctx, stockX, queueY, 2, 50);
+                // Arrow: current -> stock
+                const t = (cycle - 0.5) / 0.5;
+                ctx.save();
+                ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * Math.PI);
+                drawCurvedArrow(ctx, curX + 38, queueY - 30, stockX - 38, queueY - 30, -40, '#FFD700');
+                ctx.restore();
+                drawText(ctx, '-20 pt', (curX + stockX) / 2, queueY - 75, '#FFD700', 13, 'center', true);
+            } else {
+                // Empty stock
+                drawText(ctx, 'Empty', stockX, queueY + 4, '#555', 12, 'center');
+                // Arrow: stock -> current
+                const t = cycle / 0.5;
+                ctx.save();
+                ctx.globalAlpha = 0.3 + 0.2 * Math.sin(t * Math.PI);
+                drawCurvedArrow(ctx, stockX - 38, queueY + 30, curX + 38, queueY + 30, 40, '#888');
+                ctx.restore();
+                drawText(ctx, 'Use Stock', (curX + stockX) / 2, queueY + 75, '#888', 11, 'center');
+            }
+
+            // Phase label
+            const label = showStock ? 'Dice stocked!' : 'Normal queue';
+            drawText(ctx, label, w / 2, h - 25, showStock ? '#FFD700' : '#666', 14, 'center', true);
+        }
+    },
+
+    // Slide 6: Skills
+    {
+        title: '特殊スキル',
+        description: 'ゲーム開始前に1つスキルを選択。戦略の幅が広がります',
+        draw(ctx, w, h, now) {
+            const skills = [
+                { name: 'Ice Tile',   color: '#ADD8E6', effect: '移動距離+1' },
+                { name: 'Bomb',       color: '#FF8000', effect: '踏んだら撃破' },
+                { name: 'Sniper',     color: '#228B22', effect: '遠距離狙撃' },
+                { name: 'Landshark',  color: '#DC143C', effect: '隣接撃破' },
+                { name: 'Warp Hole',  color: '#6600CC', effect: '瞬間移動' },
+                { name: 'Meteor',     color: '#FFD700', effect: 'どこでも石配置' }
+            ];
+
+            const cardW = 120, cardH = 140, gap = 20;
+            const cols = 3, rows = 2;
+            const totalW = cols * cardW + (cols - 1) * gap;
+            const totalH = rows * cardH + (rows - 1) * gap;
+            const startX = (w - totalW) / 2;
+            const startY = (h - totalH) / 2;
+
+            skills.forEach((skill, i) => {
+                const col = i % cols;
+                const row = Math.floor(i / cols);
+                const x = startX + col * (cardW + gap);
+                const y = startY + row * (cardH + gap);
+
+                // Card background
+                ctx.save();
+                ctx.shadowColor = skill.color;
+                ctx.shadowBlur = 4 + 3 * Math.sin(now / 600 + i);
+                roundRect(ctx, x, y, cardW, cardH, 6);
+                ctx.fillStyle = '#0D0D1A';
+                ctx.fill();
+                ctx.strokeStyle = skill.color;
+                ctx.lineWidth = 1.5;
+                roundRect(ctx, x, y, cardW, cardH, 6);
+                ctx.stroke();
+                ctx.restore();
+
+                // Color bar at top
+                ctx.fillStyle = skill.color;
+                ctx.globalAlpha = 0.3;
+                ctx.fillRect(x + 1, y + 1, cardW - 2, 30);
+                ctx.globalAlpha = 1;
+
+                // Skill icon circle
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(x + cardW / 2, y + 65, 18, 0, Math.PI * 2);
+                ctx.fillStyle = skill.color;
+                ctx.globalAlpha = 0.2;
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.strokeStyle = skill.color;
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                ctx.restore();
+
+                // Skill name
+                drawText(ctx, skill.name, x + cardW / 2, y + 16, '#fff', 13, 'center', true);
+
+                // Skill initial in circle
+                drawText(ctx, skill.name[0], x + cardW / 2, y + 65, skill.color, 18, 'center', true);
+
+                // Effect text
+                drawText(ctx, skill.effect, x + cardW / 2, y + cardH - 22, '#aaa', 12, 'center');
+            });
+        }
+    },
+
+    // Slide 7: Score & Win Conditions
+    {
+        title: 'スコアと勝利条件',
+        description: '毎ターン10ポイント獲得。泉（+100pt）を取ると有利に。相手を倒すか、追い詰めて勝利！',
+        draw(ctx, w, h, now) {
+            // Score bars
+            const barW = 160, barH = 24;
+            // P1 bar
+            const p1x = 60, p1y = 50;
+            drawText(ctx, 'Player 1', p1x + barW / 2, p1y - 12, COL_P1, 14, 'center', true);
+            ctx.strokeStyle = COL_P1;
+            ctx.lineWidth = 1;
+            roundRect(ctx, p1x, p1y, barW, barH, 4);
+            ctx.stroke();
+            const p1fill = 0.6 + 0.1 * Math.sin(now / 800);
+            ctx.fillStyle = COL_P1;
+            ctx.globalAlpha = 0.7;
+            roundRect(ctx, p1x + 2, p1y + 2, (barW - 4) * p1fill, barH - 4, 3);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            drawText(ctx, Math.round(p1fill * 300) + ' pt', p1x + barW / 2, p1y + barH / 2, '#fff', 12, 'center', true);
+
+            // P2 bar
+            const p2x = w - 60 - barW, p2y = 50;
+            drawText(ctx, 'Player 2', p2x + barW / 2, p2y - 12, COL_P2, 14, 'center', true);
+            ctx.strokeStyle = COL_P2;
+            roundRect(ctx, p2x, p2y, barW, barH, 4);
+            ctx.stroke();
+            const p2fill = 0.35 + 0.1 * Math.sin(now / 900);
+            ctx.fillStyle = COL_P2;
+            ctx.globalAlpha = 0.7;
+            roundRect(ctx, p2x + 2, p2y + 2, (barW - 4) * p2fill, barH - 4, 3);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            drawText(ctx, Math.round(p2fill * 300) + ' pt', p2x + barW / 2, p2y + barH / 2, '#fff', 12, 'center', true);
+
+            // Fountain in center
+            const fx = w / 2, fy = 55;
+            const fPulse = 4 + 2 * Math.sin(now / 400);
+            ctx.save();
+            ctx.shadowColor = '#00FF88';
+            ctx.shadowBlur = fPulse + 8;
+            ctx.beginPath();
+            ctx.arc(fx, fy, 18, 0, Math.PI * 2);
+            ctx.fillStyle = '#003322';
+            ctx.fill();
+            ctx.strokeStyle = '#00FF88';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+            drawText(ctx, '+100', fx, fy, '#00FF88', 11, 'center', true);
+            drawText(ctx, 'Fountain', fx, fy + 28, '#00FF88', 10, 'center');
+
+            // Win conditions section
+            const condY = 140;
+            drawText(ctx, '勝利条件', w / 2, condY, COL_CYAN, 16, 'center', true);
+
+            const conditions = [
+                { icon: drawFallIcon, label: '盤外に落とす', x: w / 2 - 250 },
+                { icon: drawTrappedIcon, label: '移動不能に追い込む', x: w / 2 },
+                { icon: drawExplosionIcon, label: 'スキルで撃破', x: w / 2 + 250 }
+            ];
+
+            conditions.forEach(cond => {
+                const iconY = condY + 80;
+                cond.icon(ctx, cond.x, iconY, now);
+                drawText(ctx, cond.label, cond.x, iconY + 55, '#aaa', 12, 'center');
+            });
+
+            // +10pt per turn note
+            drawText(ctx, '毎ターン +10 pt', w / 2, h - 20, '#888', 12, 'center');
+        }
+    },
+
+    // Slide 8: Ready!
+    {
+        title: '準備完了！',
+        description: 'Player vs Player か Player vs COM を選んでゲームスタート！',
+        draw(ctx, w, h, now) {
+            // VS Player button
+            const btnW = 260, btnH = 80;
+            const pvpX = w / 2 - btnW - 30, pvpY = h / 2 - btnH / 2 - 20;
+            const comX = w / 2 + 30, comY = pvpY;
+
+            // PVP button
+            const pvpPulse = 2 + Math.sin(now / 500) * 2;
+            ctx.save();
+            ctx.shadowColor = COL_P1;
+            ctx.shadowBlur = 10 + pvpPulse;
+            roundRect(ctx, pvpX, pvpY, btnW, btnH, 10);
+            ctx.fillStyle = '#0A1828';
+            ctx.fill();
+            ctx.strokeStyle = COL_P1;
+            ctx.lineWidth = 2;
+            roundRect(ctx, pvpX, pvpY, btnW, btnH, 10);
+            ctx.stroke();
+            ctx.restore();
+            drawText(ctx, 'VS Player', pvpX + btnW / 2, pvpY + btnH / 2 - 8, COL_P1, 22, 'center', true);
+            drawText(ctx, '2人で対戦', pvpX + btnW / 2, pvpY + btnH / 2 + 16, '#888', 12, 'center');
+
+            // Draw P1 and P2 icons
+            drawPiece(ctx, pvpX + 40, pvpY + btnH / 2, COL_P1, 10);
+            drawPiece(ctx, pvpX + btnW - 40, pvpY + btnH / 2, COL_P1, 10);
+
+            // COM button
+            const comPulse = 2 + Math.sin(now / 500 + 1) * 2;
+            ctx.save();
+            ctx.shadowColor = COL_P2;
+            ctx.shadowBlur = 10 + comPulse;
+            roundRect(ctx, comX, comY, btnW, btnH, 10);
+            ctx.fillStyle = '#1A0808';
+            ctx.fill();
+            ctx.strokeStyle = COL_P2;
+            ctx.lineWidth = 2;
+            roundRect(ctx, comX, comY, btnW, btnH, 10);
+            ctx.stroke();
+            ctx.restore();
+            drawText(ctx, 'VS COM', comX + btnW / 2, comY + btnH / 2 - 8, COL_P2, 22, 'center', true);
+            drawText(ctx, 'CPUと対戦', comX + btnW / 2, comY + btnH / 2 + 16, '#888', 12, 'center');
+
+            // COM icon
+            drawPiece(ctx, comX + 40, comY + btnH / 2, COL_P1, 10);
+            drawPiece(ctx, comX + btnW - 40, comY + btnH / 2, COL_P2, 10);
+
+            // Good luck with sparkle
+            const sparkleAlpha = 0.5 + 0.5 * Math.sin(now / 300);
+            ctx.save();
+            ctx.globalAlpha = sparkleAlpha;
+            drawText(ctx, '✦ Good luck! ✦', w / 2, h - 40, '#FFD700', 18, 'center', true);
+            ctx.restore();
+
+            // Decorative corner sparkles
+            const sparkles = [[80, 60], [w - 80, 60], [80, h - 60], [w - 80, h - 60]];
+            sparkles.forEach(([sx, sy], i) => {
+                const sa = 0.3 + 0.3 * Math.sin(now / 400 + i * 1.5);
+                ctx.save();
+                ctx.globalAlpha = sa;
+                drawSparkle(ctx, sx, sy, 8 + Math.sin(now / 300 + i) * 3, COL_CYAN);
+                ctx.restore();
+            });
+        }
+    }
+];
+
+// ── Additional draw helpers for Slide 7 ──
+
+function drawFallIcon(ctx, x, y, now) {
+    // Board edge piece falling
+    ctx.save();
+    ctx.strokeStyle = '#FF4444';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x - 20, y - 15, 40, 30);
+
+    const t = (now % 2000) / 2000;
+    const pieceY = y - 8 - t * 25;
+    const alpha = Math.max(0, 1 - t * 1.5);
+    ctx.globalAlpha = alpha;
+    drawPiece(ctx, x, pieceY, COL_P2, 8);
+    ctx.globalAlpha = 1;
+
+    // X mark
+    if (t > 0.5) {
+        ctx.globalAlpha = (t - 0.5) * 2;
+        ctx.strokeStyle = '#FF4444';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(x - 8, y - 40); ctx.lineTo(x + 8, y - 26);
+        ctx.moveTo(x + 8, y - 40); ctx.lineTo(x - 8, y - 26);
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
+function drawTrappedIcon(ctx, x, y, now) {
+    // Piece surrounded by stones
+    drawPiece(ctx, x, y, COL_P2, 8);
+    const offsets = [[-18, 0], [18, 0], [0, -18], [0, 18]];
+    offsets.forEach(([dx, dy]) => {
+        drawStone(ctx, x + dx, y + dy, 14);
+    });
+    // Pulsing trap indicator
+    const pulse = 0.3 + 0.2 * Math.sin(now / 400);
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.strokeStyle = '#FF4444';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(x, y, 26, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawExplosionIcon(ctx, x, y, now) {
+    const t = (now % 1500) / 1500;
+    // Explosion burst
+    const rays = 8;
+    ctx.save();
+    ctx.globalAlpha = 0.5 + 0.3 * Math.sin(now / 200);
+    for (let i = 0; i < rays; i++) {
+        const angle = (i / rays) * Math.PI * 2 + t * 0.5;
+        const len = 12 + 6 * Math.sin(now / 300 + i);
+        ctx.strokeStyle = '#FF8000';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x + Math.cos(angle) * 6, y + Math.sin(angle) * 6);
+        ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+        ctx.stroke();
+    }
+    ctx.restore();
+    // Center
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, 8, 0, Math.PI * 2);
+    ctx.fillStyle = '#FF8000';
+    ctx.globalAlpha = 0.6;
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawSparkle(ctx, x, y, size, color) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, y - size); ctx.lineTo(x, y + size);
+    ctx.moveTo(x - size, y); ctx.lineTo(x + size, y);
+    ctx.moveTo(x - size * 0.5, y - size * 0.5); ctx.lineTo(x + size * 0.5, y + size * 0.5);
+    ctx.moveTo(x + size * 0.5, y - size * 0.5); ctx.lineTo(x - size * 0.5, y + size * 0.5);
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawCurvedArrow(ctx, x1, y1, x2, y2, curve, color) {
+    const mx = (x1 + x2) / 2;
+    const my = (y1 + y2) / 2 + curve;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.quadraticCurveTo(mx, my, x2, y2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Arrowhead
+    const t = 0.95;
+    const ax = (1-t)*(1-t)*x1 + 2*(1-t)*t*mx + t*t*x2;
+    const ay = (1-t)*(1-t)*y1 + 2*(1-t)*t*my + t*t*y2;
+    const angle = Math.atan2(y2 - ay, x2 - ax);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - 8 * Math.cos(angle - 0.4), y2 - 8 * Math.sin(angle - 0.4));
+    ctx.lineTo(x2 - 8 * Math.cos(angle + 0.4), y2 - 8 * Math.sin(angle + 0.4));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+}
+
+// ── Navigation ──
+
+let currentSlide = 0;
+let transitionAlpha = 1;
+let transitionStart = 0;
+let transitioning = false;
+const TRANSITION_MS = 200;
+
+function goToSlide(index) {
+    if (index < 0 || index >= slides.length) return;
+    currentSlide = index;
+    transitionAlpha = 0;
+    transitionStart = performance.now();
+    transitioning = true;
+    updateUI();
+}
+
+function skipTutorial() {
+    alert('Tutorial skipped!');
+}
+
+function updateUI() {
+    document.getElementById('slideTitle').textContent = slides[currentSlide].title;
+    document.getElementById('slideDesc').textContent = slides[currentSlide].description;
+
+    // Dots
+    const dotsEl = document.getElementById('dotsContainer');
+    dotsEl.innerHTML = '';
+    slides.forEach((_, i) => {
+        const dot = document.createElement('div');
+        dot.className = 'dot' + (i === currentSlide ? ' active' : '');
+        dot.onclick = () => goToSlide(i);
+        dotsEl.appendChild(dot);
+    });
+
+    // Buttons
+    const btnPrev = document.getElementById('btnPrev');
+    const btnNext = document.getElementById('btnNext');
+    btnPrev.disabled = currentSlide === 0;
+    if (currentSlide === slides.length - 1) {
+        btnNext.textContent = 'Close';
+        btnNext.onclick = () => alert('Tutorial closed!');
+    } else {
+        btnNext.textContent = 'Next >';
+        btnNext.onclick = () => goToSlide(currentSlide + 1);
+    }
+}
+
+// ── Animation Loop ──
+
+function render(now) {
+    clearCanvas();
+
+    // Transition fade
+    if (transitioning) {
+        const elapsed = now - transitionStart;
+        transitionAlpha = Math.min(1, elapsed / TRANSITION_MS);
+        if (transitionAlpha >= 1) transitioning = false;
+    }
+
+    ctx.save();
+    ctx.globalAlpha = transitionAlpha;
+    slides[currentSlide].draw(ctx, W, H, now);
+    ctx.restore();
+
+    requestAnimationFrame(render);
+}
+
+// ── Keyboard ──
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight') goToSlide(currentSlide + 1);
+    else if (e.key === 'ArrowLeft') goToSlide(currentSlide - 1);
+    else if (e.key === 'Escape') skipTutorial();
+});
+
+// ── Init ──
+
+updateUI();
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

@@ -221,7 +221,15 @@ class Game {
     rollDice() {
         this.moveMode = DIRECTION_TYPE.CROSS;
         const currentPlayer = this.getCurrentPlayer();
+        const oldQueue = [...currentPlayer.diceQueue];
         this.diceRoll = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
+        if (typeof animManager !== 'undefined' && animManager) {
+            animManager.startDiceTransition(currentPlayer.playerNum, 'roll', {
+                oldQueue: oldQueue,
+                newQueue: [...currentPlayer.diceQueue]
+            });
+            animManager.startDiceReveal(currentPlayer.playerNum, currentPlayer.diceQueue[2]);
+        }
         if (typeof gameLog !== 'undefined') gameLog.log('roll', { player: this.currentTurn, dice: this.diceRoll, queue: [...currentPlayer.diceQueue] });
         if (!this.hasAnyMovableTile()) {
             this.gameOver(this.currentTurn === 1 ? 2 : 1, 'is blocked and cannot move!');
@@ -235,28 +243,39 @@ class Game {
         if (!currentPlayer.canAfford(SKILL_COSTS.stock)) {
             return false;
         }
+        const oldQueue = [...currentPlayer.diceQueue];
         currentPlayer.deductPoints(SKILL_COSTS.stock);
         const diceValue = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
         currentPlayer.stockDice(diceValue);
+        this.stockedThisTurn = true;
         if (typeof gameLog !== 'undefined') gameLog.log('stock', { player: this.currentTurn, storedDice: diceValue });
-        this.rollDice();
+        if (typeof animManager !== 'undefined' && animManager) {
+            animManager.startDiceTransition(currentPlayer.playerNum, 'stock', {
+                oldQueue: oldQueue,
+                stockValue: diceValue
+            });
+            animManager.startDiceReveal(currentPlayer.playerNum, currentPlayer.diceQueue[2]);
+        }
+        // Stay in ROLL phase — player must click Select to use the new CURRENT
         return true;
     }
 
     useStockedDice() {
-        this.moveMode = DIRECTION_TYPE.CROSS;
         const currentPlayer = this.getCurrentPlayer();
-        // CURRENTをStock値に置き換え、ストック消費
+        const oldQueue = [...currentPlayer.diceQueue];
+        const oldStock = currentPlayer.stockedDice;
+        // Replace CURRENT with stocked value
         const stockVal = currentPlayer.useStock();
         currentPlayer.diceQueue[0] = stockVal;
-        // そのCURRENTでRoll（shiftしてMOVEへ）
-        this.diceRoll = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
-        if (typeof gameLog !== 'undefined') gameLog.log('use_stock', { player: this.currentTurn, stockVal, dice: this.diceRoll, queue: [...currentPlayer.diceQueue] });
-        if (!this.hasAnyMovableTile()) {
-            this.gameOver(this.currentTurn === 1 ? 2 : 1, 'is blocked and cannot move!');
-        } else {
-            this.phase = PHASES.MOVE;
+        if (typeof animManager !== 'undefined' && animManager) {
+            animManager.startDiceTransition(currentPlayer.playerNum, 'useStock', {
+                oldQueue: oldQueue,
+                oldStock: oldStock
+            });
         }
+        if (typeof gameLog !== 'undefined') gameLog.log('use_stock', { player: this.currentTurn, stockVal, queue: [...currentPlayer.diceQueue] });
+        // Stay in ROLL phase — player must click Select to use the new CURRENT
+        this.stockedThisTurn = true;
     }
 
     findMovableTiles() {
@@ -978,6 +997,7 @@ class Game {
 
         this.phase = PHASES.ROLL;
         this.diceRoll = 0;
+        this.stockedThisTurn = false;
         this.clearHighlights();
 
         // Trigger COM turn
@@ -1403,6 +1423,12 @@ class Game {
 
         if (isDominated) {
             // Domination: only Roll Dice is available
+            if (x >= panelX && x <= panelX + 200 && y >= 350 && y <= 400) {
+                this.rollDice();
+                return true;
+            }
+        } else if (this.stockedThisTurn) {
+            // Stock直後はSelectのみ
             if (x >= panelX && x <= panelX + 200 && y >= 350 && y <= 400) {
                 this.rollDice();
                 return true;

@@ -512,29 +512,381 @@ function render(now) {
     }
 }
 
+function drawDiceSlotReel(ctx, centerX, centerY, revealState) {
+    const size = DICE_SIZE;
+    const half = size / 2;
+    const radius = 6;
+    const dotRadius = 4;
+    const values = [1, 2, 3];
+    const t = revealState.t;
+
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+
+    // Draw dice body and use as clip region
+    ctx.beginPath();
+    ctx.moveTo(centerX - half + radius, centerY - half);
+    ctx.lineTo(centerX + half - radius, centerY - half);
+    ctx.arcTo(centerX + half, centerY - half, centerX + half, centerY - half + radius, radius);
+    ctx.lineTo(centerX + half, centerY + half - radius);
+    ctx.arcTo(centerX + half, centerY + half, centerX + half - radius, centerY + half, radius);
+    ctx.lineTo(centerX - half + radius, centerY + half);
+    ctx.arcTo(centerX - half, centerY + half, centerX - half, centerY + half - radius, radius);
+    ctx.lineTo(centerX - half, centerY - half + radius);
+    ctx.arcTo(centerX - half, centerY - half, centerX - half + radius, centerY - half, radius);
+    ctx.closePath();
+    ctx.fillStyle = '#1A1A2E';
+    ctx.fill();
+    ctx.strokeStyle = '#444466';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.clip();
+
+    // Scroll: decelerate from fast to stop
+    const totalScroll = 6; // scroll through 6 dice heights
+    const decelT = 1 - Math.pow(1 - t, 3); // ease out cubic
+    const scrollPos = totalScroll * (1 - decelT);
+
+    const finalIdx = revealState.finalValue - 1;
+    const centerIdx = finalIdx + scrollPos * 3;
+
+    // Draw stacked dice dots visible through clip
+    ctx.fillStyle = '#CCCCDD';
+    const offset = size * 0.26;
+    for (let off = -1; off <= 1; off++) {
+        const rawIdx = Math.floor(centerIdx) + off;
+        const val = values[((rawIdx % 3) + 3) % 3];
+        const fracOffset = centerIdx - Math.floor(centerIdx);
+        const yOff = (off - fracOffset) * size;
+        const dotCy = centerY + yOff;
+
+        if (val === 1) {
+            drawDot(ctx, centerX, dotCy, dotRadius);
+        } else if (val === 2) {
+            drawDot(ctx, centerX - offset, dotCy - offset, dotRadius);
+            drawDot(ctx, centerX + offset, dotCy + offset, dotRadius);
+        } else if (val === 3) {
+            drawDot(ctx, centerX - offset, dotCy - offset, dotRadius);
+            drawDot(ctx, centerX, dotCy, dotRadius);
+            drawDot(ctx, centerX + offset, dotCy + offset, dotRadius);
+        }
+    }
+
+    ctx.restore();
+
+    // Settled glow at end
+    if (t > 0.85) {
+        ctx.save();
+        ctx.globalAlpha = 0.3 * (1 - (t - 0.85) / 0.15);
+        ctx.shadowColor = '#00E5FF';
+        ctx.shadowBlur = 10;
+        ctx.strokeStyle = '#00E5FF';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(centerX - half + radius, centerY - half);
+        ctx.lineTo(centerX + half - radius, centerY - half);
+        ctx.arcTo(centerX + half, centerY - half, centerX + half, centerY - half + radius, radius);
+        ctx.lineTo(centerX + half, centerY + half - radius);
+        ctx.arcTo(centerX + half, centerY + half, centerX + half - radius, centerY + half, radius);
+        ctx.lineTo(centerX - half + radius, centerY + half);
+        ctx.arcTo(centerX - half, centerY + half, centerX - half, centerY + half - radius, radius);
+        ctx.lineTo(centerX - half, centerY - half + radius);
+        ctx.arcTo(centerX - half, centerY - half, centerX - half + radius, centerY - half, radius);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+}
+
+// Dice panel slot positions (relative to panelX)
+const DICE_SIZE = 44;
+const DICE_GAP = 8;
+const DICE_POS = {
+    SELECTED: { dx: 22, dy: 215, size: DICE_SIZE },
+    CURRENT:  { dx: 74, dy: 215, size: DICE_SIZE },
+    NEXT1:    { dx: 126, dy: 215, size: DICE_SIZE },
+    NEXT2:    { dx: 178, dy: 215, size: DICE_SIZE },
+    STOCK:    { dx: 74, dy: 290, size: DICE_SIZE },
+    SPAWN:    { dx: 230, dy: 215, size: DICE_SIZE }
+};
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
 function drawPlayerDicePanel(ctx, panelX, player) {
-    // CURRENT dice
-    ctx.fillStyle = '#888899';
-    ctx.font = '13px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillText('CURRENT', panelX, 180);
-    drawDiceVisualSmall(ctx, panelX + 30, 215, player.diceQueue[0], false);
+    const isCurrentPlayer = player.playerNum === game.currentTurn;
+    const dy = DICE_POS.SELECTED.dy;
 
-    // NEXT preview (2 dice)
+    // Labels
     ctx.fillStyle = '#888899';
-    ctx.font = '13px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillText('NEXT', panelX + 100, 180);
-    drawDiceVisualSmall(ctx, panelX + 120, 215, player.diceQueue[1], false);
-    drawDiceVisualSmall(ctx, panelX + 175, 217, player.diceQueue[2], true);
+    ctx.font = '11px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('USE', panelX + DICE_POS.SELECTED.dx, 180);
+    ctx.fillText('CURRENT', panelX + DICE_POS.CURRENT.dx, 180);
+    ctx.fillText('NEXT', panelX + (DICE_POS.NEXT1.dx + DICE_POS.NEXT2.dx) / 2, 180);
 
-    // Stock display
-    if (player.hasStock()) {
-        ctx.fillStyle = '#FFD700';
-        ctx.font = '13px Arial';
-        ctx.textAlign = 'left';
-        ctx.fillText('STOCK', panelX, 255);
-        drawDiceVisualSmall(ctx, panelX + 30, 290, player.stockedDice, false);
+    const trans = animManager.getDiceTransitionState(player.playerNum);
+    const revealState = animManager.getDiceRevealState(player.playerNum);
+
+    if (trans && trans.active) {
+        const et = easeInOutCubic(trans.t);
+
+        if (trans.type === 'roll') {
+            // CURRENT → SELECTED slide
+            const selX = lerp(panelX + DICE_POS.CURRENT.dx, panelX + DICE_POS.SELECTED.dx, et);
+            drawDiceVisualSmall(ctx, selX, dy, trans.oldQueue[0], false);
+
+            // NEXT1 → CURRENT slide
+            const n1x = lerp(panelX + DICE_POS.NEXT1.dx, panelX + DICE_POS.CURRENT.dx, et);
+            drawDiceVisualSmall(ctx, n1x, dy, trans.oldQueue[1], false);
+
+            // NEXT2 → NEXT1 slide
+            const n2x = lerp(panelX + DICE_POS.NEXT2.dx, panelX + DICE_POS.NEXT1.dx, et);
+            drawDiceVisualSmall(ctx, n2x, dy, trans.oldQueue[2], false);
+
+            // New dice slides in from right → NEXT2 (as "?")
+            const spawnX = lerp(panelX + DICE_POS.SPAWN.dx, panelX + DICE_POS.NEXT2.dx, et);
+            ctx.save();
+            ctx.globalAlpha = 0.6 * et;
+            drawDiceQuestion(ctx, spawnX, dy, DICE_POS.NEXT2.size);
+            ctx.restore();
+
+        } else if (trans.type === 'stock') {
+            // oldQueue[0] → STOCK arc (CURRENT goes to stock)
+            const fromX = panelX + DICE_POS.CURRENT.dx;
+            const fromY = dy;
+            const toX = panelX + DICE_POS.STOCK.dx;
+            const toY = DICE_POS.STOCK.dy;
+            const cpX = (fromX + toX) / 2;
+            const cpY = fromY + 50;
+            const t1 = 1 - et;
+            const arcX = t1*t1*fromX + 2*t1*et*cpX + et*et*toX;
+            const arcY = t1*t1*fromY + 2*t1*et*cpY + et*et*toY;
+            drawDiceVisualSmall(ctx, arcX, arcY, trans.stockValue, false);
+
+            // oldQueue[1] → CURRENT (slide from NEXT1)
+            const n1x = lerp(panelX + DICE_POS.NEXT1.dx, panelX + DICE_POS.CURRENT.dx, et);
+            drawDiceVisualSmall(ctx, n1x, dy, trans.oldQueue[1], false);
+
+            // oldQueue[2] → NEXT1 (slide from NEXT2)
+            const n2x = lerp(panelX + DICE_POS.NEXT2.dx, panelX + DICE_POS.NEXT1.dx, et);
+            drawDiceVisualSmall(ctx, n2x, dy, trans.oldQueue[2], false);
+
+            // New dice slides in → NEXT2
+            const spawnX = lerp(panelX + DICE_POS.SPAWN.dx, panelX + DICE_POS.NEXT2.dx, et);
+            ctx.save();
+            ctx.globalAlpha = 0.6 * et;
+            drawDiceQuestion(ctx, spawnX, dy, DICE_POS.NEXT2.size);
+            ctx.restore();
+
+            // STOCK label during animation
+            ctx.fillStyle = '#FFD700';
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('STOCK', panelX + DICE_POS.STOCK.dx, 255);
+
+        } else if (trans.type === 'useStock') {
+            // Old CURRENT fades out (replaced by stock value)
+            ctx.save();
+            ctx.globalAlpha = 1 - et;
+            drawDiceVisualSmall(ctx, panelX + DICE_POS.CURRENT.dx, dy, trans.oldQueue[0], false);
+            ctx.restore();
+
+            // STOCK → CURRENT arc (stocked value replaces CURRENT)
+            const fromX = panelX + DICE_POS.STOCK.dx;
+            const fromY = DICE_POS.STOCK.dy;
+            const toX = panelX + DICE_POS.CURRENT.dx;
+            const toY = dy;
+            const cpX = (fromX + toX) / 2 - 20;
+            const cpY = (fromY + toY) / 2 - 30;
+            const t1 = 1 - et;
+            const arcX = t1*t1*fromX + 2*t1*et*cpX + et*et*toX;
+            const arcY = t1*t1*fromY + 2*t1*et*cpY + et*et*toY;
+            drawDiceVisualSmall(ctx, arcX, arcY, trans.oldStock, false);
+
+            // Queue stays in place (no shift)
+            drawDiceVisualSmall(ctx, panelX + DICE_POS.NEXT1.dx, dy, trans.oldQueue[1], false);
+            drawDiceVisualSmall(ctx, panelX + DICE_POS.NEXT2.dx, dy, trans.oldQueue[2], false);
+
+            // STOCK label fading out
+            ctx.save();
+            ctx.globalAlpha = 1 - et;
+            ctx.fillStyle = '#FFD700';
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('STOCK', panelX + DICE_POS.STOCK.dx, 255);
+            ctx.restore();
+        }
+    } else {
+        // Static dice display (no transition)
+
+        // SELECTED slot: show diceRoll for current player in non-ROLL phases
+        if (isCurrentPlayer && game.phase !== PHASES.ROLL && game.phase !== PHASES.SKILL_SELECTION && game.diceRoll) {
+            drawDiceVisualSmall(ctx, panelX + DICE_POS.SELECTED.dx, dy, game.diceRoll, false);
+        } else {
+            // Draw empty selected slot (dashed border)
+            ctx.save();
+            ctx.strokeStyle = '#333355';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            const s = DICE_SIZE, half = s / 2, r = 6;
+            const sx = panelX + DICE_POS.SELECTED.dx - half, sy = dy - half;
+            ctx.beginPath();
+            ctx.moveTo(sx + r, sy); ctx.lineTo(sx + s - r, sy);
+            ctx.arcTo(sx + s, sy, sx + s, sy + r, r);
+            ctx.lineTo(sx + s, sy + s - r);
+            ctx.arcTo(sx + s, sy + s, sx + s - r, sy + s, r);
+            ctx.lineTo(sx + r, sy + s);
+            ctx.arcTo(sx, sy + s, sx, sy + s - r, r);
+            ctx.lineTo(sx, sy + r);
+            ctx.arcTo(sx, sy, sx + r, sy, r);
+            ctx.closePath();
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+        }
+
+        // CURRENT, NEXT1, NEXT2
+        drawDiceVisualSmall(ctx, panelX + DICE_POS.CURRENT.dx, dy, player.diceQueue[0], false);
+        drawDiceVisualSmall(ctx, panelX + DICE_POS.NEXT1.dx, dy, player.diceQueue[1], false);
+
+        // NEXT2: check for slot reel reveal
+        if (revealState && revealState.active) {
+            drawDiceSlotReel(ctx, panelX + DICE_POS.NEXT2.dx, dy, revealState);
+        } else {
+            drawDiceVisualSmall(ctx, panelX + DICE_POS.NEXT2.dx, dy, player.diceQueue[2], false);
+        }
+
+        // Stock display
+        if (player.hasStock()) {
+            ctx.fillStyle = '#FFD700';
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('STOCK', panelX + DICE_POS.STOCK.dx, 255);
+            drawDiceVisualSmall(ctx, panelX + DICE_POS.STOCK.dx, DICE_POS.STOCK.dy, player.stockedDice, false);
+        }
+    }
+}
+
+// Draw a "?" dice (unknown value)
+function drawDiceQuestion(ctx, cx, cy, size) {
+    const half = size / 2;
+    const r = 6;
+    ctx.save();
+    ctx.fillStyle = '#1A1A2E';
+    ctx.beginPath();
+    ctx.moveTo(cx - half + r, cy - half);
+    ctx.lineTo(cx + half - r, cy - half);
+    ctx.arcTo(cx + half, cy - half, cx + half, cy - half + r, r);
+    ctx.lineTo(cx + half, cy + half - r);
+    ctx.arcTo(cx + half, cy + half, cx + half - r, cy + half, r);
+    ctx.lineTo(cx - half + r, cy + half);
+    ctx.arcTo(cx - half, cy + half, cx - half, cy + half - r, r);
+    ctx.lineTo(cx - half, cy - half + r);
+    ctx.arcTo(cx - half, cy - half, cx - half + r, cy - half, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#444466';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = '#666688';
+    ctx.font = `bold ${size * 0.55}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('?', cx, cy + 1);
+    ctx.restore();
+}
+
+// Draw conveyor chevrons in horizontal gaps between dice
+function drawConveyorGaps(ctx, gaps, lineY, color) {
+    const now = performance.now();
+    const speed = now / 250;
+    for (const gap of gaps) {
+        const gapWidth = gap.toX - gap.fromX;
+        if (gapWidth < 4) continue;
+        const chevronSpacing = 12;
+        const chevronCount = Math.ceil(gapWidth / chevronSpacing) + 1;
+        const offset = (speed * chevronSpacing) % chevronSpacing;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(gap.fromX, lineY - 15, gapWidth, 30);
+        ctx.clip();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        for (let i = -1; i < chevronCount; i++) {
+            const cx = gap.toX - i * chevronSpacing + offset;
+            ctx.globalAlpha = 0.3 + 0.25 * Math.sin(i * 0.8 + speed * 0.5);
+            ctx.beginPath();
+            ctx.moveTo(cx + 4, lineY - 6);
+            ctx.lineTo(cx - 4, lineY);
+            ctx.lineTo(cx + 4, lineY + 6);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+}
+
+// Draw vertical conveyor chevrons
+function drawVerticalConveyor(ctx, vx, fromY, toY, color, dirDown) {
+    const now = performance.now();
+    const gapH = toY - fromY;
+    if (gapH < 4) return;
+    const chevronSpacing = 12;
+    const chevronCount = Math.ceil(gapH / chevronSpacing) + 1;
+    const offset = (now / 250 * chevronSpacing) % chevronSpacing;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(vx - 15, fromY, 30, gapH);
+    ctx.clip();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    for (let i = -1; i < chevronCount; i++) {
+        const cy = dirDown ? fromY + i * chevronSpacing + offset : toY - i * chevronSpacing - offset;
+        ctx.globalAlpha = 0.3 + 0.25 * Math.sin(i * 0.8 + now / 250 * 0.5);
+        ctx.beginPath();
+        if (dirDown) {
+            ctx.moveTo(vx - 6, cy - 4); ctx.lineTo(vx, cy + 4); ctx.lineTo(vx + 6, cy - 4);
+        } else {
+            ctx.moveTo(vx - 6, cy + 4); ctx.lineTo(vx, cy - 4); ctx.lineTo(vx + 6, cy + 4);
+        }
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
+// Draw conveyor line hover preview between dice slots
+function drawDiceHoverPreview(ctx, panelX, hoverType) {
+    const sel = DICE_POS.SELECTED, c = DICE_POS.CURRENT, n1 = DICE_POS.NEXT1, n2 = DICE_POS.NEXT2, s = DICE_POS.STOCK;
+    const dh = DICE_SIZE / 2;
+    const lineY = c.dy;
+
+    if (hoverType === 'roll') {
+        // Full conveyor: SPAWN → NEXT2 → NEXT1 → CURRENT → SELECTED
+        const gaps = [
+            { fromX: panelX + n2.dx + dh, toX: panelX + DICE_POS.SPAWN.dx - dh },
+            { fromX: panelX + n1.dx + dh, toX: panelX + n2.dx - dh },
+            { fromX: panelX + c.dx + dh, toX: panelX + n1.dx - dh },
+            { fromX: panelX + sel.dx + dh, toX: panelX + c.dx - dh }
+        ];
+        drawConveyorGaps(ctx, gaps, lineY, '#00E5FF');
+
+    } else if (hoverType === 'stock') {
+        // Horizontal: queue shifts left (NEXT→CURRENT, no SELECTED involved)
+        const gaps = [
+            { fromX: panelX + n2.dx + dh, toX: panelX + DICE_POS.SPAWN.dx - dh },
+            { fromX: panelX + n1.dx + dh, toX: panelX + n2.dx - dh },
+            { fromX: panelX + c.dx + dh, toX: panelX + n1.dx - dh }
+        ];
+        drawConveyorGaps(ctx, gaps, lineY, '#00E5FF');
+
+        // Vertical: CURRENT → STOCK
+        drawVerticalConveyor(ctx, panelX + c.dx, c.dy + dh, s.dy - dh, '#FFD700', true);
+
+    } else if (hoverType === 'useStock') {
+        // Vertical: STOCK → CURRENT (upward, replaces CURRENT)
+        drawVerticalConveyor(ctx, panelX + c.dx, c.dy + dh, s.dy - dh, '#FF8C00', false);
     }
 }
 
@@ -555,20 +907,39 @@ function drawPhaseUI() {
         const currentPlayer = game.getCurrentPlayer();
         const isDominated = currentPlayer.isDominated();
 
+        // Detect hover on buttons
+        const mx = game._mouseX || 0, my = game._mouseY || 0;
+        const rollHover = mx >= panelX && mx <= panelX + 200 && my >= 350 && my <= 400;
+        const stockBtnHover = mx >= panelX && mx <= panelX + 200 && my >= 408 && my <= 458;
+
+        // Draw hover preview arrows
+        if (rollHover && !isDominated) {
+            drawDiceHoverPreview(ctx, panelX, 'roll');
+        } else if (stockBtnHover && !isDominated && !game.stockedThisTurn) {
+            if (currentPlayer.hasStock()) {
+                drawDiceHoverPreview(ctx, panelX, 'useStock');
+            } else if (currentPlayer.canAfford(SKILL_COSTS.stock)) {
+                drawDiceHoverPreview(ctx, panelX, 'stock');
+            }
+        }
+
         // Buttons
         if (isDominated) {
-            renderer.drawButton(panelX, 350, 200, 50, '#006400', 'Roll Dice');
+            renderer.drawButton(panelX, 350, 200, 50, '#006400', 'Select');
             ctx.globalAlpha = 0.35;
             renderer.drawButton(panelX, 408, 200, 50, '#333344', 'Locked');
             ctx.globalAlpha = 1.0;
+        } else if (game.stockedThisTurn) {
+            // Stock直後はSelectのみ表示
+            renderer.drawButton(panelX, 350, 200, 50, rollHover ? '#007700' : '#006400', 'Select');
         } else if (currentPlayer.hasStock()) {
-            renderer.drawButton(panelX, 350, 200, 50, '#006400', 'Roll Dice');
-            renderer.drawButton(panelX, 408, 200, 50, '#8B6914', 'Use Stock');
+            renderer.drawButton(panelX, 350, 200, 50, rollHover ? '#007700' : '#006400', 'Select');
+            renderer.drawButton(panelX, 408, 200, 50, stockBtnHover ? '#A07B18' : '#8B6914', 'Use Stock');
         } else {
-            renderer.drawButton(panelX, 350, 200, 50, '#006400', 'Roll Dice');
+            renderer.drawButton(panelX, 350, 200, 50, rollHover ? '#007700' : '#006400', 'Select');
             const canStock = currentPlayer.canAfford(SKILL_COSTS.stock);
             if (canStock) {
-                renderer.drawButton(panelX, 408, 200, 50, '#665500', `Stock (-${SKILL_COSTS.stock}pt)`);
+                renderer.drawButton(panelX, 408, 200, 50, stockBtnHover ? '#776600' : '#665500', `Stock (-${SKILL_COSTS.stock}pt)`);
             } else {
                 ctx.globalAlpha = 0.35;
                 renderer.drawButton(panelX, 408, 200, 50, '#333344', `Stock (-${SKILL_COSTS.stock}pt)`);
@@ -576,27 +947,24 @@ function drawPhaseUI() {
             }
         }
     } else if (game.phase === PHASES.MOVE) {
-        // Draw dice result
-        drawDiceVisual(ctx, panelX + 100, 340, game.diceRoll);
-
         // Move mode indicator
         const currentPlayer = game.getCurrentPlayer();
         ctx.textAlign = 'center';
         if (game.moveMode === DIRECTION_TYPE.DIAGONAL) {
             ctx.fillStyle = COLORS.DIAGONAL_MOVE_HIGHLIGHT;
             ctx.font = 'bold 16px Arial';
-            ctx.fillText('Diagonal Mode (-10pt)', panelX + 100, 410);
+            ctx.fillText('Diagonal Mode (-10pt)', panelX + 100, 370);
             ctx.fillStyle = '#888899';
             ctx.font = '12px Arial';
-            ctx.fillText('Click piece to switch back', panelX + 100, 430);
+            ctx.fillText('Click piece to switch back', panelX + 100, 390);
         } else {
             ctx.fillStyle = '#888899';
             ctx.font = '12px Arial';
             if (currentPlayer.canAfford(SKILL_COSTS.diagonal_move)) {
-                ctx.fillText('Click piece for diagonal (-10pt)', panelX + 100, 410);
+                ctx.fillText('Click piece for diagonal (-10pt)', panelX + 100, 370);
             } else {
                 ctx.fillStyle = '#555566';
-                ctx.fillText('Not enough pts for diagonal', panelX + 100, 410);
+                ctx.fillText('Not enough pts for diagonal', panelX + 100, 370);
             }
         }
         ctx.textAlign = 'left';
@@ -707,11 +1075,11 @@ function drawDiceVisual(ctx, centerX, centerY, value) {
 }
 
 function drawDiceVisualSmall(ctx, centerX, centerY, value, isSmaller) {
-    const size = isSmaller ? 40 : 50;
+    const size = isSmaller ? 36 : DICE_SIZE;
     const x = centerX - size / 2;
     const y = centerY - size / 2;
     const radius = 6;
-    const dotRadius = isSmaller ? 4 : 5;
+    const dotRadius = isSmaller ? 3 : 4;
 
     ctx.save();
     ctx.globalAlpha = isSmaller ? 0.6 : 0.8;

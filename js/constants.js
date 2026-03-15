@@ -11,8 +11,8 @@ const BOARD_OFFSET_Y = 40;
 // Colors — Cyber Dark Theme
 const COLORS = {
     // Core
-    GRID: '#1A3A4A',
-    GRID_GLOW: '#00E5FF',
+    GRID: '#2A1A4A',
+    GRID_GLOW: '#B040FF',
     BLACK: '#000000',
     WHITE: '#FFFFFF',
     CELL_BG: '#0A0A14',
@@ -26,7 +26,7 @@ const COLORS = {
 
     // Stone (cyber)
     STONE: '#2A2A3A',
-    STONE_BORDER: '#00E5FF',
+    STONE_BORDER: '#B040FF',
     STONE_INNER: '#1A1A2E',
 
     // Special tiles (dark muted)
@@ -56,8 +56,8 @@ const COLORS = {
 
 // Neon Border
 const NEON = {
-    COLOR: '#00E5FF',
-    RGB: [0, 229, 255],
+    COLOR: '#B040FF',
+    RGB: [176, 64, 255],
     DARK_OUTSIDE: '#050510',
     SPARK_COUNT: 20
 };
@@ -87,6 +87,7 @@ const PHASES = {
     START_SCREEN: 'start_screen',
     SETTINGS: 'settings',
     SKILL_SELECTION: 'skill_selection',
+    START_ANIM: 'start_anim',
     ROLL: 'roll',
     MOVE: 'move',
     PLACE: 'place',
@@ -97,6 +98,10 @@ const PHASES = {
     REPLAY: 'replay',
     ANIMATING: 'animating'
 };
+
+// Start Animation Timing
+const START_ANIM_DURATION = 5500;
+const START_ANIM_CLOTH_STRIPS = 12;
 
 // Special Skills (each player chooses 1 at game start)
 const SPECIAL_SKILLS = {

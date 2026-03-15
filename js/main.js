@@ -89,18 +89,25 @@ function init() {
     requestAnimationFrame(gameLoop);
 }
 
+// Convert mouse event to canvas-internal coordinates (accounts for CSS scaling)
+function getCanvasCoords(event) {
+    const rect = event.target.getBoundingClientRect();
+    const scaleX = event.target.width / rect.width;
+    const scaleY = event.target.height / rect.height;
+    return {
+        x: (event.clientX - rect.left) * scaleX,
+        y: (event.clientY - rect.top) * scaleY
+    };
+}
+
 function handleMouseDown(event) {
     if (game.phase !== PHASES.SETTINGS) return;
-    const rect = event.target.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const { x, y } = getCanvasCoords(event);
     settings.handleMouseDown(x, y);
 }
 
 function handleMouseMove(event) {
-    const rect = event.target.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const { x, y } = getCanvasCoords(event);
 
     // Track mouse position for hover-reveal UI
     game._mouseX = x;
@@ -126,10 +133,12 @@ function handleMouseUp(event) {
 }
 
 function handleClick(event) {
-    const rect = event.target.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-
+    // クリックで開始アニメーションをスキップ
+    if (game.phase === PHASES.START_ANIM) {
+        game.finishStartAnim();
+        return;
+    }
+    const { x, y } = getCanvasCoords(event);
     game.handleClick(x, y);
 }
 
@@ -162,6 +171,13 @@ function handleKeyDown(event) {
         PHASES.DRILL_TARGET, PHASES.SKILL_TARGET, PHASES.WARP_SELECT];
     if (event.key === 'Escape' && gameplayPhases.includes(game.phase)) {
         game.showConfirmDialog = 'save_log';
+        event.preventDefault();
+        return;
+    }
+
+    // Escape or any key: skip start animation
+    if (game.phase === PHASES.START_ANIM) {
+        game.finishStartAnim();
         event.preventDefault();
         return;
     }
@@ -219,6 +235,126 @@ function gameLoop(timestamp) {
     requestAnimationFrame(gameLoop);
 }
 
+// ============================================================
+//  開始アニメーション描画 (Grid Build B)
+//  Phase 1 (0-0.15): タイトルフラッシュ "NINE-NINE"
+//  Phase 2 (0.15-0.35): タイトルフェード + パネルスライドイン
+//  Phase 3 (0.35-0.5):  グリッド線を1本ずつ描画
+//  Phase 4 (0.5-0.6):   ネオンボーダー点灯
+//  Phase 5 (0.6-0.7):   プレイヤー出現 + "YOUR TURN" テキスト
+//  Phase 6 (0.7-0.85):  タイル（石・ファウンテン）が光りながら出現
+//  Phase 7 (0.85-1.0):  "YOUR TURN" 布フロー → 選ばれたプレイヤーのパネルへ
+// ============================================================
+function renderStartAnimation(now) {
+    const elapsed = now - game.startAnimStart;
+    const t = Math.min(elapsed / START_ANIM_DURATION, 1);
+
+    // アニメーション完了 → ゲーム開始
+    if (t >= 1) {
+        game.finishStartAnim();
+        return;
+    }
+
+    const firstTurn = game.currentTurn;
+
+    // Phase 1 (0-0.15): タイトルフラッシュ
+    if (t < 0.15) {
+        const tt = t / 0.15;
+        renderer.drawStartTitle(tt, 1 + (1 - tt) * 0.3);
+        return;
+    }
+
+    // Phase 2 (0.15-0.35): タイトルフェード + パネルスライドイン
+    if (t < 0.35) {
+        const tt = (t - 0.15) / 0.2;
+        renderer.drawStartTitle(1 - tt, 1);
+        renderer.drawStartPanelsSlide(tt);
+        return;
+    }
+
+    // Phase 3 (0.35-0.5): グリッド線を1本ずつ描画
+    if (t < 0.5) {
+        const tt = (t - 0.35) / 0.15;
+        renderer.drawStartPanelsBg();
+        renderer.drawStartGridBuild(tt, game.board);
+        return;
+    }
+
+    // Phase 4 (0.5-0.6): ネオンボーダー点灯
+    if (t < 0.6) {
+        const tt = (t - 0.5) / 0.1;
+        const eased = renderer._easeOutCubic(tt);
+        renderer.clear();
+        renderer.drawNeonBorderBackground();
+        renderer.drawStartPanelsWithLabels(game.player1, game.player2, game.gameMode);
+        renderer.drawNeonBorderSideGlow();
+        renderer.drawStartStaticGrid();
+        renderer.drawBorderSparks(now);
+        return;
+    }
+
+    // Phase 5 (0.6-0.7): プレイヤー出現 + YOUR TURN テキスト
+    if (t < 0.7) {
+        const tt = (t - 0.6) / 0.1;
+        renderer.clear();
+        renderer.drawNeonBorderBackground();
+        renderer.drawStartPanelsWithLabels(game.player1, game.player2, game.gameMode);
+        renderer.drawNeonBorderSideGlow();
+        renderer.drawStartStaticGrid();
+        renderer.drawBorderSparks(now);
+        // プレイヤーをポップイン
+        const pa = renderer._easeOutBack(Math.min(tt / 0.6, 1));
+        if (pa > 0) {
+            renderer.ctx.save();
+            renderer.ctx.globalAlpha = pa;
+            renderer.drawPlayer(game.player1, null, now);
+            renderer.drawPlayer(game.player2, null, now);
+            renderer.ctx.restore();
+        }
+        // YOUR TURN テキスト（中央）
+        if (tt > 0.3) {
+            renderer.drawStartYourTurnText(Math.min((tt - 0.3) / 0.4, 1));
+        }
+        return;
+    }
+
+    // Phase 6 (0.7-0.85): タイルが光りながら出現
+    if (t < 0.85) {
+        const tt = (t - 0.7) / 0.15;
+        renderer.clear();
+        renderer.drawNeonBorderBackground();
+        renderer.drawStartPanelsWithLabels(game.player1, game.player2, game.gameMode);
+        renderer.drawNeonBorderSideGlow();
+        renderer.drawStartTileReveal(game.board, game.startAnimTileRevealOrder, tt, now);
+        renderer.drawBorderSparks(now);
+        renderer.drawPlayer(game.player1, null, now);
+        renderer.drawPlayer(game.player2, null, now);
+        // YOUR TURN テキストフェードアウト
+        if (tt < 0.3) {
+            renderer.drawStartYourTurnText(1 - tt / 0.3);
+        }
+        return;
+    }
+
+    // Phase 7 (0.85-1.0): YOUR TURN 布フロー
+    const ct = (t - 0.85) / 0.15;
+    renderer.clear();
+    renderer.drawNeonBorderBackground();
+    renderer.drawStartPanelsBg();
+    // 布フロー最終段階でパネルグローを追加
+    if (ct >= 0.7) {
+        renderer._drawPanelNeonGlow(firstTurn);
+    }
+    renderer.drawPlayerInfo(game.player1, 20, false, PHASES.ROLL, game.gameMode);
+    renderer.drawPlayerInfo(game.player2, SCREEN_WIDTH - PANEL_WIDTH + 20, false, PHASES.ROLL, game.gameMode);
+    renderer.drawNeonBorderSideGlow();
+    renderer.drawBoard(game.board, now);
+    renderer.drawBorderSparks(now);
+    renderer.drawPlayer(game.player1, null, now);
+    renderer.drawPlayer(game.player2, null, now);
+    renderer.drawStartClothFlow(ct, now, firstTurn, game.gameMode);
+}
+
 function render(now) {
     renderer.clear();
 
@@ -244,6 +380,10 @@ function render(now) {
 
             // Hover-reveal menu bar
             renderer.drawHoverMenuBar(game._mouseY);
+            break;
+
+        case PHASES.START_ANIM:
+            renderStartAnimation(now);
             break;
 
         case PHASES.ANIMATING:
@@ -465,10 +605,10 @@ function render(now) {
                     rctx.fillStyle = '#888899';
                     rctx.font = '14px Arial';
                     rctx.textAlign = 'left';
-                    rctx.fillText('ACTIONS', panelX, 320);
+                    rctx.fillText('ACTIONS', panelX, 355);
 
-                    // Stone button (Y: 330-380)
-                    drawSkillButton(rctx, panelX, 330, 200, 50, {
+                    // Stone button (Y: 365-415)
+                    drawSkillButton(rctx, panelX, 365, 200, 50, {
                         name: 'Stone',
                         color: COLORS.STONE,
                         textColor: COLORS.WHITE,
@@ -477,12 +617,12 @@ function render(now) {
                         isAffordable: true
                     });
 
-                    // Skill button (Y: 388-438)
+                    // Skill button (Y: 423-473)
                     const skillInfo = SKILL_INFO[currentPlayer.specialSkill];
                     if (skillInfo) {
                         const skillCost = rsc[skillInfo.costKey] !== undefined
                             ? rsc[skillInfo.costKey] : SKILL_COSTS[skillInfo.costKey];
-                        drawSkillButton(rctx, panelX, 388, 200, 50, {
+                        drawSkillButton(rctx, panelX, 423, 200, 50, {
                             name: skillInfo.name,
                             color: isDominated ? '#333344' : skillInfo.color,
                             textColor: isDominated ? '#666677' : skillInfo.textColor,
@@ -492,9 +632,9 @@ function render(now) {
                         });
                     }
 
-                    // Drill button (Y: 446-496)
+                    // Drill button (Y: 481-531)
                     const drillCost = rsc.drill !== undefined ? rsc.drill : SKILL_COSTS.drill;
-                    drawSkillButton(rctx, panelX, 446, 200, 50, {
+                    drawSkillButton(rctx, panelX, 481, 200, 50, {
                         name: 'Drill',
                         color: isDominated ? '#333344' : COLORS.DRILL,
                         textColor: isDominated ? '#666677' : COLORS.WHITE,
@@ -636,12 +776,12 @@ function drawDiceSlotReel(ctx, centerX, centerY, revealState) {
 const DICE_SIZE = 44;
 const DICE_GAP = 8;
 const DICE_POS = {
-    SELECTED: { dx: 22, dy: 215, size: DICE_SIZE },
-    CURRENT:  { dx: 74, dy: 215, size: DICE_SIZE },
-    NEXT1:    { dx: 126, dy: 215, size: DICE_SIZE },
-    NEXT2:    { dx: 178, dy: 215, size: DICE_SIZE },
-    STOCK:    { dx: 74, dy: 290, size: DICE_SIZE },
-    SPAWN:    { dx: 230, dy: 215, size: DICE_SIZE }
+    SELECTED: { dx: 22, dy: 250, size: DICE_SIZE },
+    CURRENT:  { dx: 74, dy: 250, size: DICE_SIZE },
+    NEXT1:    { dx: 126, dy: 250, size: DICE_SIZE },
+    NEXT2:    { dx: 178, dy: 250, size: DICE_SIZE },
+    STOCK:    { dx: 74, dy: 325, size: DICE_SIZE },
+    SPAWN:    { dx: 230, dy: 250, size: DICE_SIZE }
 };
 
 function lerp(a, b, t) { return a + (b - a) * t; }
@@ -654,9 +794,9 @@ function drawPlayerDicePanel(ctx, panelX, player) {
     ctx.fillStyle = '#888899';
     ctx.font = '11px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('USE', panelX + DICE_POS.SELECTED.dx, 180);
-    ctx.fillText('CURRENT', panelX + DICE_POS.CURRENT.dx, 180);
-    ctx.fillText('NEXT', panelX + (DICE_POS.NEXT1.dx + DICE_POS.NEXT2.dx) / 2, 180);
+    ctx.fillText('USE', panelX + DICE_POS.SELECTED.dx, 215);
+    ctx.fillText('CURRENT', panelX + DICE_POS.CURRENT.dx, 215);
+    ctx.fillText('NEXT', panelX + (DICE_POS.NEXT1.dx + DICE_POS.NEXT2.dx) / 2, 215);
 
     const trans = animManager.getDiceTransitionState(player.playerNum);
     const revealState = animManager.getDiceRevealState(player.playerNum);
@@ -716,7 +856,7 @@ function drawPlayerDicePanel(ctx, panelX, player) {
             ctx.fillStyle = '#FFD700';
             ctx.font = '11px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText('STOCK', panelX + DICE_POS.STOCK.dx, 255);
+            ctx.fillText('STOCK', panelX + DICE_POS.STOCK.dx, 290);
 
         } else if (trans.type === 'useStock') {
             // Old CURRENT fades out (replaced by stock value)
@@ -747,7 +887,7 @@ function drawPlayerDicePanel(ctx, panelX, player) {
             ctx.fillStyle = '#FFD700';
             ctx.font = '11px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText('STOCK', panelX + DICE_POS.STOCK.dx, 255);
+            ctx.fillText('STOCK', panelX + DICE_POS.STOCK.dx, 290);
             ctx.restore();
         }
     } else {
@@ -795,7 +935,7 @@ function drawPlayerDicePanel(ctx, panelX, player) {
             ctx.fillStyle = '#FFD700';
             ctx.font = '11px Arial';
             ctx.textAlign = 'center';
-            ctx.fillText('STOCK', panelX + DICE_POS.STOCK.dx, 255);
+            ctx.fillText('STOCK', panelX + DICE_POS.STOCK.dx, 290);
             drawDiceVisualSmall(ctx, panelX + DICE_POS.STOCK.dx, DICE_POS.STOCK.dy, player.stockedDice, false);
         }
     }
@@ -942,8 +1082,8 @@ function drawPhaseUI() {
 
         // Detect hover on buttons
         const mx = game._mouseX || 0, my = game._mouseY || 0;
-        const rollHover = mx >= panelX && mx <= panelX + 200 && my >= 350 && my <= 400;
-        const stockBtnHover = mx >= panelX && mx <= panelX + 200 && my >= 408 && my <= 458;
+        const rollHover = mx >= panelX && mx <= panelX + 200 && my >= 385 && my <= 435;
+        const stockBtnHover = mx >= panelX && mx <= panelX + 200 && my >= 443 && my <= 493;
 
         // Draw hover preview arrows
         if (rollHover && !isDominated) {
@@ -958,24 +1098,24 @@ function drawPhaseUI() {
 
         // Buttons
         if (isDominated) {
-            renderer.drawButton(panelX, 350, 200, 50, '#006400', 'Select');
+            renderer.drawButton(panelX, 385, 200, 50, '#006400', 'Select');
             ctx.globalAlpha = 0.35;
-            renderer.drawButton(panelX, 408, 200, 50, '#333344', 'Locked');
+            renderer.drawButton(panelX, 443, 200, 50, '#333344', 'Locked');
             ctx.globalAlpha = 1.0;
         } else if (game.stockedThisTurn) {
             // Stock直後はSelectのみ表示
-            renderer.drawButton(panelX, 350, 200, 50, rollHover ? '#007700' : '#006400', 'Select');
+            renderer.drawButton(panelX, 385, 200, 50, rollHover ? '#007700' : '#006400', 'Select');
         } else if (currentPlayer.hasStock()) {
-            renderer.drawButton(panelX, 350, 200, 50, rollHover ? '#007700' : '#006400', 'Select');
-            renderer.drawButton(panelX, 408, 200, 50, stockBtnHover ? '#A07B18' : '#8B6914', 'Use Stock');
+            renderer.drawButton(panelX, 385, 200, 50, rollHover ? '#007700' : '#006400', 'Select');
+            renderer.drawButton(panelX, 443, 200, 50, stockBtnHover ? '#A07B18' : '#8B6914', 'Use Stock');
         } else {
-            renderer.drawButton(panelX, 350, 200, 50, rollHover ? '#007700' : '#006400', 'Select');
+            renderer.drawButton(panelX, 385, 200, 50, rollHover ? '#007700' : '#006400', 'Select');
             const canStock = currentPlayer.canAfford(SKILL_COSTS.stock);
             if (canStock) {
-                renderer.drawButton(panelX, 408, 200, 50, stockBtnHover ? '#776600' : '#665500', `Stock (-${SKILL_COSTS.stock}pt)`);
+                renderer.drawButton(panelX, 443, 200, 50, stockBtnHover ? '#776600' : '#665500', `Stock (-${SKILL_COSTS.stock}pt)`);
             } else {
                 ctx.globalAlpha = 0.35;
-                renderer.drawButton(panelX, 408, 200, 50, '#333344', `Stock (-${SKILL_COSTS.stock}pt)`);
+                renderer.drawButton(panelX, 443, 200, 50, '#333344', `Stock (-${SKILL_COSTS.stock}pt)`);
                 ctx.globalAlpha = 1.0;
             }
         }
@@ -986,18 +1126,18 @@ function drawPhaseUI() {
         if (game.moveMode === DIRECTION_TYPE.DIAGONAL) {
             ctx.fillStyle = COLORS.DIAGONAL_MOVE_HIGHLIGHT;
             ctx.font = 'bold 16px Arial';
-            ctx.fillText('Diagonal Mode (-10pt)', panelX + 100, 370);
+            ctx.fillText('Diagonal Mode (-10pt)', panelX + 100, 405);
             ctx.fillStyle = '#888899';
             ctx.font = '12px Arial';
-            ctx.fillText('Click piece to switch back', panelX + 100, 390);
+            ctx.fillText('Click piece to switch back', panelX + 100, 425);
         } else {
             ctx.fillStyle = '#888899';
             ctx.font = '12px Arial';
             if (currentPlayer.canAfford(SKILL_COSTS.diagonal_move)) {
-                ctx.fillText('Click piece for diagonal (-10pt)', panelX + 100, 370);
+                ctx.fillText('Click piece for diagonal (-10pt)', panelX + 100, 405);
             } else {
                 ctx.fillStyle = '#555566';
-                ctx.fillText('Not enough pts for diagonal', panelX + 100, 370);
+                ctx.fillText('Not enough pts for diagonal', panelX + 100, 405);
             }
         }
         ctx.textAlign = 'left';
@@ -1019,10 +1159,10 @@ function drawPhaseUI() {
         ctx.fillStyle = '#888899';
         ctx.font = '14px Arial';
         ctx.textAlign = 'left';
-        ctx.fillText('ACTIONS', panelX, 320);
+        ctx.fillText('ACTIONS', panelX, 355);
 
-        // Stone button (Y: 330-380) — always available
-        drawSkillButton(ctx, panelX, 330, 200, 50, {
+        // Stone button (Y: 365-415) — always available
+        drawSkillButton(ctx, panelX, 365, 200, 50, {
             name: 'Stone',
             color: COLORS.STONE,
             textColor: COLORS.WHITE,
@@ -1031,11 +1171,11 @@ function drawPhaseUI() {
             isAffordable: true
         });
 
-        // Skill button (Y: 388-438) — player's selected skill
+        // Skill button (Y: 423-473) — player's selected skill
         const skillInfo = SKILL_INFO[currentPlayer.specialSkill];
         if (skillInfo) {
             const skillCost = SKILL_COSTS[skillInfo.costKey];
-            drawSkillButton(ctx, panelX, 388, 200, 50, {
+            drawSkillButton(ctx, panelX, 423, 200, 50, {
                 name: skillInfo.name,
                 color: isDominated ? '#333344' : skillInfo.color,
                 textColor: isDominated ? '#666677' : skillInfo.textColor,
@@ -1046,8 +1186,8 @@ function drawPhaseUI() {
             });
         }
 
-        // Drill button (Y: 446-496)
-        drawSkillButton(ctx, panelX, 446, 200, 50, {
+        // Drill button (Y: 481-531)
+        drawSkillButton(ctx, panelX, 481, 200, 50, {
             name: 'Drill',
             color: isDominated ? '#333344' : COLORS.DRILL,
             textColor: isDominated ? '#666677' : COLORS.WHITE,

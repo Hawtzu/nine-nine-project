@@ -24,6 +24,14 @@ class Game {
         this.moveMode = DIRECTION_TYPE.CROSS;
         this.sniperAnimating = false;
         this.sniperAnimStart = 0;
+        this.fallAnimating = false;
+        this.fallAnimStart = 0;
+        this.fallAnimDir = { dr: 0, dc: 0 };
+        this.fallAnimPlayerNum = 0;
+        this.fallAnimPlayerPos = { row: 0, col: 0 };
+        this.fallAnimInitialized = false;
+        this.pendingFallDir = null;
+        this.pendingFallPlayerNum = 0;
         this.hoveredSkill = null; // skill key hovered in selection screen
         this.kamakuraPatterns = [];       // [{middle:{row,col}, stones:[{row,col},...]}]
         this.hoveredKamakuraIndex = null; // index of hovered pattern
@@ -61,6 +69,14 @@ class Game {
         this.activeSkillType = null;
         this.sniperAnimating = false;
         this.sniperAnimStart = 0;
+        this.fallAnimating = false;
+        this.fallAnimStart = 0;
+        this.fallAnimDir = { dr: 0, dc: 0 };
+        this.fallAnimPlayerNum = 0;
+        this.fallAnimPlayerPos = { row: 0, col: 0 };
+        this.fallAnimInitialized = false;
+        this.pendingFallDir = null;
+        this.pendingFallPlayerNum = 0;
         this.kamakuraPatterns = [];
         this.hoveredKamakuraIndex = null;
         this.showDifficultySelect = false;
@@ -306,7 +322,7 @@ class Game {
 
                 if (!this.board.isValidPosition(nextPos.row, nextPos.col)) {
                     if (finalDest) {
-                        this.fallTriggerTiles.push(finalDest);
+                        this.fallTriggerTiles.push({ ...finalDest, dr: dir.dr, dc: dir.dc });
                     }
                     break;
                 }
@@ -1471,9 +1487,31 @@ class Game {
             return true;
         }
 
+        if (this.fallAnimating) return false;
+
         for (const tile of this.fallTriggerTiles) {
             if (tile.row === clickedCell.row && tile.col === clickedCell.col) {
-                this.gameOver(this.currentTurn === 1 ? 2 : 1, 'fell off the cliff!');
+                // First, move the piece to the edge tile, then start electrocution
+                const currentPlayer = this.getCurrentPlayer();
+                const fromRow = currentPlayer.row;
+                const fromCol = currentPlayer.col;
+                // Store fall info for after animation
+                this.pendingFallDir = { dr: tile.dr || 0, dc: tile.dc || 0 };
+                this.pendingFallPlayerNum = this.currentTurn;
+                // Move piece to the edge tile
+                currentPlayer.moveTo(tile.row, tile.col);
+                animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, tile.row, tile.col, 'move');
+                this.phase = PHASES.ANIMATING;
+                animManager.playerAnims[currentPlayer.playerNum].onComplete = () => {
+                    // After arriving at edge, start electrocution effect
+                    this.fallAnimating = true;
+                    this.fallAnimStart = performance.now();
+                    this.fallAnimDir = this.pendingFallDir;
+                    this.fallAnimPlayerNum = this.pendingFallPlayerNum;
+                    this.fallAnimPlayerPos = { row: tile.row, col: tile.col };
+                    this.fallAnimInitialized = false;
+                    this.phase = PHASES.MOVE; // Return to MOVE so fall effect renders
+                };
                 return true;
             }
         }

@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Dice Flow Test</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; color: #ccc; font-family: 'Segoe UI', Tahoma, sans-serif; padding: 20px; }
+h1 { color: #00E5FF; font-size: 22px; margin-bottom: 16px; }
+.container { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+canvas { border: 1px solid #333; border-radius: 4px; }
+.controls { display: flex; gap: 12px; align-items: center; }
+.btn {
+    padding: 10px 20px; font-size: 14px; cursor: pointer;
+    border: 1px solid #444; background: #1a1a3e; color: #aaa;
+    border-radius: 4px; transition: all 0.15s;
+}
+.btn:hover { border-color: #00E5FF; color: #fff; }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.btn.stock { border-color: #FFD700; color: #FFD700; }
+.btn.stock:hover { background: #2a2a1e; }
+.btn.use-stock { border-color: #FF8C00; color: #FF8C00; }
+.btn.use-stock:hover { background: #2a1a0e; }
+.btn.reset { border-color: #888; color: #888; }
+.status { background: #0f0f23; border: 1px solid #333; padding: 10px 16px; border-radius: 4px; font-family: monospace; font-size: 13px; min-width: 400px; text-align: center; }
+.effect-selector { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.effect-btn {
+    padding: 8px 14px; font-size: 12px; cursor: pointer;
+    border: 1px solid #444; background: #1a1a3e; color: #888;
+    border-radius: 4px; transition: all 0.15s;
+}
+.effect-btn:hover { border-color: #00E5FF; color: #ccc; }
+.effect-btn.active { border-color: #00E5FF; color: #00E5FF; background: #1a2a3e; }
+.effect-label { color: #666; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Dice Flow Transition Test</h1>
+<div class="container">
+    <canvas id="cv" width="700" height="300"></canvas>
+    <div class="controls">
+        <button class="btn" id="btnRoll" onclick="doRoll()">Roll Dice</button>
+        <button class="btn stock" id="btnStock" onclick="doStock()">Stock (-20pt)</button>
+        <button class="btn use-stock" id="btnUse" onclick="doUseStock()" disabled>Use Stock</button>
+        <button class="btn reset" onclick="doReset()">Reset</button>
+    </div>
+    <div class="effect-label">Reveal Effect:</div>
+    <div class="effect-selector">
+        <button class="effect-btn active" onclick="setEffect('flash')" id="eff-flash">A: Flash Reveal</button>
+        <button class="effect-btn" onclick="setEffect('slot')" id="eff-slot">B: Slot Reel</button>
+        <button class="effect-btn" onclick="setEffect('bounce')" id="eff-bounce">C: Scale Bounce</button>
+        <button class="effect-btn" onclick="setEffect('glitch')" id="eff-glitch">D: Digital Glitch</button>
+    </div>
+    <div class="status" id="status">Queue: [?, ?, ?] | Stock: none | Points: 100</div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+
+// Slot positions (center x, center y)
+const SLOTS = {
+    STOCK:   { x: 100, y: 160, label: 'STOCK',   labelY: 80 },
+    CURRENT: { x: 270, y: 160, label: 'CURRENT', labelY: 80 },
+    NEXT1:   { x: 420, y: 160, label: 'NEXT',    labelY: 80 },
+    NEXT2:   { x: 540, y: 160, label: '',         labelY: 80 },
+    SPAWN:   { x: 680, y: 160 }
+};
+
+// State
+let diceQueue = [];
+let stockedDice = null;
+let points = 100;
+let animations = [];
+let floatTexts = [];
+let animating = false;
+let revealEffect = 'flash';
+
+function setEffect(name) {
+    revealEffect = name;
+    document.querySelectorAll('.effect-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('eff-' + name).classList.add('active');
+}
+
+function randDice() { return Math.floor(Math.random() * 3) + 1; }
+
+function easeInOutCubic(t) {
+    return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
+}
+
+// Elastic ease out for bounce effect
+function easeOutElastic(t) {
+    if (t === 0 || t === 1) return t;
+    return Math.pow(2, -10 * t) * Math.sin((t - 0.1) * 5 * Math.PI) + 1;
+}
+
+function init() {
+    diceQueue = [randDice(), randDice(), randDice()];
+    stockedDice = null;
+    points = 100;
+    animations = [];
+    floatTexts = [];
+    animating = false;
+}
+init();
+
+// --- Drawing ---
+
+function drawDice(cx, cy, value, size, opts = {}) {
+    const alpha = opts.alpha !== undefined ? opts.alpha : 1.0;
+    const borderColor = opts.borderColor || '#444466';
+    const glow = opts.glow || false;
+    const scale = opts.scale || 1;
+    const x = cx - size*scale/2, y = cy - size*scale/2;
+    const s = size * scale;
+    const r = 6 * scale;
+    const dotR = s * 0.1;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // Body
+    ctx.fillStyle = opts.bodyColor || '#1A1A2E';
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.lineTo(x+s-r, y);
+    ctx.arcTo(x+s, y, x+s, y+r, r);
+    ctx.lineTo(x+s, y+s-r);
+    ctx.arcTo(x+s, y+s, x+s-r, y+s, r);
+    ctx.lineTo(x+r, y+s);
+    ctx.arcTo(x, y+s, x, y+s-r, r);
+    ctx.lineTo(x, y+r);
+    ctx.arcTo(x, y, x+r, y, r);
+    ctx.closePath();
+    ctx.fill();
+
+    // Border
+    if (glow) {
+        ctx.shadowColor = borderColor;
+        ctx.shadowBlur = 10;
+    }
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = glow ? 2 : 1;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Dots or "?"
+    ctx.fillStyle = opts.dotColor || '#CCCCDD';
+    const off = s * 0.26;
+    if (value === 0) {
+        // "?" mark
+        ctx.font = `bold ${s * 0.55}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#666688';
+        ctx.fillText('?', cx, cy + 1);
+    } else if (value === 1) {
+        drawDot(cx, cy, dotR);
+    } else if (value === 2) {
+        drawDot(cx-off, cy-off, dotR);
+        drawDot(cx+off, cy+off, dotR);
+    } else if (value === 3) {
+        drawDot(cx-off, cy-off, dotR);
+        drawDot(cx, cy, dotR);
+        drawDot(cx+off, cy+off, dotR);
+    }
+    ctx.restore();
+}
+
+function drawDot(x, y, r) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI*2);
+    ctx.fill();
+}
+
+function drawArrow(fromX, fromY, toX, toY, color, alpha, dashed) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2;
+    if (dashed) ctx.setLineDash([4, 4]);
+
+    const dx = toX - fromX, dy = toY - fromY;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    const ux = dx/len, uy = dy/len;
+    const headLen = 8;
+
+    ctx.beginPath();
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX - ux*headLen, toY - uy*headLen);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Arrowhead
+    ctx.beginPath();
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(toX - ux*headLen - uy*5, toY - uy*headLen + ux*5);
+    ctx.lineTo(toX - ux*headLen + uy*5, toY - uy*headLen - ux*5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawArcArrow(fromX, fromY, toX, toY, curveDir, color, alpha, dashed) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2;
+    if (dashed) ctx.setLineDash([4, 4]);
+
+    const midX = (fromX + toX) / 2;
+    const midY = (fromY + toY) / 2;
+    const cpY = midY + curveDir * 60;
+
+    ctx.beginPath();
+    ctx.moveTo(fromX, fromY);
+    ctx.quadraticCurveTo(midX, cpY, toX, toY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Arrowhead at end
+    const t = 0.95;
+    const t1 = 1 - t;
+    const px = t1*t1*fromX + 2*t1*t*midX + t*t*toX;
+    const py = t1*t1*fromY + 2*t1*t*cpY + t*t*toY;
+    const angle = Math.atan2(toY - py, toX - px);
+    ctx.beginPath();
+    ctx.moveTo(toX, toY);
+    ctx.lineTo(toX - 8*Math.cos(angle) - 5*Math.sin(angle), toY - 8*Math.sin(angle) + 5*Math.cos(angle));
+    ctx.lineTo(toX - 8*Math.cos(angle) + 5*Math.sin(angle), toY - 8*Math.sin(angle) - 5*Math.cos(angle));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+}
+
+// --- Reveal effect renderers ---
+
+function drawRevealFlash(a, t, elapsed) {
+    // Phase 1 (0-0.4): bright flash whiteout
+    // Phase 2 (0.4-1.0): flash fades, final value visible
+    if (t < 0.4) {
+        const flashT = t / 0.4;
+        const brightness = Math.sin(flashT * Math.PI); // 0 -> 1 -> 0
+        // Draw dice with whiteout overlay
+        drawDice(a.x, a.y, a.value, a.size || 50, {
+            alpha: a.baseAlpha || 0.6,
+            borderColor: '#00E5FF',
+            glow: true,
+            bodyColor: lerpColor('#1A1A2E', '#88DDFF', brightness * 0.7),
+            dotColor: lerpColor('#CCCCDD', '#FFFFFF', brightness)
+        });
+    } else {
+        // Glow fades out
+        const fadeT = (t - 0.4) / 0.6;
+        const glowAmount = 1 - fadeT;
+        drawDice(a.x, a.y, a.value, a.size || 50, {
+            alpha: a.baseAlpha || 0.6,
+            borderColor: glowAmount > 0.1 ? '#00E5FF' : '#444466',
+            glow: glowAmount > 0.1
+        });
+    }
+}
+
+function drawRevealSlot(a, t, elapsed) {
+    // Vertical reel scroll effect using clipping
+    const sz = a.size || 50;
+    const cx = a.x, cy = a.y;
+    const half = sz / 2;
+
+    ctx.save();
+    ctx.globalAlpha = a.baseAlpha || 0.6;
+
+    // Draw dice body (clipping container)
+    const r = 6;
+    ctx.beginPath();
+    ctx.moveTo(cx-half+r, cy-half);
+    ctx.lineTo(cx+half-r, cy-half);
+    ctx.arcTo(cx+half, cy-half, cx+half, cy-half+r, r);
+    ctx.lineTo(cx+half, cy+half-r);
+    ctx.arcTo(cx+half, cy+half, cx+half-r, cy+half, r);
+    ctx.lineTo(cx-half+r, cy+half);
+    ctx.arcTo(cx-half, cy+half, cx-half, cy+half-r, r);
+    ctx.lineTo(cx-half, cy-half+r);
+    ctx.arcTo(cx-half, cy-half, cx-half+r, cy-half, r);
+    ctx.closePath();
+    ctx.fillStyle = '#1A1A2E';
+    ctx.fill();
+    ctx.strokeStyle = '#444466';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.clip();
+
+    // Scroll offset: decelerating, ends at 0 (settled)
+    // Values cycle: 1, 2, 3, 1, 2, 3... scrolling upward
+    const totalScroll = 6; // scroll through 6 dice heights total
+    const decelT = 1 - Math.pow(1 - t, 3); // ease out cubic
+    const scrollPos = totalScroll * (1 - decelT); // decreasing scroll
+
+    // Which value is centered
+    const values = [1, 2, 3];
+    const finalIdx = a.value - 1;
+    const scrollInValues = scrollPos * sz;
+    const centerIdx = finalIdx + scrollPos * 3;
+
+    // Draw 3 stacked dice faces (prev, current, next) visible through clip
+    for (let offset = -1; offset <= 1; offset++) {
+        const rawIdx = Math.floor(centerIdx) + offset;
+        const val = values[((rawIdx % 3) + 3) % 3];
+        const fracOffset = centerIdx - Math.floor(centerIdx);
+        const yOff = (offset - fracOffset) * sz;
+        const dotR = sz * 0.1;
+        const off = sz * 0.26;
+
+        ctx.fillStyle = '#CCCCDD';
+        const dotCy = cy + yOff;
+        if (val === 1) {
+            drawDotRaw(cx, dotCy, dotR);
+        } else if (val === 2) {
+            drawDotRaw(cx-off, dotCy-off, dotR);
+            drawDotRaw(cx+off, dotCy+off, dotR);
+        } else if (val === 3) {
+            drawDotRaw(cx-off, dotCy-off, dotR);
+            drawDotRaw(cx, dotCy, dotR);
+            drawDotRaw(cx+off, dotCy+off, dotR);
+        }
+    }
+
+    ctx.restore();
+
+    // Settled glow
+    if (t > 0.85) {
+        drawDice(a.x, a.y, a.value, sz, {
+            alpha: (a.baseAlpha || 0.6) * 0.3,
+            borderColor: '#00E5FF',
+            glow: true
+        });
+    }
+}
+
+function drawRevealBounce(a, t, elapsed) {
+    const sz = a.size || 50;
+
+    if (t < 0.3) {
+        // Phase 1: "?" shrinks to nothing
+        const shrinkT = t / 0.3;
+        const scale = 1 - easeInOutCubic(shrinkT);
+        if (scale > 0.01) {
+            drawDice(a.x, a.y, 0, sz, {
+                alpha: (a.baseAlpha || 0.6) * scale,
+                scale: scale
+            });
+        }
+    } else {
+        // Phase 2: final value bounces in with elastic overshoot
+        const bounceT = (t - 0.3) / 0.7;
+        const scale = easeOutElastic(bounceT);
+        drawDice(a.x, a.y, a.value, sz, {
+            alpha: a.baseAlpha || 0.6,
+            scale: Math.max(0.01, scale),
+            borderColor: bounceT < 0.5 ? '#00E5FF' : '#444466',
+            glow: bounceT < 0.5
+        });
+    }
+}
+
+function drawRevealGlitch(a, t, elapsed) {
+    const sz = a.size || 50;
+    const cx = a.x, cy = a.y;
+    const half = sz / 2;
+
+    if (t < 0.7) {
+        // Glitch phase: dice with scanlines and offset slices
+        const intensity = t < 0.5 ? t / 0.5 : (0.7 - t) / 0.2;
+        const showValue = t > 0.35 ? a.value : 0; // halfway through, start showing real value
+
+        // Main dice (slightly offset)
+        const jitterX = (Math.random() - 0.5) * 4 * intensity;
+        const jitterY = (Math.random() - 0.5) * 2 * intensity;
+        drawDice(cx + jitterX, cy + jitterY, showValue, sz, {
+            alpha: a.baseAlpha || 0.6,
+            borderColor: '#444466'
+        });
+
+        // Glitch slices (horizontal offset bands)
+        ctx.save();
+        ctx.globalAlpha = (a.baseAlpha || 0.6) * 0.6 * intensity;
+        const sliceCount = 3;
+        for (let i = 0; i < sliceCount; i++) {
+            const sliceY = cy - half + (sz / sliceCount) * i;
+            const sliceH = sz / sliceCount;
+            const offsetX = (Math.random() - 0.5) * 12 * intensity;
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(cx - half + offsetX - 2, sliceY, sz + 4, sliceH);
+            ctx.clip();
+
+            // Cyan ghost
+            drawDice(cx + offsetX + 3, cy, showValue, sz, {
+                alpha: 0.4,
+                borderColor: '#00E5FF',
+                dotColor: '#00E5FF'
+            });
+            ctx.restore();
+        }
+
+        // Scanlines
+        ctx.globalAlpha = 0.15 * intensity;
+        for (let y = cy - half; y < cy + half; y += 3) {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(cx - half, y, sz, 1);
+        }
+        ctx.restore();
+    } else {
+        // Settle phase: clean dice, glitch fades
+        const settleT = (t - 0.7) / 0.3;
+        const jitter = (1 - settleT) * 2;
+        const jx = (Math.random() - 0.5) * jitter;
+        drawDice(cx + jx, cy, a.value, sz, {
+            alpha: a.baseAlpha || 0.6,
+            borderColor: settleT < 0.5 ? '#00E5FF' : '#444466',
+            glow: settleT < 0.5
+        });
+    }
+}
+
+// Helper: draw a dot without save/restore (used inside clipped context)
+function drawDotRaw(x, y, r) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI*2);
+    ctx.fill();
+}
+
+// Helper: lerp between two hex colors
+function lerpColor(c1, c2, t) {
+    const r1 = parseInt(c1.slice(1,3), 16), g1 = parseInt(c1.slice(3,5), 16), b1 = parseInt(c1.slice(5,7), 16);
+    const r2 = parseInt(c2.slice(1,3), 16), g2 = parseInt(c2.slice(3,5), 16), b2 = parseInt(c2.slice(5,7), 16);
+    const r = Math.round(r1 + (r2-r1)*t), g = Math.round(g1 + (g2-g1)*t), b = Math.round(b1 + (b2-b1)*t);
+    return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+}
+
+function draw(now) {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    // Labels
+    ctx.font = 'bold 13px Arial';
+    ctx.textAlign = 'center';
+    for (const key of ['STOCK', 'CURRENT', 'NEXT1', 'NEXT2']) {
+        const s = SLOTS[key];
+        if (!s.label) continue;
+        ctx.fillStyle = key === 'STOCK' ? '#FFD700' : '#888899';
+        ctx.fillText(s.label, s.x, s.labelY);
+    }
+
+    // Flow arrows (queue direction)
+    const arrowAlpha = animating ? 0.15 : 0.3;
+    const arrowColor = '#555577';
+    drawArrow(SLOTS.NEXT2.x - 30, SLOTS.NEXT2.y, SLOTS.NEXT1.x + 35, SLOTS.NEXT1.y, arrowColor, arrowAlpha, false);
+    drawArrow(SLOTS.NEXT1.x - 35, SLOTS.NEXT1.y, SLOTS.CURRENT.x + 35, SLOTS.CURRENT.y, arrowColor, arrowAlpha, false);
+
+    // Stock <-> Current arc arrows
+    const hasStock = stockedDice !== null;
+    // Stock -> Current (use stock)
+    drawArcArrow(SLOTS.STOCK.x, SLOTS.STOCK.y + 35, SLOTS.CURRENT.x, SLOTS.CURRENT.y + 35,
+        1, hasStock ? '#FF8C00' : '#333355', hasStock ? 0.5 : 0.15, !hasStock);
+    // Current -> Stock
+    const canStock = !hasStock && points >= 20;
+    drawArcArrow(SLOTS.CURRENT.x, SLOTS.CURRENT.y - 35, SLOTS.STOCK.x, SLOTS.STOCK.y - 35,
+        -1, canStock ? '#FFD700' : '#333355', canStock ? 0.5 : 0.15, !canStock);
+
+    // Draw static dice (not being animated)
+    const animatedSlots = new Set();
+    for (const a of animations) {
+        if (a.slot) animatedSlots.add(a.slot);
+    }
+
+    // Stock dice
+    if (stockedDice !== null && !animatedSlots.has('STOCK')) {
+        drawDice(SLOTS.STOCK.x, SLOTS.STOCK.y, stockedDice, 60, { borderColor: '#FFD700', glow: true });
+    }
+    // Stock placeholder
+    if (stockedDice === null && !animating) {
+        ctx.save();
+        ctx.strokeStyle = '#333355';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(SLOTS.STOCK.x - 30, SLOTS.STOCK.y - 30, 60, 60);
+        ctx.setLineDash([]);
+        ctx.restore();
+    }
+
+    // Current
+    if (!animatedSlots.has('CURRENT')) {
+        drawDice(SLOTS.CURRENT.x, SLOTS.CURRENT.y, diceQueue[0], 60);
+    }
+    // Next1
+    if (!animatedSlots.has('NEXT1')) {
+        drawDice(SLOTS.NEXT1.x, SLOTS.NEXT1.y, diceQueue[1], 60);
+    }
+    // Next2
+    if (!animatedSlots.has('NEXT2')) {
+        drawDice(SLOTS.NEXT2.x, SLOTS.NEXT2.y, diceQueue[2], 50, { alpha: 0.6 });
+    }
+
+    // Draw animations
+    for (const a of animations) {
+        const elapsed = now - a.startTime;
+        const t = Math.min(1, elapsed / a.duration);
+        const et = easeInOutCubic(t);
+
+        if (a.type === 'move') {
+            let x, y;
+            if (a.cpX !== undefined) {
+                const t1 = 1 - et;
+                x = t1*t1*a.fromX + 2*t1*et*a.cpX + et*et*a.toX;
+                y = t1*t1*a.fromY + 2*t1*et*a.cpY + et*et*a.toY;
+            } else {
+                x = a.fromX + (a.toX - a.fromX) * et;
+                y = a.fromY + (a.toY - a.fromY) * et;
+            }
+            const alpha = a.fadeIn ? et : (a.fadeOut ? 1 - et : 1);
+            drawDice(x, y, a.value, a.size || 60, {
+                alpha: alpha * (a.baseAlpha || 1),
+                borderColor: a.borderColor || '#444466',
+                glow: a.glow || false
+            });
+        } else if (a.type === 'fadeOut') {
+            drawDice(a.x, a.y, a.value, a.size || 60, { alpha: 1 - et });
+        } else if (a.type === 'reveal') {
+            // Dispatch to the selected reveal effect
+            switch (a.revealStyle) {
+                case 'flash':  drawRevealFlash(a, t, elapsed); break;
+                case 'slot':   drawRevealSlot(a, t, elapsed); break;
+                case 'bounce': drawRevealBounce(a, t, elapsed); break;
+                case 'glitch': drawRevealGlitch(a, t, elapsed); break;
+            }
+        }
+    }
+
+    // Float texts
+    for (const ft of floatTexts) {
+        const elapsed = now - ft.startTime;
+        const t = Math.min(1, elapsed / ft.duration);
+        const alpha = t < 0.3 ? t / 0.3 : (1 - t) / 0.7;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, alpha);
+        ctx.fillStyle = ft.color;
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(ft.text, ft.x, ft.y - t * 30);
+        ctx.restore();
+    }
+
+    // Clean up finished
+    const animDone = animations.filter(a => now - a.startTime >= a.duration);
+    for (const a of animDone) {
+        if (a.onComplete) a.onComplete();
+    }
+    animations = animations.filter(a => now - a.startTime < a.duration);
+    floatTexts = floatTexts.filter(ft => now - ft.startTime < ft.duration);
+
+    if (animations.length === 0 && animating) {
+        animating = false;
+        updateButtons();
+    }
+
+    updateStatus();
+    requestAnimationFrame(draw);
+}
+
+// --- Reveal animation spawner ---
+function spawnReveal(newDice) {
+    const durations = { flash: 400, slot: 700, bounce: 500, glitch: 600 };
+    animations.push({
+        type: 'reveal', slot: 'NEXT2',
+        revealStyle: revealEffect,
+        x: SLOTS.NEXT2.x, y: SLOTS.NEXT2.y,
+        value: newDice, size: 50, baseAlpha: 0.6,
+        startTime: performance.now(),
+        duration: durations[revealEffect] || 500
+    });
+}
+
+// --- Actions ---
+
+function doRoll() {
+    if (animating) return;
+    animating = true;
+    updateButtons();
+
+    const now = performance.now();
+    const dur = 300;
+    const oldCurrent = diceQueue[0];
+    const newDice = randDice();
+
+    // Fade out current
+    animations.push({
+        type: 'fadeOut', x: SLOTS.CURRENT.x, y: SLOTS.CURRENT.y,
+        value: oldCurrent, size: 60, startTime: now, duration: dur
+    });
+
+    // Next1 -> Current
+    animations.push({
+        type: 'move', slot: 'CURRENT',
+        fromX: SLOTS.NEXT1.x, fromY: SLOTS.NEXT1.y,
+        toX: SLOTS.CURRENT.x, toY: SLOTS.CURRENT.y,
+        value: diceQueue[1], size: 60, startTime: now, duration: dur
+    });
+
+    // Next2 -> Next1
+    animations.push({
+        type: 'move', slot: 'NEXT1',
+        fromX: SLOTS.NEXT2.x, fromY: SLOTS.NEXT2.y,
+        toX: SLOTS.NEXT1.x, toY: SLOTS.NEXT1.y,
+        value: diceQueue[2], size: 60, baseAlpha: 1,
+        startTime: now, duration: dur
+    });
+
+    // Spawn -> Next2 as "?" dice, then reveal
+    animations.push({
+        type: 'move', slot: 'NEXT2',
+        fromX: SLOTS.SPAWN.x, fromY: SLOTS.SPAWN.y,
+        toX: SLOTS.NEXT2.x, toY: SLOTS.NEXT2.y,
+        value: 0, size: 50, baseAlpha: 0.6, fadeIn: true,
+        startTime: now, duration: dur,
+        onComplete: () => {
+            diceQueue.shift();
+            diceQueue.push(newDice);
+            spawnReveal(newDice);
+        }
+    });
+}
+
+function doStock() {
+    if (animating || stockedDice !== null || points < 20) return;
+    animating = true;
+    points -= 20;
+    updateButtons();
+
+    const now = performance.now();
+    const dur = 400;
+    const oldCurrent = diceQueue[0];
+    const newDice = randDice();
+
+    // Current -> Stock (arc)
+    const midX = (SLOTS.CURRENT.x + SLOTS.STOCK.x) / 2;
+    animations.push({
+        type: 'move', slot: 'STOCK',
+        fromX: SLOTS.CURRENT.x, fromY: SLOTS.CURRENT.y,
+        toX: SLOTS.STOCK.x, toY: SLOTS.STOCK.y,
+        cpX: midX, cpY: SLOTS.CURRENT.y - 70,
+        value: oldCurrent, size: 60,
+        borderColor: '#FFD700', glow: true,
+        startTime: now, duration: dur,
+        onComplete: () => { stockedDice = oldCurrent; }
+    });
+
+    // Next1 -> Current
+    animations.push({
+        type: 'move', slot: 'CURRENT',
+        fromX: SLOTS.NEXT1.x, fromY: SLOTS.NEXT1.y,
+        toX: SLOTS.CURRENT.x, toY: SLOTS.CURRENT.y,
+        value: diceQueue[1], size: 60,
+        startTime: now + 50, duration: dur - 50
+    });
+
+    // Next2 -> Next1
+    animations.push({
+        type: 'move', slot: 'NEXT1',
+        fromX: SLOTS.NEXT2.x, fromY: SLOTS.NEXT2.y,
+        toX: SLOTS.NEXT1.x, toY: SLOTS.NEXT1.y,
+        value: diceQueue[2], size: 60,
+        startTime: now + 50, duration: dur - 50
+    });
+
+    // Spawn -> Next2 as "?" dice, then reveal
+    animations.push({
+        type: 'move', slot: 'NEXT2',
+        fromX: SLOTS.SPAWN.x, fromY: SLOTS.SPAWN.y,
+        toX: SLOTS.NEXT2.x, toY: SLOTS.NEXT2.y,
+        value: 0, size: 50, baseAlpha: 0.6, fadeIn: true,
+        startTime: now + 50, duration: dur - 50,
+        onComplete: () => {
+            diceQueue.shift();
+            diceQueue.push(newDice);
+            spawnReveal(newDice);
+        }
+    });
+
+    // Float text
+    floatTexts.push({
+        text: '-20pt', color: '#FFD700',
+        x: SLOTS.STOCK.x, y: SLOTS.STOCK.y - 40,
+        startTime: now + 200, duration: 800
+    });
+}
+
+function doUseStock() {
+    if (animating || stockedDice === null) return;
+    animating = true;
+    updateButtons();
+
+    const now = performance.now();
+    const dur = 400;
+    const savedValue = stockedDice;
+
+    // Fade out current
+    animations.push({
+        type: 'fadeOut', x: SLOTS.CURRENT.x, y: SLOTS.CURRENT.y,
+        value: diceQueue[0], size: 60, startTime: now, duration: dur * 0.6
+    });
+
+    // Stock -> Current (arc)
+    const midX = (SLOTS.STOCK.x + SLOTS.CURRENT.x) / 2;
+    animations.push({
+        type: 'move', slot: 'CURRENT',
+        fromX: SLOTS.STOCK.x, fromY: SLOTS.STOCK.y,
+        toX: SLOTS.CURRENT.x, toY: SLOTS.CURRENT.y,
+        cpX: midX, cpY: SLOTS.STOCK.y + 70,
+        value: savedValue, size: 60,
+        borderColor: '#FF8C00', glow: true,
+        startTime: now, duration: dur,
+        onComplete: () => {
+            diceQueue[0] = savedValue;
+            stockedDice = null;
+        }
+    });
+
+    // Float text
+    floatTexts.push({
+        text: 'Use Stock!', color: '#FF8C00',
+        x: SLOTS.CURRENT.x, y: SLOTS.CURRENT.y - 50,
+        startTime: now + 100, duration: 800
+    });
+}
+
+function doReset() {
+    init();
+    updateButtons();
+}
+
+function updateButtons() {
+    document.getElementById('btnRoll').disabled = animating;
+    document.getElementById('btnStock').disabled = animating || stockedDice !== null || points < 20;
+    document.getElementById('btnUse').disabled = animating || stockedDice === null;
+}
+
+function updateStatus() {
+    const q = diceQueue.map(v => v).join(', ');
+    const s = stockedDice !== null ? stockedDice : 'none';
+    document.getElementById('status').textContent =
+        `Queue: [${q}] | Stock: ${s} | Points: ${points}`;
+}
+
+updateButtons();
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

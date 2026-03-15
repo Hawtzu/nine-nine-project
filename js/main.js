@@ -247,9 +247,12 @@ function render(now) {
             break;
 
         case PHASES.ANIMATING:
-            // Draw panels and board
+            // Draw neon border background first, then panels on top
+            renderer.drawNeonBorderBackground();
             renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode);
+            renderer.drawNeonBorderSideGlow();
             renderer.drawBoard(game.board, now);
+            renderer.drawBorderSparks(now);
             renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
 
             // Draw trails and ripples UNDER players
@@ -269,11 +272,12 @@ function render(now) {
         case PHASES.DRILL_TARGET:
         case PHASES.SKILL_TARGET:
         case PHASES.WARP_SELECT:
-            // Draw panels
+            // Draw neon border background first, then panels on top
+            renderer.drawNeonBorderBackground();
             renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode);
-
-            // Draw board
+            renderer.drawNeonBorderSideGlow();
             renderer.drawBoard(game.board, now);
+            renderer.drawBorderSparks(now);
             renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
 
             // Draw highlights
@@ -308,9 +312,13 @@ function render(now) {
             renderer.drawTrails(animManager.trails, now);
             renderer.drawRipples(animManager.ripples, now);
 
-            // Draw players with pulse animation
-            renderer.drawPlayer(game.player1, null, now);
-            renderer.drawPlayer(game.player2, null, now);
+            // Draw players with pulse animation (skip falling player during electrocution)
+            if (!(game.fallAnimating && game.fallAnimPlayerNum === 1)) {
+                renderer.drawPlayer(game.player1, null, now);
+            }
+            if (!(game.fallAnimating && game.fallAnimPlayerNum === 2)) {
+                renderer.drawPlayer(game.player2, null, now);
+            }
 
             // Draw roll button or dice result
             drawPhaseUI();
@@ -330,12 +338,34 @@ function render(now) {
                     game.gameOver(game.currentTurn, 'sniped the opponent!');
                 }
             }
+
+            // Fall-off electrocution animation
+            if (game.fallAnimating) {
+                const elapsed = now - game.fallAnimStart;
+                if (!game.fallAnimInitialized) {
+                    game.fallAnimInitialized = true;
+                    const cx = game.fallAnimPlayerPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+                    const cy = game.fallAnimPlayerPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+                    renderer.initFallEffect(cx, cy, game.fallAnimDir);
+                }
+                renderer.drawFallEffect(now, elapsed, game.fallAnimPlayerPos, game.fallAnimDir);
+
+                if (elapsed >= 2000) {
+                    game.fallAnimating = false;
+                    game.fallAnimInitialized = false;
+                    renderer.cleanupFallEffect();
+                    game.gameOver(game.fallAnimPlayerNum === 1 ? 2 : 1, 'fell off the cliff!');
+                }
+            }
             break;
 
         case PHASES.GAME_OVER:
-            // Draw the game state first
+            // Draw neon border background first, then panels on top
+            renderer.drawNeonBorderBackground();
             renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode);
+            renderer.drawNeonBorderSideGlow();
             renderer.drawBoard(game.board, now);
+            renderer.drawBorderSparks(now);
             renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
             renderer.drawPlayer(game.player1, null, now);
             renderer.drawPlayer(game.player2, null, now);
@@ -350,8 +380,11 @@ function render(now) {
             } else if (game._replayMode === 'playback') {
                 // Draw the board with current snapshot state
                 const replaySkillCosts = (replayEngine && replayEngine.skillCosts) ? replayEngine.skillCosts : null;
+                renderer.drawNeonBorderBackground();
                 renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode, replaySkillCosts);
+                renderer.drawNeonBorderSideGlow();
                 renderer.drawBoard(game.board, now);
+                renderer.drawBorderSparks(now);
                 renderer.drawCheckpointOwners(game.board, game.player1, game.player2);
 
                 // Draw movement highlights during 'rolled' phase

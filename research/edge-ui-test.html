@@ -2,20 +2,20 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>Edge UI Test — Board Fall-Off Visualization</title>
+<title>Edge UI Test — Neon Border + Destruction Effects</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: #1a1a2e; color: #ccc; font-family: 'Segoe UI', Tahoma, sans-serif; padding: 20px; }
 h1 { color: #00E5FF; font-size: 22px; margin-bottom: 16px; }
 .container { display: flex; gap: 24px; flex-wrap: wrap; }
 .grid-panel { flex-shrink: 0; }
-.controls { display: flex; flex-direction: column; gap: 12px; min-width: 260px; }
+.controls { display: flex; flex-direction: column; gap: 12px; min-width: 280px; max-width: 320px; }
 canvas { border: 1px solid #333; cursor: pointer; }
 .section { background: #0f0f23; border: 1px solid #333; padding: 12px; border-radius: 4px; }
 .section h3 { color: #00E5FF; font-size: 14px; margin-bottom: 8px; }
 .btn-group { display: flex; flex-wrap: wrap; gap: 6px; }
 .btn {
-    padding: 8px 16px; font-size: 13px; cursor: pointer;
+    padding: 8px 14px; font-size: 13px; cursor: pointer;
     border: 1px solid #444; background: #1a1a3e; color: #aaa;
     transition: all 0.15s; border-radius: 3px;
 }
@@ -25,49 +25,64 @@ canvas { border: 1px solid #333; cursor: pointer; }
 .arrow-btns .btn { padding: 6px; text-align: center; font-size: 16px; }
 .desc { font-size: 12px; color: #888; line-height: 1.6; margin-top: 8px; }
 .pos-label { font-family: monospace; font-size: 13px; color: #00E5FF; margin-top: 8px; }
+.color-swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+.swatch {
+    width: 32px; height: 32px; border-radius: 4px; cursor: pointer;
+    border: 2px solid #333; transition: all 0.15s;
+}
+.swatch:hover { border-color: #fff; transform: scale(1.1); }
+.swatch.active { border-color: #fff; box-shadow: 0 0 8px currentColor; }
 </style>
 </head>
 <body>
-<h1>Edge UI Test — Board Fall-Off Visualization</h1>
+<h1>Edge UI Test — Neon Border + Destruction Effects</h1>
 <div class="container">
     <div class="grid-panel">
         <canvas id="cv" width="700" height="700"></canvas>
     </div>
     <div class="controls">
         <div class="section">
-            <h3>Edge Style</h3>
-            <div class="btn-group">
-                <button class="btn active" onclick="setOption('A')">A: 奈落</button>
-                <button class="btn" onclick="setOption('B')">B: 警告テープ</button>
-                <button class="btn" onclick="setOption('C')">C: ネオン</button>
+            <h3>Neon Border Color</h3>
+            <div class="color-swatches" id="colorSwatches"></div>
+            <div class="desc" id="colorName" style="color:#FF0044">Red Neon</div>
+        </div>
+        <div class="section">
+            <h3>Destruction Effect</h3>
+            <div class="btn-group" id="effectBtns">
+                <button class="btn active" onclick="setEffect('electrocute')">A: 感電</button>
+                <button class="btn" onclick="setEffect('shatter')">B: 破壊</button>
+                <button class="btn" onclick="setEffect('disintegrate')">C: 分解</button>
+                <button class="btn" onclick="setEffect('vaporize')">D: 蒸発</button>
             </div>
-            <div class="desc" id="optionDesc">盤面の外を暗い奈落/宇宙空間として描画。パーティクルが下に流れ落ちる。</div>
+            <div class="desc" id="effectDesc">ネオンボーダーに触れて感電。稲妻が走り、火花が飛び散る。</div>
         </div>
         <div class="section">
             <h3>Move Piece</h3>
             <div class="arrow-btns">
-                <div></div>
-                <button class="btn" onclick="movePlayer(-1,0)">↑</button>
-                <div></div>
-                <button class="btn" onclick="movePlayer(0,-1)">←</button>
-                <button class="btn" onclick="movePlayer(0,0)" style="font-size:11px">●</button>
-                <button class="btn" onclick="movePlayer(0,1)">→</button>
-                <div></div>
-                <button class="btn" onclick="movePlayer(1,0)">↓</button>
-                <div></div>
+                <button class="btn" onclick="movePlayer(-1,-1)">&#8598;</button>
+                <button class="btn" onclick="movePlayer(-1,0)">&#8593;</button>
+                <button class="btn" onclick="movePlayer(-1,1)">&#8599;</button>
+                <button class="btn" onclick="movePlayer(0,-1)">&#8592;</button>
+                <button class="btn" onclick="movePlayer(0,0)" style="font-size:11px">&#9679;</button>
+                <button class="btn" onclick="movePlayer(0,1)">&#8594;</button>
+                <button class="btn" onclick="movePlayer(1,-1)">&#8601;</button>
+                <button class="btn" onclick="movePlayer(1,0)">&#8595;</button>
+                <button class="btn" onclick="movePlayer(1,1)">&#8600;</button>
             </div>
             <div class="pos-label" id="posLabel">Position: (4, 4)</div>
-            <div class="desc">矢印キーでも移動可。端から外に出ると落下演出。</div>
+            <div class="desc">Arrow keys or click board. Move off edge to trigger effect.</div>
         </div>
         <div class="section">
-            <h3>Option Details</h3>
+            <h3>Effect Details</h3>
             <div class="desc">
-                <b style="color:#00E5FF">A: 奈落エフェクト</b><br>
-                サイバー空間に浮かぶプラットフォーム感。グラデーション＋落下パーティクル。<br><br>
-                <b style="color:#FFD700">B: 警告ストライプ</b><br>
-                黄黒のハザードテープ＋外向き赤矢印。誰でもわかる危険信号。<br><br>
-                <b style="color:#FF0044">C: ネオン危険ボーダー</b><br>
-                赤ネオングロー＋端セルパルス＋電気火花。既存テーマと統一感。
+                <b style="color:#FF0044">A: Electrocute (感電)</b><br>
+                稲妻がピースからボーダーへ走り、火花が爆発。ピースが点滅しながら消滅。<br><br>
+                <b style="color:#FF8800">B: Shatter (破壊)</b><br>
+                ピースがガラスのように破片に砕け散る。破片がボーダーで跳ね返る。<br><br>
+                <b style="color:#AA00FF">C: Disintegrate (分解)</b><br>
+                ピースがピクセル状の粒子に分解。粒子がボーダーに吸い込まれる。<br><br>
+                <b style="color:#00FFD0">D: Vaporize (蒸発)</b><br>
+                ボーダーの熱でピースが蒸発。煙/蒸気が立ち上る。
             </div>
         </div>
     </div>
@@ -79,96 +94,107 @@ const ctx = cv.getContext('2d');
 
 const CELL = 60;
 const BOARD = 9;
-const BOARD_PX = BOARD * CELL; // 540
+const BOARD_PX = BOARD * CELL;
 const MARGIN = 80;
 
 // Player
 let pRow = 4, pCol = 4;
 let fellOff = false;
 let fellTimer = 0;
+let fellDir = { dr: 0, dc: 0 }; // direction of fall
+let lastEdgeRow = 4, lastEdgeCol = 4; // last position before falling
 
-// Option
-let currentOption = 'A';
-const descriptions = {
-    A: '盤面の外を暗い奈落/宇宙空間として描画。パーティクルが下に流れ落ちる。',
-    B: '黄黒の警告ストライプで盤面を囲む。赤い矢印が外を示す。',
-    C: '赤いネオングローが盤面を囲む。端にいると赤パルス＋電気火花。'
+// Neon color
+const NEON_COLORS = [
+    { hex: '#FF0044', name: 'Red Neon', rgb: [255, 0, 68] },
+    { hex: '#FF4400', name: 'Orange Neon', rgb: [255, 68, 0] },
+    { hex: '#FFD700', name: 'Gold Neon', rgb: [255, 215, 0] },
+    { hex: '#00FF88', name: 'Green Neon', rgb: [0, 255, 136] },
+    { hex: '#00E5FF', name: 'Cyan Neon', rgb: [0, 229, 255] },
+    { hex: '#0088FF', name: 'Blue Neon', rgb: [0, 136, 255] },
+    { hex: '#AA00FF', name: 'Purple Neon', rgb: [170, 0, 255] },
+    { hex: '#FF00AA', name: 'Pink Neon', rgb: [255, 0, 170] },
+    { hex: '#FFFFFF', name: 'White Neon', rgb: [255, 255, 255] },
+];
+let neonColorIdx = 0;
+let neonColor = NEON_COLORS[0].hex;
+let neonRgb = NEON_COLORS[0].rgb;
+
+// Build color swatches
+const swatchContainer = document.getElementById('colorSwatches');
+NEON_COLORS.forEach((c, i) => {
+    const el = document.createElement('div');
+    el.className = 'swatch' + (i === 0 ? ' active' : '');
+    el.style.background = c.hex;
+    el.style.color = c.hex;
+    el.onclick = () => setNeonColor(i);
+    swatchContainer.appendChild(el);
+});
+
+function setNeonColor(idx) {
+    neonColorIdx = idx;
+    neonColor = NEON_COLORS[idx].hex;
+    neonRgb = NEON_COLORS[idx].rgb;
+    document.getElementById('colorName').textContent = NEON_COLORS[idx].name;
+    document.getElementById('colorName').style.color = neonColor;
+    document.querySelectorAll('.swatch').forEach((s, i) => s.classList.toggle('active', i === idx));
+    // Regenerate sparks with new color
+    sparks.length = 0;
+    for (let i = 0; i < 20; i++) sparks.push(newSpark());
+}
+
+// Effect type
+let currentEffect = 'electrocute';
+const effectDescriptions = {
+    electrocute: 'ネオンボーダーに触れて感電。稲妻が走り、火花が飛び散る。',
+    shatter: 'ピースがガラスのように破片に砕け散る。破片が外に飛散。',
+    disintegrate: 'ピースがピクセル状の粒子に分解。粒子がボーダーに吸い込まれる。',
+    vaporize: 'ボーダーの熱でピースが蒸発。煙と蒸気が立ち上る。'
 };
 
-// Stones (fixed positions)
-const stones = [{r:1,c:2},{r:2,c:6},{r:3,c:4},{r:5,c:1},{r:6,c:7},{r:7,c:5}];
-
-// Particles for Option A (void)
-const voidParticles = [];
-for (let i = 0; i < 60; i++) {
-    voidParticles.push({
-        x: Math.random() * cv.width,
-        y: Math.random() * cv.height,
-        vy: 0.3 + Math.random() * 0.7,
-        alpha: 0.1 + Math.random() * 0.3,
-        size: 1 + Math.random() * 1.5,
-        color: Math.random() > 0.5 ? '#00E5FF' : '#FFFFFF'
+function setEffect(eff) {
+    currentEffect = eff;
+    document.getElementById('effectDesc').textContent = effectDescriptions[eff];
+    document.querySelectorAll('#effectBtns .btn').forEach(b => {
+        const key = b.textContent.split(': ')[1];
+        const map = { '感電': 'electrocute', '破壊': 'shatter', '分解': 'disintegrate', '蒸発': 'vaporize' };
+        b.classList.toggle('active', map[key] === eff);
     });
 }
 
-// Spark particles for Option C
+// Stones
+const stones = [{r:1,c:2},{r:2,c:6},{r:3,c:4},{r:5,c:1},{r:6,c:7},{r:7,c:5}];
+
+// Sparks for neon border
 const sparks = [];
-for (let i = 0; i < 20; i++) {
-    sparks.push(newSpark());
-}
+for (let i = 0; i < 20; i++) sparks.push(newSpark());
+
 function newSpark() {
     const side = Math.floor(Math.random() * 4);
     let x, y;
     const bx = MARGIN, by = MARGIN;
-    if (side === 0) { x = bx + Math.random() * BOARD_PX; y = by; } // top
-    else if (side === 1) { x = bx + Math.random() * BOARD_PX; y = by + BOARD_PX; } // bottom
-    else if (side === 2) { x = bx; y = by + Math.random() * BOARD_PX; } // left
-    else { x = bx + BOARD_PX; y = by + Math.random() * BOARD_PX; } // right
+    if (side === 0) { x = bx + Math.random() * BOARD_PX; y = by; }
+    else if (side === 1) { x = bx + Math.random() * BOARD_PX; y = by + BOARD_PX; }
+    else if (side === 2) { x = bx; y = by + Math.random() * BOARD_PX; }
+    else { x = bx + BOARD_PX; y = by + Math.random() * BOARD_PX; }
     return { x, y, life: 0, maxLife: 200 + Math.random() * 300, alpha: 0.5 + Math.random() * 0.5 };
 }
 
-// Hazard stripe pattern for Option B
-let stripePattern = null;
-function createStripePattern() {
-    const size = 40;
-    const oc = document.createElement('canvas');
-    oc.width = size; oc.height = size;
-    const octx = oc.getContext('2d');
-    octx.fillStyle = '#000000';
-    octx.fillRect(0, 0, size, size);
-    octx.fillStyle = '#FFD700';
-    octx.beginPath();
-    octx.moveTo(0, size * 0.5);
-    octx.lineTo(size * 0.5, 0);
-    octx.lineTo(size, 0);
-    octx.lineTo(0, size);
-    octx.closePath();
-    octx.fill();
-    octx.beginPath();
-    octx.moveTo(size * 0.5, size);
-    octx.lineTo(size, size * 0.5);
-    octx.lineTo(size, size);
-    octx.closePath();
-    octx.fill();
-    stripePattern = ctx.createPattern(oc, 'repeat');
-}
-
-function setOption(opt) {
-    currentOption = opt;
-    document.getElementById('optionDesc').textContent = descriptions[opt];
-    document.querySelectorAll('.btn-group .btn').forEach((b, i) => {
-        b.classList.toggle('active', b.textContent.startsWith(opt));
-    });
-}
+// Destruction particles
+let destructionParticles = [];
 
 function movePlayer(dr, dc) {
     if (fellOff) return;
     if (dr === 0 && dc === 0) { pRow = 4; pCol = 4; updatePosLabel(); return; }
     const nr = pRow + dr, nc = pCol + dc;
     if (nr < 0 || nr >= BOARD || nc < 0 || nc >= BOARD) {
+        lastEdgeRow = pRow;
+        lastEdgeCol = pCol;
+        fellDir = { dr, dc };
         fellOff = true;
         fellTimer = performance.now();
         pRow = nr; pCol = nc;
+        spawnDestructionEffect();
     } else {
         pRow = nr; pCol = nc;
     }
@@ -202,6 +228,144 @@ cv.addEventListener('click', e => {
     }
 });
 
+// --- Spawn destruction particles ---
+
+function spawnDestructionEffect() {
+    destructionParticles = [];
+    const cx = MARGIN + lastEdgeCol * CELL + CELL / 2;
+    const cy = MARGIN + lastEdgeRow * CELL + CELL / 2;
+    const radius = CELL / 2 - 10;
+
+    if (currentEffect === 'electrocute') {
+        // Normalize direction for consistent distance
+        const dirLen = Math.sqrt(fellDir.dr * fellDir.dr + fellDir.dc * fellDir.dc) || 1;
+        const ndx = fellDir.dc / dirLen;
+        const ndy = fellDir.dr / dirLen;
+        const baseAngle = Math.atan2(fellDir.dr, fellDir.dc);
+
+        // Lightning bolts + sparks — biased toward fall direction
+        for (let i = 0; i < 35; i++) {
+            // 70% of sparks go in fall direction, 30% random
+            const biased = Math.random() < 0.7;
+            const angle = biased
+                ? baseAngle + (Math.random() - 0.5) * Math.PI * 0.8
+                : Math.random() * Math.PI * 2;
+            const speed = 1 + Math.random() * 4;
+            destructionParticles.push({
+                x: cx, y: cy,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 0, maxLife: 300 + Math.random() * 400,
+                size: 1 + Math.random() * 2.5,
+                type: 'spark'
+            });
+        }
+        // Lightning bolts toward border — spread around fall direction
+        for (let i = 0; i < 8; i++) {
+            const spread = (Math.random() - 0.5) * 0.6;
+            const boltAngle = baseAngle + spread;
+            const dist = 100 + Math.random() * 40;
+            const tx = cx + Math.cos(boltAngle) * dist;
+            const ty = cy + Math.sin(boltAngle) * dist;
+            destructionParticles.push({
+                x: cx, y: cy,
+                targetX: tx,
+                targetY: ty,
+                life: i * 40, // stagger lightning bolts
+                maxLife: 500 + Math.random() * 200,
+                type: 'lightning',
+                segments: generateLightning(cx, cy, tx, ty, 5)
+            });
+        }
+    } else if (currentEffect === 'shatter') {
+        // Glass-like shards — biased toward fall direction
+        const shatterBaseAngle = Math.atan2(fellDir.dr, fellDir.dc);
+        for (let i = 0; i < 28; i++) {
+            const biased = Math.random() < 0.65;
+            const angle = biased
+                ? shatterBaseAngle + (Math.random() - 0.5) * Math.PI * 0.7
+                : Math.random() * Math.PI * 2;
+            const speed = 2 + Math.random() * 5;
+            const shardAngle = Math.random() * Math.PI;
+            destructionParticles.push({
+                x: cx + (Math.random() - 0.5) * radius,
+                y: cy + (Math.random() - 0.5) * radius,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                rotation: shardAngle,
+                rotSpeed: (Math.random() - 0.5) * 0.2,
+                life: 0, maxLife: 600 + Math.random() * 400,
+                w: 3 + Math.random() * 8,
+                h: 2 + Math.random() * 5,
+                type: 'shard'
+            });
+        }
+    } else if (currentEffect === 'disintegrate') {
+        // Pixel particles — toward border in fall direction
+        const pixelSize = 4;
+        const dirLen2 = Math.sqrt(fellDir.dr * fellDir.dr + fellDir.dc * fellDir.dc) || 1;
+        const ndx2 = fellDir.dc / dirLen2;
+        const ndy2 = fellDir.dr / dirLen2;
+        for (let dx = -radius; dx <= radius; dx += pixelSize) {
+            for (let dy = -radius; dy <= radius; dy += pixelSize) {
+                if (dx * dx + dy * dy > radius * radius) continue;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const delay = dist * 3 + Math.random() * 100;
+                // Target: move in fall direction toward border
+                const tx = cx + dx + ndx2 * 120 + (Math.random() - 0.5) * 30;
+                const ty = cy + dy + ndy2 * 120 + (Math.random() - 0.5) * 30;
+                destructionParticles.push({
+                    x: cx + dx, y: cy + dy,
+                    tx, ty,
+                    delay,
+                    life: 0, maxLife: 800 + Math.random() * 300,
+                    size: pixelSize - 1,
+                    type: 'pixel'
+                });
+            }
+        }
+    } else if (currentEffect === 'vaporize') {
+        // Steam/smoke particles — rise upward but drift in fall direction
+        const vapDirLen = Math.sqrt(fellDir.dr * fellDir.dr + fellDir.dc * fellDir.dc) || 1;
+        const vapDx = fellDir.dc / vapDirLen;
+        const vapDy = fellDir.dr / vapDirLen;
+        for (let i = 0; i < 40; i++) {
+            const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.8;
+            const speed = 0.5 + Math.random() * 1.5;
+            destructionParticles.push({
+                x: cx + (Math.random() - 0.5) * radius * 2,
+                y: cy + (Math.random() - 0.5) * radius,
+                vx: Math.cos(angle) * speed * 0.3 + vapDx * 0.8,
+                vy: -0.5 - Math.random() * 1.5 + vapDy * 0.5,
+                life: 0, maxLife: 800 + Math.random() * 600,
+                size: 4 + Math.random() * 10,
+                type: 'smoke'
+            });
+        }
+        // Hot glow particles
+        for (let i = 0; i < 20; i++) {
+            destructionParticles.push({
+                x: cx + (Math.random() - 0.5) * radius * 1.5,
+                y: cy + (Math.random() - 0.5) * radius * 1.5,
+                vx: (Math.random() - 0.5) * 0.5 + vapDx * 0.6,
+                vy: -0.3 - Math.random() * 0.8 + vapDy * 0.4,
+                life: 0, maxLife: 400 + Math.random() * 300,
+                size: 2 + Math.random() * 4,
+                type: 'glow'
+            });
+        }
+    }
+}
+
+function generateLightning(x1, y1, x2, y2, depth) {
+    if (depth <= 0) return [{ x: x1, y: y1 }, { x: x2, y: y2 }];
+    const mx = (x1 + x2) / 2 + (Math.random() - 0.5) * 30;
+    const my = (y1 + y2) / 2 + (Math.random() - 0.5) * 30;
+    const left = generateLightning(x1, y1, mx, my, depth - 1);
+    const right = generateLightning(mx, my, x2, y2, depth - 1);
+    return [...left, ...right.slice(1)];
+}
+
 // --- Drawing ---
 
 function drawBoard(now) {
@@ -209,15 +373,12 @@ function drawBoard(now) {
         for (let c = 0; c < BOARD; c++) {
             const x = MARGIN + c * CELL;
             const y = MARGIN + r * CELL;
-            // Cell bg
             const isAlt = (r + c) % 2 === 0;
             ctx.fillStyle = isAlt ? '#0A0A14' : '#0D0D1A';
             ctx.fillRect(x, y, CELL, CELL);
-            // Grid line
             ctx.strokeStyle = '#1A3A4A';
             ctx.lineWidth = 1;
             ctx.strokeRect(x, y, CELL, CELL);
-            // Grid glow
             const phase = ((r + c) * 0.15 + now / 4000) % 1.0;
             const glowAlpha = 0.06 + 0.10 * Math.sin(phase * Math.PI * 2);
             ctx.strokeStyle = `rgba(0, 229, 255, ${glowAlpha})`;
@@ -237,7 +398,6 @@ function drawStones() {
         ctx.lineWidth = 1.5;
         ctx.shadowColor = '#00E5FF';
         ctx.shadowBlur = 4;
-        // Octagon
         ctx.beginPath();
         for (let i = 0; i < 8; i++) {
             const a = (Math.PI * 2 / 8) * i - Math.PI / 8;
@@ -263,12 +423,10 @@ function drawPlayerPiece(now) {
     const glowR = radius + 6 + 3 * Math.sin(pulseT * Math.PI * 2);
 
     ctx.save();
-    // Glow ring
     ctx.beginPath();
     ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
     ctx.fillStyle = `rgba(0, 170, 255, ${pulseAlpha})`;
     ctx.fill();
-    // Body
     const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
     grad.addColorStop(0, '#001833');
     grad.addColorStop(0.7, '#00AAFF');
@@ -286,141 +444,13 @@ function drawPlayerPiece(now) {
     ctx.restore();
 }
 
-// --- Edge Effects ---
+// --- Neon Edge ---
 
-function drawEdgeA(now) {
+function drawNeonEdge(now) {
     const bx = MARGIN, by = MARGIN;
-    // Gradients on all 4 sides
-    // Top
-    let g = ctx.createLinearGradient(0, by, 0, 0);
-    g.addColorStop(0, '#0A0A14');
-    g.addColorStop(1, '#000000');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, cv.width, by);
-    // Bottom
-    g = ctx.createLinearGradient(0, by + BOARD_PX, 0, cv.height);
-    g.addColorStop(0, '#0A0A14');
-    g.addColorStop(1, '#000000');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, by + BOARD_PX, cv.width, MARGIN);
-    // Left
-    g = ctx.createLinearGradient(bx, 0, 0, 0);
-    g.addColorStop(0, '#0A0A14');
-    g.addColorStop(1, '#000000');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, by, bx, BOARD_PX);
-    // Right
-    g = ctx.createLinearGradient(bx + BOARD_PX, 0, cv.width, 0);
-    g.addColorStop(0, '#0A0A14');
-    g.addColorStop(1, '#000000');
-    ctx.fillStyle = g;
-    ctx.fillRect(bx + BOARD_PX, by, MARGIN, BOARD_PX);
-    // Corners (just black)
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, bx, by);
-    ctx.fillRect(bx + BOARD_PX, 0, MARGIN, by);
-    ctx.fillRect(0, by + BOARD_PX, bx, MARGIN);
-    ctx.fillRect(bx + BOARD_PX, by + BOARD_PX, MARGIN, MARGIN);
+    const [r, g, b] = neonRgb;
 
-    // Building outlines in void
-    ctx.save();
-    ctx.strokeStyle = 'rgba(0, 229, 255, 0.04)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 8; i++) {
-        const y = 10 + i * 9;
-        ctx.beginPath();
-        ctx.moveTo(10 + i * 30, y);
-        ctx.lineTo(40 + i * 35, y);
-        ctx.stroke();
-    }
-    for (let i = 0; i < 8; i++) {
-        const y = by + BOARD_PX + 15 + i * 9;
-        ctx.beginPath();
-        ctx.moveTo(20 + i * 40, y);
-        ctx.lineTo(60 + i * 30, y);
-        ctx.stroke();
-    }
-    ctx.restore();
-
-    // Void particles
-    for (const p of voidParticles) {
-        // Only draw in void area (outside board)
-        const inBoard = p.x > bx && p.x < bx + BOARD_PX && p.y > by && p.y < by + BOARD_PX;
-        if (inBoard) { p.y = -5; continue; }
-        p.y += p.vy;
-        if (p.y > cv.height + 5) {
-            p.y = -5;
-            p.x = Math.random() * cv.width;
-        }
-        ctx.save();
-        ctx.globalAlpha = p.alpha;
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-    }
-}
-
-function drawEdgeB() {
-    if (!stripePattern) createStripePattern();
-    const bx = MARGIN, by = MARGIN;
-
-    ctx.save();
-    ctx.fillStyle = stripePattern;
-    // Top
-    ctx.fillRect(0, 0, cv.width, by);
-    // Bottom
-    ctx.fillRect(0, by + BOARD_PX, cv.width, MARGIN);
-    // Left
-    ctx.fillRect(0, by, bx, BOARD_PX);
-    // Right
-    ctx.fillRect(bx + BOARD_PX, by, MARGIN, BOARD_PX);
-    ctx.restore();
-
-    // Semi-transparent overlay to darken
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-    ctx.fillRect(0, 0, cv.width, by);
-    ctx.fillRect(0, by + BOARD_PX, cv.width, MARGIN);
-    ctx.fillRect(0, by, bx, BOARD_PX);
-    ctx.fillRect(bx + BOARD_PX, by, MARGIN, BOARD_PX);
-
-    // Red arrows pointing outward
-    ctx.save();
-    ctx.fillStyle = '#FF4444';
-    const arrowSize = 16;
-    const mid = BOARD_PX / 2;
-    // Top arrow (pointing up)
-    drawTriangle(bx + mid, by - 40, 0, -1, arrowSize);
-    // Bottom arrow (pointing down)
-    drawTriangle(bx + mid, by + BOARD_PX + 40, 0, 1, arrowSize);
-    // Left arrow (pointing left)
-    drawTriangle(bx - 40, by + mid, -1, 0, arrowSize);
-    // Right arrow (pointing right)
-    drawTriangle(bx + BOARD_PX + 40, by + mid, 1, 0, arrowSize);
-    ctx.restore();
-}
-
-function drawTriangle(cx, cy, dx, dy, size) {
-    ctx.save();
-    ctx.fillStyle = '#FF4444';
-    ctx.shadowColor = '#FF4444';
-    ctx.shadowBlur = 6;
-    ctx.beginPath();
-    // Tip
-    ctx.moveTo(cx + dx * size, cy + dy * size);
-    // Base
-    ctx.lineTo(cx - dy * size * 0.6 - dx * size * 0.5, cy + dx * size * 0.6 - dy * size * 0.5);
-    ctx.lineTo(cx + dy * size * 0.6 - dx * size * 0.5, cy - dx * size * 0.6 - dy * size * 0.5);
-    ctx.closePath();
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.restore();
-}
-
-function drawEdgeC(now) {
-    const bx = MARGIN, by = MARGIN;
-    // Black outside
+    // Dark outside
     ctx.fillStyle = '#050510';
     ctx.fillRect(0, 0, cv.width, by);
     ctx.fillRect(0, by + BOARD_PX, cv.width, MARGIN);
@@ -431,11 +461,11 @@ function drawEdgeC(now) {
     ctx.fillRect(0, by + BOARD_PX, bx, MARGIN);
     ctx.fillRect(bx + BOARD_PX, by + BOARD_PX, MARGIN, MARGIN);
 
-    // Red neon glow border - inner
+    // Inner glow border
     ctx.save();
-    ctx.strokeStyle = '#FF0044';
+    ctx.strokeStyle = neonColor;
     ctx.lineWidth = 2;
-    ctx.shadowColor = '#FF0044';
+    ctx.shadowColor = neonColor;
     ctx.shadowBlur = 20;
     ctx.strokeRect(bx, by, BOARD_PX, BOARD_PX);
     ctx.restore();
@@ -443,21 +473,20 @@ function drawEdgeC(now) {
     // Outer diffuse glow
     ctx.save();
     ctx.globalAlpha = 0.3;
-    ctx.strokeStyle = '#FF0044';
+    ctx.strokeStyle = neonColor;
     ctx.lineWidth = 3;
-    ctx.shadowColor = '#FF0044';
+    ctx.shadowColor = neonColor;
     ctx.shadowBlur = 40;
     ctx.strokeRect(bx - 2, by - 2, BOARD_PX + 4, BOARD_PX + 4);
     ctx.restore();
 
-    // Edge cell pulse when player is on edge
+    // Edge cell pulse when on edge
     if (!fellOff) {
         const onEdge = pRow === 0 || pRow === 8 || pCol === 0 || pCol === 8;
         if (onEdge) {
             const pulseAlpha = 0.1 + 0.3 * (0.5 + 0.5 * Math.sin(now / 300));
             ctx.save();
-            ctx.fillStyle = `rgba(255, 0, 68, ${pulseAlpha})`;
-            // Highlight edge cells on the same edge as player
+            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${pulseAlpha})`;
             for (let i = 0; i < BOARD; i++) {
                 if (pRow === 0) ctx.fillRect(bx + i * CELL, by, CELL, CELL);
                 if (pRow === 8) ctx.fillRect(bx + i * CELL, by + 8 * CELL, CELL, CELL);
@@ -468,19 +497,17 @@ function drawEdgeC(now) {
         }
     }
 
-    // Electric sparks
-    const dt = 16; // ~60fps
+    // Electric sparks along border
+    const dt = 16;
     for (const s of sparks) {
         s.life += dt;
-        if (s.life > s.maxLife) {
-            Object.assign(s, newSpark());
-        }
+        if (s.life > s.maxLife) Object.assign(s, newSpark());
         const t = s.life / s.maxLife;
         const alpha = t < 0.2 ? t / 0.2 : (1 - t) / 0.8;
         ctx.save();
         ctx.globalAlpha = alpha * s.alpha;
-        ctx.fillStyle = t < 0.3 ? '#FFFFFF' : '#FF4444';
-        ctx.shadowColor = '#FF0044';
+        ctx.fillStyle = t < 0.3 ? '#FFFFFF' : neonColor;
+        ctx.shadowColor = neonColor;
         ctx.shadowBlur = 6;
         ctx.beginPath();
         ctx.arc(s.x + (Math.random() - 0.5) * 3, s.y + (Math.random() - 0.5) * 3, 1.5, 0, Math.PI * 2);
@@ -490,46 +517,375 @@ function drawEdgeC(now) {
     }
 }
 
-// --- Fell Off Animation ---
+// --- Destruction Effects ---
 
-function drawFellOff(now) {
+function drawDestructionEffect(now) {
     if (!fellOff) return;
     const elapsed = now - fellTimer;
+    const cx = MARGIN + lastEdgeCol * CELL + CELL / 2;
+    const cy = MARGIN + lastEdgeRow * CELL + CELL / 2;
+    const radius = CELL / 2 - 10;
+    const [nr, ng, nb] = neonRgb;
 
-    // Falling piece animation
-    const cx = MARGIN + pCol * CELL + CELL / 2;
-    const cy = MARGIN + pRow * CELL + CELL / 2;
-    const fallProgress = Math.min(1, elapsed / 600);
-    const alpha = 1 - fallProgress;
-    const scale = 1 - fallProgress * 0.5;
-    const yOffset = fallProgress * 40;
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.beginPath();
-    ctx.arc(cx, cy + yOffset, (CELL / 2 - 10) * scale, 0, Math.PI * 2);
-    ctx.fillStyle = '#00AAFF';
-    ctx.fill();
-    ctx.restore();
+    if (currentEffect === 'electrocute') {
+        drawElectrocuteEffect(now, elapsed, cx, cy, radius, nr, ng, nb);
+    } else if (currentEffect === 'shatter') {
+        drawShatterEffect(now, elapsed, cx, cy, radius, nr, ng, nb);
+    } else if (currentEffect === 'disintegrate') {
+        drawDisintegrateEffect(now, elapsed, cx, cy, radius, nr, ng, nb);
+    } else if (currentEffect === 'vaporize') {
+        drawVaporizeEffect(now, elapsed, cx, cy, radius, nr, ng, nb);
+    }
 
     // FELL OFF text
-    ctx.save();
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 36px Arial';
-    ctx.fillStyle = '#FF0044';
-    ctx.shadowColor = '#FF0044';
-    ctx.shadowBlur = 15;
-    const textAlpha = Math.min(1, elapsed / 200);
-    ctx.globalAlpha = textAlpha;
-    ctx.fillText('FELL OFF!', cv.width / 2, cv.height / 2);
-    ctx.shadowBlur = 0;
-    ctx.restore();
+    const textDelay = 300;
+    if (elapsed > textDelay) {
+        const textT = Math.min(1, (elapsed - textDelay) / 300);
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 36px Arial';
+        ctx.fillStyle = neonColor;
+        ctx.shadowColor = neonColor;
+        ctx.shadowBlur = 15;
+        ctx.globalAlpha = textT;
+        ctx.fillText('FELL OFF!', cv.width / 2, cv.height / 2);
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
 
-    // Reset after 1.5s
-    if (elapsed > 1500) {
+    // Reset
+    if (elapsed > 2000) {
         fellOff = false;
         pRow = 4; pCol = 4;
+        destructionParticles = [];
         updatePosLabel();
+    }
+}
+
+function drawElectrocuteEffect(now, elapsed, cx, cy, radius, nr, ng, nb) {
+    const t = Math.min(1, elapsed / 800);
+
+    // Flickering piece (being electrocuted)
+    if (t < 0.7) {
+        const flicker = Math.sin(elapsed * 0.05) > 0;
+        ctx.save();
+        ctx.globalAlpha = flicker ? 0.8 * (1 - t / 0.7) : 0.2 * (1 - t / 0.7);
+        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+        grad.addColorStop(0, `rgba(${nr}, ${ng}, ${nb}, 0.8)`);
+        grad.addColorStop(0.5, '#00AAFF');
+        grad.addColorStop(1, `rgba(${nr}, ${ng}, ${nb}, 0.3)`);
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * (1 + 0.05 * Math.sin(elapsed * 0.1)), 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.restore();
+    }
+
+    // Lightning bolts
+    for (const p of destructionParticles) {
+        if (p.type === 'lightning') {
+            p.life += 16;
+            if (p.life > p.maxLife) continue;
+            const lt = p.life / p.maxLife;
+            const alpha = lt < 0.1 ? lt / 0.1 : Math.max(0, 1 - (lt - 0.1) / 0.9);
+            // Re-jitter segments
+            if (Math.random() < 0.3) {
+                p.segments = generateLightning(cx, cy, p.targetX, p.targetY, 5);
+            }
+            ctx.save();
+            ctx.globalAlpha = alpha * 0.9;
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.shadowColor = neonColor;
+            ctx.shadowBlur = 15;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i < p.segments.length; i++) {
+                const s = p.segments[i];
+                if (i === 0) ctx.moveTo(s.x, s.y);
+                else ctx.lineTo(s.x, s.y);
+            }
+            ctx.stroke();
+            // Thinner colored overlay
+            ctx.globalAlpha = alpha * 0.5;
+            ctx.strokeStyle = neonColor;
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+    }
+
+    // Spark particles
+    for (const p of destructionParticles) {
+        if (p.type !== 'spark') continue;
+        p.life += 16;
+        if (p.life > p.maxLife) continue;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.03; // slight gravity
+        const st = p.life / p.maxLife;
+        const alpha = st < 0.1 ? st / 0.1 : Math.max(0, 1 - (st - 0.1) / 0.9);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = st < 0.3 ? '#FFFFFF' : neonColor;
+        ctx.shadowColor = neonColor;
+        ctx.shadowBlur = 4;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * (1 - st * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
+    // Border flash
+    if (elapsed < 200) {
+        const bx = MARGIN, by = MARGIN;
+        ctx.save();
+        ctx.globalAlpha = 0.5 * (1 - elapsed / 200);
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 4;
+        ctx.shadowColor = neonColor;
+        ctx.shadowBlur = 30;
+        ctx.strokeRect(bx, by, BOARD_PX, BOARD_PX);
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+}
+
+function drawShatterEffect(now, elapsed, cx, cy, radius, nr, ng, nb) {
+    const t = Math.min(1, elapsed / 1000);
+
+    // Initial flash
+    if (elapsed < 100) {
+        ctx.save();
+        ctx.globalAlpha = 0.6 * (1 - elapsed / 100);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius * 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+
+    // Shards
+    for (const p of destructionParticles) {
+        if (p.type !== 'shard') continue;
+        p.life += 16;
+        if (p.life > p.maxLife) continue;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.05; // gravity
+        p.vx *= 0.99;
+        p.rotation += p.rotSpeed;
+        const st = p.life / p.maxLife;
+        const alpha = st < 0.1 ? st / 0.1 : Math.max(0, 1 - (st - 0.3) / 0.7);
+
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, alpha);
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+
+        // Shard shape (triangle-ish)
+        ctx.beginPath();
+        ctx.moveTo(-p.w / 2, -p.h / 2);
+        ctx.lineTo(p.w / 2, 0);
+        ctx.lineTo(-p.w / 3, p.h / 2);
+        ctx.closePath();
+
+        // Color: mix of player blue and neon color
+        const blueMix = st < 0.3 ? 1 - st / 0.3 : 0;
+        const rr = Math.round(0 * blueMix + nr * (1 - blueMix));
+        const gg = Math.round(170 * blueMix + ng * (1 - blueMix));
+        const bb = Math.round(255 * blueMix + nb * (1 - blueMix));
+        ctx.fillStyle = `rgb(${rr}, ${gg}, ${bb})`;
+        ctx.fill();
+
+        // Edge glow
+        ctx.strokeStyle = `rgba(${nr}, ${ng}, ${nb}, ${alpha * 0.5})`;
+        ctx.lineWidth = 1;
+        ctx.shadowColor = neonColor;
+        ctx.shadowBlur = 3;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
+    // Impact ring
+    if (elapsed < 300) {
+        const ringT = elapsed / 300;
+        ctx.save();
+        ctx.globalAlpha = 0.5 * (1 - ringT);
+        ctx.strokeStyle = neonColor;
+        ctx.lineWidth = 2;
+        ctx.shadowColor = neonColor;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.arc(cx, cy, radius + ringT * 40, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+}
+
+function drawDisintegrateEffect(now, elapsed, cx, cy, radius, nr, ng, nb) {
+    for (const p of destructionParticles) {
+        if (p.type !== 'pixel') continue;
+        p.life += 16;
+        if (p.life < p.delay) {
+            // Not yet started: draw in place
+            ctx.save();
+            ctx.globalAlpha = 0.8;
+            ctx.fillStyle = '#00AAFF';
+            ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+            ctx.restore();
+            continue;
+        }
+        const activeLife = p.life - p.delay;
+        const activeDuration = p.maxLife - p.delay;
+        if (activeLife > activeDuration) continue;
+        const st = activeLife / activeDuration;
+
+        // Lerp toward border
+        const eased = 1 - Math.pow(1 - st, 2);
+        const px = p.x + (p.tx - p.x) * eased;
+        const py = p.y + (p.ty - p.y) * eased;
+
+        // Fade and shrink near end
+        const alpha = st < 0.7 ? 0.8 : 0.8 * (1 - (st - 0.7) / 0.3);
+        const size = p.size * (st < 0.8 ? 1 : 1 - (st - 0.8) / 0.2);
+
+        // Color transition: blue → neon
+        const colorT = Math.min(1, st * 2);
+        const rr = Math.round(0 * (1 - colorT) + nr * colorT);
+        const gg = Math.round(170 * (1 - colorT) + ng * colorT);
+        const bb = Math.round(255 * (1 - colorT) + nb * colorT);
+
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, alpha);
+        ctx.fillStyle = `rgb(${rr}, ${gg}, ${bb})`;
+        ctx.shadowColor = neonColor;
+        ctx.shadowBlur = 3;
+        ctx.fillRect(px - size / 2, py - size / 2, size, size);
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
+    // Border glow pulse during absorption
+    if (elapsed > 200 && elapsed < 1200) {
+        const bx = MARGIN, by = MARGIN;
+        const pulseT = (elapsed - 200) / 1000;
+        ctx.save();
+        ctx.globalAlpha = 0.3 * (1 - pulseT);
+        ctx.strokeStyle = neonColor;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = neonColor;
+        ctx.shadowBlur = 25 + 15 * Math.sin(elapsed * 0.01);
+        ctx.strokeRect(bx, by, BOARD_PX, BOARD_PX);
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+}
+
+function drawVaporizeEffect(now, elapsed, cx, cy, radius, nr, ng, nb) {
+    const t = Math.min(1, elapsed / 1000);
+
+    // Melting/shrinking piece
+    if (t < 0.4) {
+        const meltT = t / 0.4;
+        ctx.save();
+        ctx.globalAlpha = 1 - meltT;
+        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+        grad.addColorStop(0, `rgba(${nr}, ${ng}, ${nb}, 0.8)`);
+        grad.addColorStop(0.5, '#FF8800');
+        grad.addColorStop(1, `rgba(${nr}, ${ng}, ${nb}, 0.3)`);
+        ctx.beginPath();
+        // Distort shape
+        const scaleX = 1 + meltT * 0.3;
+        const scaleY = 1 - meltT * 0.4;
+        ctx.ellipse(cx, cy + meltT * 8, radius * scaleX, radius * scaleY, 0, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.restore();
+
+        // Heat distortion glow
+        ctx.save();
+        ctx.globalAlpha = 0.4 * (1 - meltT);
+        ctx.shadowColor = '#FF4400';
+        ctx.shadowBlur = 20;
+        ctx.fillStyle = '#FF8800';
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, radius * 1.3, radius * 1.3, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
+    // Smoke particles
+    for (const p of destructionParticles) {
+        if (p.type === 'smoke') {
+            p.life += 16;
+            if (p.life > p.maxLife) continue;
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vx += (Math.random() - 0.5) * 0.1; // drift
+            p.size += 0.15; // expand
+            const st = p.life / p.maxLife;
+            const alpha = st < 0.2 ? st / 0.2 * 0.4 : 0.4 * (1 - (st - 0.2) / 0.8);
+
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, alpha);
+            const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+            const smokeMix = Math.min(1, st * 1.5);
+            const sr = Math.round(nr * (1 - smokeMix) + 80 * smokeMix);
+            const sg = Math.round(ng * (1 - smokeMix) + 80 * smokeMix);
+            const sb = Math.round(nb * (1 - smokeMix) + 100 * smokeMix);
+            grad.addColorStop(0, `rgba(${sr}, ${sg}, ${sb}, ${alpha})`);
+            grad.addColorStop(1, 'rgba(30, 30, 50, 0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        if (p.type === 'glow') {
+            p.life += 16;
+            if (p.life > p.maxLife) continue;
+            p.x += p.vx;
+            p.y += p.vy;
+            const st = p.life / p.maxLife;
+            const alpha = st < 0.2 ? st / 0.2 : (1 - st) / 0.8;
+
+            ctx.save();
+            ctx.globalAlpha = Math.max(0, alpha) * 0.7;
+            ctx.fillStyle = st < 0.4 ? '#FFFFFF' : neonColor;
+            ctx.shadowColor = neonColor;
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size * (1 - st * 0.3), 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+    }
+
+    // Steam hiss line at border
+    if (elapsed < 600) {
+        const bx = MARGIN, by = MARGIN;
+        const hissAlpha = 0.4 * (1 - elapsed / 600);
+        ctx.save();
+        ctx.globalAlpha = hissAlpha;
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 1;
+        // Draw wispy lines near the edge where piece exited
+        for (let i = 0; i < 5; i++) {
+            const ox = (Math.random() - 0.5) * 60;
+            const oy = (Math.random() - 0.5) * 60;
+            ctx.beginPath();
+            ctx.moveTo(cx + ox, cy + oy);
+            ctx.lineTo(cx + ox + (Math.random() - 0.5) * 20, cy + oy - 10 - Math.random() * 20);
+            ctx.stroke();
+        }
+        ctx.restore();
     }
 }
 
@@ -540,23 +896,11 @@ function draw(now) {
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, cv.width, cv.height);
 
-    // Edge effect (behind board)
-    if (currentOption === 'A') drawEdgeA(now);
-    else if (currentOption === 'B') drawEdgeB();
-    else if (currentOption === 'C') drawEdgeC(now);
-
-    // Board
+    drawNeonEdge(now);
     drawBoard(now);
     drawStones();
-
-    // Edge C pulse overlay (on top of board cells)
-    // Already handled in drawEdgeC
-
-    // Player
     drawPlayerPiece(now);
-
-    // Fell off animation
-    drawFellOff(now);
+    drawDestructionEffect(now);
 
     requestAnimationFrame(draw);
 }

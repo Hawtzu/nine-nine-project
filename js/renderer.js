@@ -41,6 +41,16 @@ class Renderer {
 
         this.snowTileImage = new Image();
         this.snowTileImage.src = 'assets/skills/Snow.png';
+
+        // Neon border sparks
+        this.borderSparks = [];
+        for (let i = 0; i < NEON.SPARK_COUNT; i++) {
+            this.borderSparks.push(this._newBorderSpark());
+        }
+
+        // Fall effect particles
+        this.fallLightning = [];
+        this.fallSparks = [];
     }
 
     // --- Utility Methods ---
@@ -1290,5 +1300,305 @@ class Renderer {
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(text, x + width / 2, y + height / 2);
         this.ctx.textBaseline = 'alphabetic';
+    }
+
+    // --- Neon Border ---
+
+    _newBorderSpark() {
+        const side = Math.floor(Math.random() * 4);
+        let x, y;
+        const bx = BOARD_OFFSET_X, by = BOARD_OFFSET_Y;
+        const bw = BOARD_SIZE * CELL_SIZE;
+        if (side === 0) { x = bx + Math.random() * bw; y = by; }
+        else if (side === 1) { x = bx + Math.random() * bw; y = by + bw; }
+        else if (side === 2) { x = bx; y = by + Math.random() * bw; }
+        else { x = bx + bw; y = by + Math.random() * bw; }
+        return { x, y, life: 0, maxLife: 200 + Math.random() * 300, alpha: 0.5 + Math.random() * 0.5 };
+    }
+
+    drawNeonBorderBackground() {
+        const ctx = this.ctx;
+        const bx = BOARD_OFFSET_X, by = BOARD_OFFSET_Y;
+        const bw = BOARD_SIZE * CELL_SIZE;
+
+        // Dark outside areas
+        ctx.fillStyle = NEON.DARK_OUTSIDE;
+        // Top
+        ctx.fillRect(0, 0, this.canvas.width, by);
+        // Bottom
+        ctx.fillRect(0, by + bw, this.canvas.width, this.canvas.height - by - bw);
+        // Left
+        ctx.fillRect(0, by, bx, bw);
+        // Right
+        ctx.fillRect(bx + bw, by, this.canvas.width - bx - bw, bw);
+
+        // Inner neon glow border
+        ctx.save();
+        ctx.strokeStyle = NEON.COLOR;
+        ctx.lineWidth = 2;
+        ctx.shadowColor = NEON.COLOR;
+        ctx.shadowBlur = 20;
+        ctx.strokeRect(bx, by, bw, bw);
+        ctx.restore();
+
+        // Outer diffuse glow
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        ctx.strokeStyle = NEON.COLOR;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = NEON.COLOR;
+        ctx.shadowBlur = 40;
+        ctx.strokeRect(bx - 2, by - 2, bw + 4, bw + 4);
+        ctx.restore();
+    }
+
+    // パネルの上に左右の辺のネオングローを再描画（パネルに覆われた分を補う）
+    drawNeonBorderSideGlow() {
+        const ctx = this.ctx;
+        const bx = BOARD_OFFSET_X, by = BOARD_OFFSET_Y;
+        const bw = BOARD_SIZE * CELL_SIZE;
+
+        ctx.save();
+        ctx.strokeStyle = NEON.COLOR;
+        ctx.shadowColor = NEON.COLOR;
+
+        // 左辺グロー
+        ctx.lineWidth = 2;
+        ctx.shadowBlur = 25;
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx, by + bw);
+        ctx.stroke();
+
+        // 右辺グロー
+        ctx.beginPath();
+        ctx.moveTo(bx + bw, by);
+        ctx.lineTo(bx + bw, by + bw);
+        ctx.stroke();
+
+        // 拡散レイヤー（より広いグロー）
+        ctx.globalAlpha = 0.3;
+        ctx.lineWidth = 3;
+        ctx.shadowBlur = 45;
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx, by + bw);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(bx + bw, by);
+        ctx.lineTo(bx + bw, by + bw);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    drawEdgePulse(player1, player2, now) {
+        const ctx = this.ctx;
+        const bx = BOARD_OFFSET_X, by = BOARD_OFFSET_Y;
+        const bw = BOARD_SIZE * CELL_SIZE;
+        const [r, g, b] = NEON.RGB;
+        const pulseAlpha = 0.1 + 0.3 * (0.5 + 0.5 * Math.sin(now / 300));
+
+        const players = [player1, player2];
+        for (const p of players) {
+            const onEdge = p.row === 0 || p.row === BOARD_SIZE - 1 || p.col === 0 || p.col === BOARD_SIZE - 1;
+            if (!onEdge) continue;
+
+            ctx.save();
+            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${pulseAlpha})`;
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                if (p.row === 0) ctx.fillRect(bx + i * CELL_SIZE, by, CELL_SIZE, CELL_SIZE);
+                if (p.row === BOARD_SIZE - 1) ctx.fillRect(bx + i * CELL_SIZE, by + (BOARD_SIZE - 1) * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                if (p.col === 0) ctx.fillRect(bx, by + i * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                if (p.col === BOARD_SIZE - 1) ctx.fillRect(bx + (BOARD_SIZE - 1) * CELL_SIZE, by + i * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            }
+            ctx.restore();
+        }
+    }
+
+    drawBorderSparks(now) {
+        const ctx = this.ctx;
+        const dt = 16;
+        for (let i = 0; i < this.borderSparks.length; i++) {
+            const s = this.borderSparks[i];
+            s.life += dt;
+            if (s.life > s.maxLife) {
+                this.borderSparks[i] = this._newBorderSpark();
+                continue;
+            }
+            const t = s.life / s.maxLife;
+            const alpha = t < 0.2 ? t / 0.2 : (1 - t) / 0.8;
+            ctx.save();
+            ctx.globalAlpha = alpha * s.alpha;
+            ctx.fillStyle = t < 0.3 ? '#FFFFFF' : NEON.COLOR;
+            ctx.shadowColor = NEON.COLOR;
+            ctx.shadowBlur = 6;
+            ctx.beginPath();
+            ctx.arc(s.x + (Math.random() - 0.5) * 3, s.y + (Math.random() - 0.5) * 3, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+    }
+
+    // --- Electrocution Fall Effect ---
+
+    _generateLightning(x1, y1, x2, y2, depth) {
+        if (depth <= 0) return [{ x: x1, y: y1 }, { x: x2, y: y2 }];
+        const mx = (x1 + x2) / 2 + (Math.random() - 0.5) * 30;
+        const my = (y1 + y2) / 2 + (Math.random() - 0.5) * 30;
+        const left = this._generateLightning(x1, y1, mx, my, depth - 1);
+        const right = this._generateLightning(mx, my, x2, y2, depth - 1);
+        return [...left, ...right.slice(1)];
+    }
+
+    initFallEffect(cx, cy, dir) {
+        this.fallLightning = [];
+        this.fallSparks = [];
+
+        const dirLen = Math.sqrt(dir.dr * dir.dr + dir.dc * dir.dc) || 1;
+        const baseAngle = Math.atan2(dir.dr, dir.dc);
+
+        // Sparks biased toward fall direction
+        for (let i = 0; i < 35; i++) {
+            const biased = Math.random() < 0.7;
+            const angle = biased
+                ? baseAngle + (Math.random() - 0.5) * Math.PI * 0.8
+                : Math.random() * Math.PI * 2;
+            const speed = 1 + Math.random() * 4;
+            this.fallSparks.push({
+                x: cx, y: cy,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 0, maxLife: 300 + Math.random() * 400,
+                size: 1 + Math.random() * 2.5
+            });
+        }
+
+        // Lightning bolts toward border
+        for (let i = 0; i < 8; i++) {
+            const spread = (Math.random() - 0.5) * 0.6;
+            const boltAngle = baseAngle + spread;
+            const dist = 100 + Math.random() * 40;
+            const tx = cx + Math.cos(boltAngle) * dist;
+            const ty = cy + Math.sin(boltAngle) * dist;
+            this.fallLightning.push({
+                cx, cy, targetX: tx, targetY: ty,
+                life: i * 40,
+                maxLife: 500 + Math.random() * 200,
+                segments: this._generateLightning(cx, cy, tx, ty, 5)
+            });
+        }
+    }
+
+    drawFallEffect(now, elapsed, playerPos, dir) {
+        const ctx = this.ctx;
+        const cx = playerPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+        const cy = playerPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+        const radius = CELL_SIZE / 2 - 10;
+        const t = Math.min(1, elapsed / 800);
+
+        // Flickering piece (being electrocuted)
+        if (t < 0.7) {
+            const flicker = Math.sin(elapsed * 0.05) > 0;
+            ctx.save();
+            ctx.globalAlpha = flicker ? 0.8 * (1 - t / 0.7) : 0.2 * (1 - t / 0.7);
+            const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+            grad.addColorStop(0, `rgba(0, 229, 255, 0.8)`);
+            grad.addColorStop(0.5, '#00AAFF');
+            grad.addColorStop(1, `rgba(0, 229, 255, 0.3)`);
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius * (1 + 0.05 * Math.sin(elapsed * 0.1)), 0, Math.PI * 2);
+            ctx.fillStyle = grad;
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // Lightning bolts
+        for (const bolt of this.fallLightning) {
+            bolt.life += 16;
+            if (bolt.life > bolt.maxLife || bolt.life < 0) continue;
+            const lt = bolt.life / bolt.maxLife;
+            const alpha = lt < 0.1 ? lt / 0.1 : Math.max(0, 1 - (lt - 0.1) / 0.9);
+            // Re-jitter segments
+            if (Math.random() < 0.3) {
+                bolt.segments = this._generateLightning(bolt.cx, bolt.cy, bolt.targetX, bolt.targetY, 5);
+            }
+            ctx.save();
+            ctx.globalAlpha = alpha * 0.9;
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.shadowColor = NEON.COLOR;
+            ctx.shadowBlur = 15;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i < bolt.segments.length; i++) {
+                const s = bolt.segments[i];
+                if (i === 0) ctx.moveTo(s.x, s.y);
+                else ctx.lineTo(s.x, s.y);
+            }
+            ctx.stroke();
+            ctx.globalAlpha = alpha * 0.5;
+            ctx.strokeStyle = NEON.COLOR;
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
+        // Spark particles
+        for (const p of this.fallSparks) {
+            p.life += 16;
+            if (p.life > p.maxLife) continue;
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += 0.03;
+            const st = p.life / p.maxLife;
+            const alpha = st < 0.1 ? st / 0.1 : Math.max(0, 1 - (st - 0.1) / 0.9);
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = st < 0.3 ? '#FFFFFF' : NEON.COLOR;
+            ctx.shadowColor = NEON.COLOR;
+            ctx.shadowBlur = 4;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size * (1 - st * 0.5), 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
+        // Border flash
+        if (elapsed < 200) {
+            const bx = BOARD_OFFSET_X, by = BOARD_OFFSET_Y;
+            const bw = BOARD_SIZE * CELL_SIZE;
+            ctx.save();
+            ctx.globalAlpha = 0.5 * (1 - elapsed / 200);
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 4;
+            ctx.shadowColor = NEON.COLOR;
+            ctx.shadowBlur = 30;
+            ctx.strokeRect(bx, by, bw, bw);
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
+        // FELL OFF text
+        if (elapsed > 300) {
+            const textT = Math.min(1, (elapsed - 300) / 300);
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 36px Arial';
+            ctx.fillStyle = NEON.COLOR;
+            ctx.shadowColor = NEON.COLOR;
+            ctx.shadowBlur = 15;
+            ctx.globalAlpha = textT;
+            ctx.fillText('FELL OFF!', BOARD_OFFSET_X + BOARD_SIZE * CELL_SIZE / 2, BOARD_OFFSET_Y + BOARD_SIZE * CELL_SIZE / 2);
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+    }
+
+    cleanupFallEffect() {
+        this.fallLightning = [];
+        this.fallSparks = [];
     }
 }

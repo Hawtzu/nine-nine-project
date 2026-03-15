@@ -54,6 +54,14 @@ const COLORS = {
     KAMAKURA_PATTERN_HIGHLIGHT: 'rgba(135, 206, 250, 0.85)'
 };
 
+// Neon Border
+const NEON = {
+    COLOR: '#00E5FF',
+    RGB: [0, 229, 255],
+    DARK_OUTSIDE: '#050510',
+    SPARK_COUNT: 20
+};
+
 // Tile Markers
 const MARKERS = {
     EMPTY: ' ',

@@ -2470,21 +2470,21 @@ class Renderer {
 
     // Turn change banner (fades in and out)
     drawTurnBanner(text, elapsed) {
-        const DURATION = 1200; // total banner display time
+        const DURATION = 300; // total banner display time
         if (elapsed > DURATION) return;
 
         const ctx = this.ctx;
         const cx = SCREEN_WIDTH / 2;
         const cy = SCREEN_HEIGHT / 2 - 30;
 
-        // Fade: 0-150ms fade in, 150-800ms hold, 800-1200ms fade out
+        // Fade: 0-50ms fade in, 50-250ms hold, 250-300ms fade out
         let alpha;
-        if (elapsed < 150) {
-            alpha = elapsed / 150;
-        } else if (elapsed < 800) {
+        if (elapsed < 50) {
+            alpha = elapsed / 50;
+        } else if (elapsed < 250) {
             alpha = 1;
         } else {
-            alpha = 1 - (elapsed - 800) / 400;
+            alpha = 1 - (elapsed - 250) / 50;
         }
 
         // Slide up slightly during animation

@@ -6,6 +6,7 @@ class Board {
         this.bombOwners = {}; // key: "row,col" -> playerNum
         this.checkpointOwners = {}; // key: "row,col" -> playerNum
         this.snowTurnsLeft = {}; // key: "row,col" -> turns remaining
+        this.electromagnetOwners = {}; // key: "row,col" -> playerNum
     }
 
     createEmptyBoard() {
@@ -96,6 +97,19 @@ class Board {
         }
     }
 
+    setElectromagnet(row, col, playerNum) {
+        if (this.isValidPosition(row, col)) {
+            this.tiles[row][col] = MARKERS.ELECTROMAGNET;
+            this.electromagnetOwners[`${row},${col}`] = playerNum;
+            return true;
+        }
+        return false;
+    }
+
+    getElectromagnetOwner(row, col) {
+        return this.electromagnetOwners[`${row},${col}`] || null;
+    }
+
     isValidPosition(row, col) {
         return row >= 0 && row < this.size && col >= 0 && col < this.size;
     }
@@ -105,5 +119,6 @@ class Board {
         this.bombOwners = {};
         this.checkpointOwners = {};
         this.snowTurnsLeft = {};
+        this.electromagnetOwners = {};
     }
 }

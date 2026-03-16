@@ -141,6 +141,16 @@ const SETTINGS_CONFIG = [
         defaultValue: 50
     },
     {
+        key: 'electromagnet',
+        label: 'Electromagnet Cost',
+        target: 'SKILL_COSTS',
+        prop: 'electromagnet',
+        min: 0,
+        max: 500,
+        step: 10,
+        defaultValue: 50
+    },
+    {
         key: 'swamp',
         label: 'Swamp Cost',
         target: 'SKILL_COSTS',

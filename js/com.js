@@ -282,7 +282,7 @@ class ComPlayer {
             'bomb_skill': 80, 'sniper_skill': 75, 'hitokiri_skill': 70,
             'domination_skill': 65, 'meteor_skill': 60, 'checkpoint_skill': 55,
             'kamakura_skill': 50, 'momonga_skill': 50, 'warp_skill': 45,
-            'ice_skill': 40, 'swamp_skill': 35, 'suriashi_skill': 30
+            'electromagnet_skill': 55, 'ice_skill': 40, 'swamp_skill': 35, 'suriashi_skill': 30
         };
         const skills = SKILL_ORDER;
         let chosen;
@@ -1071,7 +1071,8 @@ class ComPlayer {
                 /* falls through */
             case SPECIAL_SKILLS.ICE:
             case SPECIAL_SKILLS.SWAMP:
-            case SPECIAL_SKILLS.WARP: {
+            case SPECIAL_SKILLS.WARP:
+            case SPECIAL_SKILLS.ELECTROMAGNET: {
                 const result = game.activateSkill();
                 if (result && game.phase === PHASES.PLACE) {
                     this.executeAfterDelay(() => this.decideSkillPlacement(), 'SKILL_TARGET');

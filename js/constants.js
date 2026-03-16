@@ -37,6 +37,7 @@ const COLORS = {
     WARP_TILE: '#1A0033',
     CHECKPOINT_TILE: '#33001A',
     SNOW_TILE: '#1A1A28',
+    ELECTROMAGNET_TILE: '#001A2A',
 
     // Drill
     DRILL: '#DC143C',
@@ -72,7 +73,8 @@ const MARKERS = {
     SWAMP: 'W',
     WARP: 'P',
     CHECKPOINT: 'C',
-    SNOW: 'N'
+    SNOW: 'N',
+    ELECTROMAGNET: 'E'
 };
 
 // Mutable Game Settings (adjustable via developer settings)
@@ -117,14 +119,15 @@ const SPECIAL_SKILLS = {
     SWAMP: 'swamp_skill',
     WARP: 'warp_skill',
     CHECKPOINT: 'checkpoint_skill',
-    KAMAKURA: 'kamakura_skill'
+    KAMAKURA: 'kamakura_skill',
+    ELECTROMAGNET: 'electromagnet_skill'
 };
 
 // Skill display metadata for UI
 const SKILL_INFO = {
     [SPECIAL_SKILLS.ICE]: { name: 'Ice Tile', color: '#ADD8E6', textColor: '#000000', costKey: 'ice', desc: 'Place ice to extend movement', jaDesc: '氷タイルを配置し、移動距離を延長する', image: 'assets/skills/ice tile.png' },
     [SPECIAL_SKILLS.BOMB]: { name: 'Bomb', color: '#FF8000', textColor: '#000000', costKey: 'bomb', desc: 'Place bomb to eliminate opponent', jaDesc: '爆弾を配置し、踏んだ相手を撃破する', image: 'assets/skills/bomb.png' },
-    [SPECIAL_SKILLS.DOMINATION]: { name: 'Control', color: '#8B00FF', textColor: '#FFFFFF', costKey: 'domination', desc: 'Seal opponent skill & stock 3 turns', jaDesc: '相手のスキルとStockを3ターン封印する', image: 'assets/skills/control.png' },
+    [SPECIAL_SKILLS.DOMINATION]: { name: 'Control', color: '#8B00FF', textColor: '#FFFFFF', costKey: 'domination', desc: 'Seal opponent skill & stock 1 turn', jaDesc: '相手のスキルとStockを1ターン封印する', image: 'assets/skills/control.png' },
     [SPECIAL_SKILLS.SNIPER]: { name: 'Sniper', color: '#228B22', textColor: '#FFFFFF', costKey: 'sniper', desc: 'Snipe opponent 4+ tiles away in LOS', jaDesc: '直線上4マス以上離れた相手を狙撃する', image: 'assets/skills/sniper.png' },
     [SPECIAL_SKILLS.SURIASHI]: { name: 'Sneak', color: '#DEB887', textColor: '#000000', costKey: 'suriashi', desc: 'Move 1 diagonal (no placement)', jaDesc: '斜め1マス移動する（石の配置なし）', image: 'assets/skills/sneak.png' },
     [SPECIAL_SKILLS.HITOKIRI]: { name: 'Landshark', color: '#DC143C', textColor: '#FFFFFF', costKey: 'hitokiri', desc: 'Eliminate adjacent opponent', jaDesc: '十字方向に隣接した相手を撃破する', image: 'assets/skills/landshark.png' },
@@ -133,7 +136,8 @@ const SKILL_INFO = {
     [SPECIAL_SKILLS.SWAMP]: { name: 'Swamp', color: '#8B6914', textColor: '#FFFFFF', costKey: 'swamp', desc: 'Place swamp to reduce movement', jaDesc: '沼タイルを配置し、移動距離を減少させる', image: 'assets/skills/swamp.png' },
     [SPECIAL_SKILLS.WARP]: { name: 'Warp Hole', color: '#6600CC', textColor: '#FFFFFF', costKey: 'warp', desc: 'Place warp hole to teleport', jaDesc: 'ワープホールを設置し、踏んだプレイヤーを瞬間移動させる', image: 'assets/skills/Warp hole.png' },
     [SPECIAL_SKILLS.CHECKPOINT]: { name: 'Check Point', color: '#FF1493', textColor: '#FFFFFF', costKey: 'checkpoint', desc: 'Place checkpoint & destroy adjacent stones, or teleport to it', jaDesc: 'チェックポイントを設置し十字方向の石を破壊、または瞬間移動する', image: 'assets/skills/Check point.png' },
-    [SPECIAL_SKILLS.KAMAKURA]: { name: 'Kamakura', color: '#E8F0FE', textColor: '#000000', costKey: 'kamakura', desc: 'Convert U-shape stones to snow', jaDesc: 'コの字の石を雪に変換する', image: 'assets/skills/Kamakura.png' }
+    [SPECIAL_SKILLS.KAMAKURA]: { name: 'Kamakura', color: '#E8F0FE', textColor: '#000000', costKey: 'kamakura', desc: 'Convert U-shape stones to snow', jaDesc: 'コの字の石を雪に変換する', image: 'assets/skills/Kamakura.png' },
+    [SPECIAL_SKILLS.ELECTROMAGNET]: { name: 'Electromagnet', color: '#00FFFF', textColor: '#000000', costKey: 'electromagnet', desc: 'Place electric stone that shocks opponent on collision', jaDesc: '電磁石を配置し、衝突した相手を感電させる', image: 'assets/skills/electromagnet.svg' }
 };
 
 // Skill order for selection screen
@@ -143,17 +147,18 @@ const SKILL_ORDER = [
     SPECIAL_SKILLS.SURIASHI, SPECIAL_SKILLS.HITOKIRI,
     SPECIAL_SKILLS.METEOR, SPECIAL_SKILLS.MOMONGA,
     SPECIAL_SKILLS.SWAMP, SPECIAL_SKILLS.WARP,
-    SPECIAL_SKILLS.CHECKPOINT, SPECIAL_SKILLS.KAMAKURA
+    SPECIAL_SKILLS.CHECKPOINT, SPECIAL_SKILLS.KAMAKURA,
+    SPECIAL_SKILLS.ELECTROMAGNET
 ];
 
 // Skill Costs
 const SKILL_COSTS = {
-    bomb: 50,
+    bomb: 40,
     drill: 100,
     ice: 30,
     diagonal_move: 10,
     stock: 20,
-    domination: 100,
+    domination: 70,
     sniper: 110,
     suriashi: 50,
     hitokiri: 70,
@@ -162,7 +167,8 @@ const SKILL_COSTS = {
     swamp: 30,
     warp: 60,
     checkpoint: 120,
-    kamakura: 50
+    kamakura: 50,
+    electromagnet: 50
 };
 
 // Direction Types

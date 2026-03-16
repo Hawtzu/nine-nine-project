@@ -34,6 +34,7 @@ class ReplayEngine {
             bombOwners: {},
             checkpointOwners: {},
             snowTurnsLeft: {},
+            electromagnetOwners: {},
             currentTurn: setup.firstTurn,
             p1: {
                 row: setup.player1.position.row,
@@ -271,6 +272,11 @@ class ReplayEngine {
             case 'warp':
                 state.board[r][c] = MARKERS.WARP;
                 break;
+            case 'electromagnet':
+                state.board[r][c] = MARKERS.ELECTROMAGNET;
+                state.electromagnetOwners = state.electromagnetOwners || {};
+                state.electromagnetOwners[`${r},${c}`] = data.player;
+                break;
         }
     }
 
@@ -279,7 +285,7 @@ class ReplayEngine {
         switch (data.skill) {
             case 'domination': {
                 const opp = data.player === 1 ? state.p2 : state.p1;
-                opp.dominationTurnsLeft = 3;
+                opp.dominationTurnsLeft = 1;
                 break;
             }
             case 'suriashi':
@@ -290,6 +296,9 @@ class ReplayEngine {
                 break;
             case 'momonga':
                 if (data.target) { p.row = data.target.row; p.col = data.target.col; }
+                break;
+            case 'electromagnet':
+                // Electromagnet placement is handled by _applyPlace
                 break;
             case 'checkpoint_place':
                 if (data.pos) {
@@ -360,6 +369,7 @@ class ReplayEngine {
             bombOwners: { ...state.bombOwners },
             checkpointOwners: { ...state.checkpointOwners },
             snowTurnsLeft: { ...state.snowTurnsLeft },
+            electromagnetOwners: { ...(state.electromagnetOwners || {}) },
             p1: {
                 ...state.p1,
                 checkpointPos: state.p1.checkpointPos ? { ...state.p1.checkpointPos } : null,
@@ -425,7 +435,8 @@ class ReplayEngine {
             'suriashi': 'Sneak',
             'meteor': 'Meteor Shower',
             'momonga': 'Momonga',
-            'kamakura': 'Kamakura'
+            'kamakura': 'Kamakura',
+            'electromagnet': 'Electromagnet'
         };
         return map[skill] || skill;
     }
@@ -445,6 +456,7 @@ class ReplayEngine {
         game.board.bombOwners = { ...snap.bombOwners };
         game.board.checkpointOwners = { ...snap.checkpointOwners };
         game.board.snowTurnsLeft = { ...snap.snowTurnsLeft };
+        game.board.electromagnetOwners = { ...(snap.electromagnetOwners || {}) };
 
         // Players
         this._applyPlayerSnap(game.player1, snap.p1);

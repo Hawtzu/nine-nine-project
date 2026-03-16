@@ -361,6 +361,24 @@ class Game {
                 }
 
                 const tile = this.board.getTile(nextPos.row, nextPos.col);
+
+                // Electromagnet collision: opponent gets electrocuted, owner is safely blocked
+                if (tile === MARKERS.ELECTROMAGNET) {
+                    const emOwner = this.board.getElectromagnetOwner(nextPos.row, nextPos.col);
+                    if (emOwner !== currentPlayer.playerNum) {
+                        // Opponent collision → electrocution (same as neon border)
+                        if (finalDest) {
+                            this.fallTriggerTiles.push({ ...finalDest, dr: dir.dr, dc: dir.dc, electromagnet: true });
+                        }
+                    } else {
+                        // Owner collision → safely blocked like a normal stone
+                        if (finalDest) {
+                            this.movableTiles.push(finalDest);
+                        }
+                    }
+                    break;
+                }
+
                 if (tile === MARKERS.STONE || tile === MARKERS.SNOW ||
                     (nextPos.row === otherPos.row && nextPos.col === otherPos.col)) {
                     if (finalDest) {
@@ -510,8 +528,9 @@ class Game {
         for (const dir of CROSS_DIRECTIONS) {
             const r = playerPos.row + dir.dr;
             const c = playerPos.col + dir.dc;
-            if (this.board.isValidPosition(r, c) && this.board.getTile(r, c) === MARKERS.STONE) {
-                return true;
+            if (this.board.isValidPosition(r, c)) {
+                const t = this.board.getTile(r, c);
+                if (t === MARKERS.STONE || t === MARKERS.ELECTROMAGNET) return true;
             }
         }
         return false;
@@ -539,7 +558,7 @@ class Game {
                 if (tile !== MARKERS.STONE && tile !== MARKERS.SNOW) {
                     this.placeableTiles.push({ row: r, col: c });
                 }
-            } else if (['bomb', 'ice', 'swamp', 'warp'].includes(this.placementType)) {
+            } else if (['bomb', 'ice', 'swamp', 'warp', 'electromagnet'].includes(this.placementType)) {
                 if (tile === MARKERS.EMPTY) {
                     this.placeableTiles.push({ row: r, col: c });
                 }
@@ -575,6 +594,10 @@ class Game {
             if (this.board.getTile(row, col) === MARKERS.SNOW) {
                 delete this.board.snowTurnsLeft[`${row},${col}`];
             }
+            // Destroy electromagnet if stone is placed on it
+            if (this.board.getTile(row, col) === MARKERS.ELECTROMAGNET) {
+                delete this.board.electromagnetOwners[`${row},${col}`];
+            }
             this.board.setTile(row, col, MARKERS.STONE);
             this.endTurn();
         } else if (this.placementType === 'bomb') {
@@ -595,6 +618,12 @@ class Game {
         } else if (this.placementType === 'warp') {
             if (currentPlayer.deductPoints(SKILL_COSTS.warp)) {
                 this.board.setTile(row, col, MARKERS.WARP);
+                this.endTurn();
+            }
+        } else if (this.placementType === 'electromagnet') {
+            if (currentPlayer.deductPoints(SKILL_COSTS.electromagnet)) {
+                this.board.setElectromagnet(row, col, currentPlayer.playerNum);
+                if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'electromagnet', pos: { row, col } });
                 this.endTurn();
             }
         }
@@ -638,9 +667,11 @@ class Game {
             const r = playerPos.row + dir.dr;
             const c = playerPos.col + dir.dc;
 
-            if (this.board.isValidPosition(r, c) &&
-                this.board.getTile(r, c) === MARKERS.STONE) {
-                this.drillTargetTiles.push({ row: r, col: c });
+            if (this.board.isValidPosition(r, c)) {
+                const t = this.board.getTile(r, c);
+                if (t === MARKERS.STONE || t === MARKERS.ELECTROMAGNET) {
+                    this.drillTargetTiles.push({ row: r, col: c });
+                }
             }
         }
     }
@@ -649,6 +680,10 @@ class Game {
         const currentPlayer = this.getCurrentPlayer();
         if (currentPlayer.deductPoints(SKILL_COSTS.drill)) {
             if (typeof gameLog !== 'undefined') gameLog.log('drill', { player: this.currentTurn, pos: { row, col } });
+            // Clean up owner data if drilling electromagnet
+            if (this.board.getTile(row, col) === MARKERS.ELECTROMAGNET) {
+                delete this.board.electromagnetOwners[`${row},${col}`];
+            }
             this.board.setTile(row, col, MARKERS.EMPTY);
             if (this.drillForSurvival) {
                 this.drillForSurvival = false;
@@ -695,6 +730,8 @@ class Game {
                 return this.useCheckpoint();
             case SPECIAL_SKILLS.KAMAKURA:
                 return this.activateKamakura();
+            case SPECIAL_SKILLS.ELECTROMAGNET:
+                return this.setPlacementType('electromagnet');
         }
         return false;
     }
@@ -704,7 +741,7 @@ class Game {
         if (!currentPlayer.canAfford(SKILL_COSTS.domination)) return false;
         currentPlayer.deductPoints(SKILL_COSTS.domination);
         const otherPlayer = this.getOtherPlayer();
-        otherPlayer.dominationTurnsLeft = 3;
+        otherPlayer.dominationTurnsLeft = 1;
         if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'domination' });
         this.endTurn();
         return true;
@@ -1359,7 +1396,7 @@ class Game {
     }
 
     handleSkillSelectionClick(x, y) {
-        const btnWidth = 115, btnHeight = 90, gapX = 10, gapY = 8, startY = 210;
+        const btnWidth = 115, btnHeight = 75, gapX = 10, gapY = 6, startY = 210;
 
         // Player 1 panel (left side)
         if (!this.player1.skillConfirmed) {
@@ -1593,6 +1630,7 @@ class Game {
                 // Store fall info for after animation
                 this.pendingFallDir = { dr: tile.dr || 0, dc: tile.dc || 0 };
                 this.pendingFallPlayerNum = this.currentTurn;
+                this.pendingFallElectromagnet = tile.electromagnet || false;
                 // Move piece to the edge tile
                 currentPlayer.moveTo(tile.row, tile.col);
                 animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, tile.row, tile.col, 'move');
@@ -1604,6 +1642,7 @@ class Game {
                     this.fallAnimDir = this.pendingFallDir;
                     this.fallAnimPlayerNum = this.pendingFallPlayerNum;
                     this.fallAnimPlayerPos = { row: tile.row, col: tile.col };
+                    this.fallAnimElectromagnet = this.pendingFallElectromagnet;
                     this.fallAnimInitialized = false;
                     this.phase = PHASES.MOVE; // Return to MOVE so fall effect renders
                 };

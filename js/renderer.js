@@ -42,6 +42,9 @@ class Renderer {
         this.snowTileImage = new Image();
         this.snowTileImage.src = 'assets/skills/Snow.png';
 
+        this.electromagnetTileImage = new Image();
+        this.electromagnetTileImage.src = 'assets/skills/electromagnet.svg';
+
         // Neon border sparks
         this.borderSparks = [];
         for (let i = 0; i < NEON.SPARK_COUNT; i++) {
@@ -215,12 +218,12 @@ class Renderer {
     drawBoard(board, now) {
         for (let r = 0; r < board.size; r++) {
             for (let c = 0; c < board.size; c++) {
-                this.drawCell(r, c, board.getTile(r, c), now || 0);
+                this.drawCell(r, c, board.getTile(r, c), now || 0, board);
             }
         }
     }
 
-    drawCell(row, col, tileType, now) {
+    drawCell(row, col, tileType, now, board) {
         const x = col * CELL_SIZE + BOARD_OFFSET_X;
         const y = row * CELL_SIZE + BOARD_OFFSET_Y;
 
@@ -239,6 +242,11 @@ class Renderer {
             case MARKERS.WARP:       tileColor = COLORS.WARP_TILE; break;
             case MARKERS.CHECKPOINT: tileColor = COLORS.CHECKPOINT_TILE; break;
             case MARKERS.SNOW:       tileColor = COLORS.SNOW_TILE; break;
+            case MARKERS.ELECTROMAGNET: {
+                const emO = board ? board.getElectromagnetOwner(row, col) : null;
+                tileColor = emO === 2 ? '#2A0A0A' : '#001A2A';
+                break;
+            }
         }
 
         if (tileColor) {
@@ -258,6 +266,12 @@ class Renderer {
         // 3. Draw stone (cyber octagon)
         if (tileType === MARKERS.STONE) {
             this.drawCyberStone(x, y);
+        }
+
+        // 3b. Draw electromagnet stone (cyber octagon with electric sparks)
+        if (tileType === MARKERS.ELECTROMAGNET) {
+            const emOwner = board ? board.getElectromagnetOwner(row, col) : null;
+            this.drawElectromagnetStone(x, y, now, emOwner);
         }
 
         // 4. Draw tile images
@@ -286,6 +300,7 @@ class Renderer {
         if (tileType === MARKERS.FOUNTAIN && this.fountainImage && this.fountainImage.complete && this.fountainImage.naturalWidth > 0) {
             this.ctx.drawImage(this.fountainImage, imgX, imgY, imgSize, imgSize);
         }
+        // Electromagnet tile image is drawn by drawElectromagnetStone (player-colored)
 
         // 5. Draw grid lines with glow
         this.drawGlowGridLine(x, y, row, col, now);
@@ -328,6 +343,91 @@ class Renderer {
         ctx.stroke();
 
         ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
+    drawElectromagnetStone(cellX, cellY, now, owner) {
+        const ctx = this.ctx;
+        const cx = cellX + CELL_SIZE / 2;
+        const cy = cellY + CELL_SIZE / 2;
+        const r = CELL_SIZE / 3;
+        const sides = 8;
+
+        // Player-specific colors
+        const glowColor = owner === 1 ? '#00AAFF' : owner === 2 ? '#FF4444' : '#00FFFF';
+        const glowRGB = owner === 1 ? '0, 170, 255' : owner === 2 ? '255, 68, 68' : '0, 255, 255';
+        const fillInner = owner === 1 ? '#0A1A3A' : owner === 2 ? '#3A0A0A' : '#0A2A3A';
+        const fillOuter = owner === 1 ? '#051025' : owner === 2 ? '#250510' : '#051520';
+
+        ctx.save();
+
+        // Pulsing glow
+        const pulse = 0.6 + 0.4 * Math.sin((now || 0) / 200);
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = 8 + 8 * pulse;
+
+        // Draw octagon path
+        ctx.beginPath();
+        for (let i = 0; i < sides; i++) {
+            const angle = (Math.PI * 2 * i / sides) - Math.PI / sides;
+            const px = cx + r * Math.cos(angle);
+            const py = cy + r * Math.sin(angle);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+
+        // Fill with dark electric gradient
+        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        grad.addColorStop(0, fillInner);
+        grad.addColorStop(1, fillOuter);
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // Electric border with player color
+        ctx.strokeStyle = `rgba(${glowRGB}, ${0.6 + 0.4 * pulse})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.shadowBlur = 0;
+
+        // Draw lightning bolt in center
+        const boltScale = r * 0.55;
+        ctx.fillStyle = `rgba(${glowRGB}, ${0.7 + 0.3 * pulse})`;
+        ctx.beginPath();
+        ctx.moveTo(cx + boltScale * 0.15, cy - boltScale * 0.7);
+        ctx.lineTo(cx - boltScale * 0.25, cy + boltScale * 0.05);
+        ctx.lineTo(cx + boltScale * 0.05, cy + boltScale * 0.05);
+        ctx.lineTo(cx - boltScale * 0.15, cy + boltScale * 0.7);
+        ctx.lineTo(cx + boltScale * 0.45, cy - boltScale * 0.15);
+        ctx.lineTo(cx + boltScale * 0.05, cy - boltScale * 0.15);
+        ctx.closePath();
+        ctx.fill();
+
+        // Draw electric sparks (small lightning bolts radiating from center)
+        const sparkCount = 4;
+        const sparkTime = (now || 0) / 150;
+        ctx.strokeStyle = `rgba(${glowRGB}, ${0.4 + 0.3 * pulse})`;
+        ctx.lineWidth = 1;
+        for (let i = 0; i < sparkCount; i++) {
+            const baseAngle = (Math.PI * 2 * i / sparkCount) + sparkTime;
+            const startR = r * 0.3;
+            const endR = r * 0.85;
+            const sx = cx + startR * Math.cos(baseAngle);
+            const sy = cy + startR * Math.sin(baseAngle);
+            const midR = (startR + endR) / 2;
+            const jitter = (Math.sin(sparkTime * 3 + i * 7) * 0.3);
+            const mx = cx + midR * Math.cos(baseAngle + jitter);
+            const my = cy + midR * Math.sin(baseAngle + jitter);
+            const ex = cx + endR * Math.cos(baseAngle);
+            const ey = cy + endR * Math.sin(baseAngle);
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(mx, my);
+            ctx.lineTo(ex, ey);
+            ctx.stroke();
+        }
+
         ctx.restore();
     }
 
@@ -1456,9 +1556,9 @@ class Renderer {
             ctx.fillText('Choose your skill:', panelX, 200);
 
             const btnWidth = 115;
-            const btnHeight = 90;
+            const btnHeight = 75;
             const gapX = 10;
-            const gapY = 8;
+            const gapY = 6;
             const startY = 210;
 
             for (let i = 0; i < SKILL_ORDER.length; i++) {
@@ -2057,7 +2157,8 @@ class Renderer {
                     const costKeyMap = {
                         'checkpoint_place': 'checkpoint', 'checkpoint_teleport': 'checkpoint',
                         'domination': 'domination', 'sniper': 'sniper', 'hitokiri': 'hitokiri',
-                        'suriashi': 'suriashi', 'meteor': 'meteor', 'momonga': 'momonga', 'kamakura': 'kamakura'
+                        'suriashi': 'suriashi', 'meteor': 'meteor', 'momonga': 'momonga', 'kamakura': 'kamakura',
+                        'electromagnet': 'electromagnet'
                     };
                     const costKey = costKeyMap[a.raw.data.skill];
                     if (costKey && skillCosts[costKey] !== undefined) {

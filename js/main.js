@@ -503,7 +503,7 @@ function render(now) {
                     const cy = game.fallAnimPlayerPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
                     renderer.initFallEffect(cx, cy, game.fallAnimDir);
                 }
-                renderer.drawFallEffect(now, elapsed, game.fallAnimPlayerPos, game.fallAnimDir);
+                renderer.drawFallEffect(now, elapsed, game.fallAnimPlayerPos, game.fallAnimDir, game.fallAnimElectromagnet);
 
                 if (elapsed >= 2000) {
                     game.fallAnimating = false;

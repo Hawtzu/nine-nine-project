@@ -2456,7 +2456,7 @@ class Renderer {
         }
     }
 
-    drawFallEffect(now, elapsed, playerPos, dir) {
+    drawFallEffect(now, elapsed, playerPos, dir, isElectromagnet = false) {
         const ctx = this.ctx;
         const cx = playerPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
         const cy = playerPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
@@ -2556,7 +2556,8 @@ class Renderer {
             ctx.shadowColor = NEON.COLOR;
             ctx.shadowBlur = 15;
             ctx.globalAlpha = textT;
-            ctx.fillText('FELL OFF!', BOARD_OFFSET_X + BOARD_SIZE * CELL_SIZE / 2, BOARD_OFFSET_Y + BOARD_SIZE * CELL_SIZE / 2);
+            const fallText = isElectromagnet ? 'ELECTROCUTED!' : 'FELL OFF!';
+            ctx.fillText(fallText, BOARD_OFFSET_X + BOARD_SIZE * CELL_SIZE / 2, BOARD_OFFSET_Y + BOARD_SIZE * CELL_SIZE / 2);
             ctx.shadowBlur = 0;
             ctx.restore();
         }

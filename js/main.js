@@ -761,7 +761,7 @@ function render(now) {
         // Draw turn change banner
         if (game.turnBannerStart > 0) {
             const bannerElapsed = now - game.turnBannerStart;
-            if (bannerElapsed < 2000) {
+            if (bannerElapsed < 1200) {
                 renderer.drawTurnBanner(game.turnBannerText, bannerElapsed);
             }
         }

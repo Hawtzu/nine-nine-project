@@ -862,16 +862,25 @@ class Renderer {
         this.ctx.stroke();
         this.ctx.shadowBlur = 0;
 
-        // YOUR TURN / WAITING indicator
+        // YOUR TURN / OPPONENT'S TURN / WAITING indicator
         if (isCurrentTurn) {
-            this.ctx.fillStyle = playerColor;
-            this.ctx.font = 'bold 18px Arial';
-            this.ctx.shadowColor = playerColor;
-            this.ctx.shadowBlur = 10;
-            this.ctx.fillText('YOUR TURN', panelX, 95);
-            this.ctx.shadowBlur = 0;
+            if (gameMode === 'online' && typeof onlineManager !== 'undefined' && player.playerNum !== onlineManager.playerNum) {
+                // Opponent's panel is active — show OPPONENT'S TURN
+                this.ctx.fillStyle = playerColor;
+                this.ctx.font = 'bold 16px Arial';
+                this.ctx.shadowColor = playerColor;
+                this.ctx.shadowBlur = 8;
+                this.ctx.fillText("OPPONENT'S TURN", panelX, 95);
+                this.ctx.shadowBlur = 0;
+            } else {
+                this.ctx.fillStyle = playerColor;
+                this.ctx.font = 'bold 18px Arial';
+                this.ctx.shadowColor = playerColor;
+                this.ctx.shadowBlur = 10;
+                this.ctx.fillText('YOUR TURN', panelX, 95);
+                this.ctx.shadowBlur = 0;
+            }
         } else if (gameMode === 'online' && typeof onlineManager !== 'undefined') {
-            // Show WAITING... on the non-active panel in online mode
             const isLocalPanel = player.playerNum === onlineManager.playerNum;
             if (isLocalPanel) {
                 this.ctx.fillStyle = '#666688';
@@ -2461,21 +2470,21 @@ class Renderer {
 
     // Turn change banner (fades in and out)
     drawTurnBanner(text, elapsed) {
-        const DURATION = 2000; // total banner display time
+        const DURATION = 1200; // total banner display time
         if (elapsed > DURATION) return;
 
         const ctx = this.ctx;
         const cx = SCREEN_WIDTH / 2;
         const cy = SCREEN_HEIGHT / 2 - 30;
 
-        // Fade: 0-200ms fade in, 200-1500ms hold, 1500-2000ms fade out
+        // Fade: 0-150ms fade in, 150-800ms hold, 800-1200ms fade out
         let alpha;
-        if (elapsed < 200) {
-            alpha = elapsed / 200;
-        } else if (elapsed < 1500) {
+        if (elapsed < 150) {
+            alpha = elapsed / 150;
+        } else if (elapsed < 800) {
             alpha = 1;
         } else {
-            alpha = 1 - (elapsed - 1500) / 500;
+            alpha = 1 - (elapsed - 800) / 400;
         }
 
         // Slide up slightly during animation

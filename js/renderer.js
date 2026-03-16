@@ -862,7 +862,7 @@ class Renderer {
         this.ctx.stroke();
         this.ctx.shadowBlur = 0;
 
-        // YOUR TURN indicator
+        // YOUR TURN / WAITING indicator
         if (isCurrentTurn) {
             this.ctx.fillStyle = playerColor;
             this.ctx.font = 'bold 18px Arial';
@@ -870,6 +870,14 @@ class Renderer {
             this.ctx.shadowBlur = 10;
             this.ctx.fillText('YOUR TURN', panelX, 95);
             this.ctx.shadowBlur = 0;
+        } else if (gameMode === 'online' && typeof onlineManager !== 'undefined') {
+            // Show WAITING... on the non-active panel in online mode
+            const isLocalPanel = player.playerNum === onlineManager.playerNum;
+            if (isLocalPanel) {
+                this.ctx.fillStyle = '#666688';
+                this.ctx.font = 'bold 16px Arial';
+                this.ctx.fillText('WAITING...', panelX, 95);
+            }
         }
         this.ctx.textBaseline = 'alphabetic';
         this.ctx.restore();
@@ -2447,6 +2455,56 @@ class Renderer {
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(connected ? 'ONLINE' : 'DISCONNECTED', cx - 28, y);
+
+        ctx.restore();
+    }
+
+    // Turn change banner (fades in and out)
+    drawTurnBanner(text, elapsed) {
+        const DURATION = 2000; // total banner display time
+        if (elapsed > DURATION) return;
+
+        const ctx = this.ctx;
+        const cx = SCREEN_WIDTH / 2;
+        const cy = SCREEN_HEIGHT / 2 - 30;
+
+        // Fade: 0-200ms fade in, 200-1500ms hold, 1500-2000ms fade out
+        let alpha;
+        if (elapsed < 200) {
+            alpha = elapsed / 200;
+        } else if (elapsed < 1500) {
+            alpha = 1;
+        } else {
+            alpha = 1 - (elapsed - 1500) / 500;
+        }
+
+        // Slide up slightly during animation
+        const slideY = elapsed < 200 ? cy + 10 * (1 - elapsed / 200) : cy;
+
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.85;
+
+        // Dark background strip
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(PANEL_WIDTH, slideY - 35, SCREEN_WIDTH - PANEL_WIDTH * 2, 70);
+
+        // Colored accent line
+        const isYourTurn = text === 'YOUR TURN';
+        const accentColor = isYourTurn ? '#00FF66' : '#FF6644';
+        ctx.fillStyle = accentColor;
+        ctx.fillRect(PANEL_WIDTH, slideY - 35, SCREEN_WIDTH - PANEL_WIDTH * 2, 3);
+        ctx.fillRect(PANEL_WIDTH, slideY + 32, SCREEN_WIDTH - PANEL_WIDTH * 2, 3);
+
+        // Text
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = isYourTurn ? '#00FF66' : '#FF8866';
+        ctx.font = 'bold 36px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = accentColor;
+        ctx.shadowBlur = 20;
+        ctx.fillText(text, cx, slideY);
+        ctx.shadowBlur = 0;
 
         ctx.restore();
     }

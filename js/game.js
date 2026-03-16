@@ -62,6 +62,10 @@ class Game {
         this.replayActionMode = null; // 'stone' | 'skill' | 'drill' — replay moved phase only
         this.showConfirmDialog = null; // null, 'save_log', 'online_disconnect', 'opponent_disconnected'
 
+        // Turn banner state (online mode)
+        this.turnBannerStart = 0;   // performance.now() when banner appeared
+        this.turnBannerText = '';   // 'YOUR TURN' or 'WAITING...'
+
         // Mouse tracking (for hover-reveal UI)
         this._mouseX = 0;
         this._mouseY = 0;
@@ -409,6 +413,13 @@ class Game {
     // 開始アニメーション完了 → ゲーム開始
     finishStartAnim() {
         this.phase = PHASES.ROLL;
+
+        // Show initial turn banner in online mode
+        if (this.gameMode === 'online' && typeof onlineManager !== 'undefined') {
+            this.turnBannerStart = performance.now();
+            this.turnBannerText = (this.currentTurn === onlineManager.playerNum) ? 'YOUR TURN' : "OPPONENT'S TURN";
+        }
+
         // COM先攻の場合、COMターンを開始
         if (this.gameMode === 'com' && this.currentTurn === 2) {
             if (typeof comPlayer !== 'undefined' && comPlayer) {
@@ -1345,6 +1356,12 @@ class Game {
         this.diceRoll = 0;
         this.stockedThisTurn = false;
         this.clearHighlights();
+
+        // Show turn banner in online mode
+        if (this.gameMode === 'online' && typeof onlineManager !== 'undefined') {
+            this.turnBannerStart = performance.now();
+            this.turnBannerText = (this.currentTurn === onlineManager.playerNum) ? 'YOUR TURN' : "OPPONENT'S TURN";
+        }
 
         // Trigger COM turn
         if (this.gameMode === 'com' && this.currentTurn === 2 && !this.winner) {

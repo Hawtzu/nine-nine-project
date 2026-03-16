@@ -757,6 +757,14 @@ function render(now) {
     if (game.gameMode === 'online' && game.phase !== PHASES.START_SCREEN &&
         game.phase !== PHASES.ONLINE_LOBBY) {
         renderer.drawOnlineIndicator(onlineManager.connected);
+
+        // Draw turn change banner
+        if (game.turnBannerStart > 0) {
+            const bannerElapsed = now - game.turnBannerStart;
+            if (bannerElapsed < 2000) {
+                renderer.drawTurnBanner(game.turnBannerText, bannerElapsed);
+            }
+        }
     }
 
     // Draw confirm dialog overlay (on top of everything)

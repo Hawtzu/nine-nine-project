@@ -37,6 +37,10 @@ class Game {
         this.bombAnimPlayerNum = 0;
         this.bombAnimPos = { row: 0, col: 0 };
         this.bombAnimInitialized = false;
+        this.controlAnimating = false;
+        this.controlAnimStart = 0;
+        this.controlAnimTargetPos = { row: 0, col: 0 };
+        this.controlAnimInitialized = false;
         this.hoveredSkill = null; // skill key hovered in selection screen
         this.kamakuraPatterns = [];       // [{middle:{row,col}, stones:[{row,col},...]}]
         this.hoveredKamakuraIndex = null; // index of hovered pattern
@@ -91,6 +95,10 @@ class Game {
         this.bombAnimPlayerNum = 0;
         this.bombAnimPos = { row: 0, col: 0 };
         this.bombAnimInitialized = false;
+        this.controlAnimating = false;
+        this.controlAnimStart = 0;
+        this.controlAnimTargetPos = { row: 0, col: 0 };
+        this.controlAnimInitialized = false;
         this.kamakuraPatterns = [];
         this.hoveredKamakuraIndex = null;
         this.showDifficultySelect = false;
@@ -759,7 +767,11 @@ class Game {
         const otherPlayer = this.getOtherPlayer();
         otherPlayer.dominationTurnsLeft = 1;
         if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'domination' });
-        this.endTurn();
+        // Start control animation instead of immediately ending turn
+        this.controlAnimating = true;
+        this.controlAnimStart = performance.now();
+        this.controlAnimTargetPos = { row: otherPlayer.row, col: otherPlayer.col };
+        this.controlAnimInitialized = false;
         return true;
     }
 
@@ -1635,7 +1647,7 @@ class Game {
             return true;
         }
 
-        if (this.fallAnimating || this.bombAnimating) return false;
+        if (this.fallAnimating || this.bombAnimating || this.controlAnimating) return false;
 
         for (const tile of this.fallTriggerTiles) {
             if (tile.row === clickedCell.row && tile.col === clickedCell.col) {

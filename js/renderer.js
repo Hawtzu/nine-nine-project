@@ -57,6 +57,9 @@ class Renderer {
         // Bomb effect particles
         this.bombParticles = [];
         this.bombShockwave = null;
+        // Control effect
+        this.controlChains = [];
+        this.controlParticles = [];
 
         // ============================================================
         // Menu Effects State
@@ -648,6 +651,55 @@ class Renderer {
         ctx.shadowBlur = 8;
         ctx.fillText(player.playerNum, x, y);
         ctx.shadowBlur = 0;
+
+        ctx.restore();
+
+        // 6. Chain wrap when under domination (Control)
+        if (player.dominationTurnsLeft > 0) {
+            this.drawChainWrap(x, y, radius, now);
+        }
+    }
+
+    // Chain wrap overlay for dominated player (number stays visible)
+    drawChainWrap(cx, cy, radius, now) {
+        const ctx = this.ctx;
+        const chainDark = '#1A0012';    // dark reddish-purple black
+        const chainAccent = '#3A0828';  // dark purple-crimson
+        const glowColor = '#400030';    // dark red-purple glow
+
+        ctx.save();
+
+        // Connected chain ring around the player
+        const chainRadius = radius + 3;
+        const segCount = 12;
+        for (let i = 0; i < segCount; i++) {
+            const startAngle = (Math.PI * 2 / segCount) * i;
+            const endAngle = startAngle + (Math.PI * 2 / segCount);
+            const r = chainRadius + (i % 2 === 0 ? 1.5 : -1.5);
+
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, startAngle, endAngle);
+            ctx.strokeStyle = i % 2 === 0 ? chainAccent : chainDark;
+            ctx.lineWidth = 3.5;
+            ctx.shadowColor = glowColor;
+            ctx.shadowBlur = 4;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+
+        // Link joints
+        for (let i = 0; i < segCount; i++) {
+            const angle = (Math.PI * 2 / segCount) * i;
+            const lx = cx + Math.cos(angle) * chainRadius;
+            const ly = cy + Math.sin(angle) * chainRadius;
+            ctx.beginPath();
+            ctx.arc(lx, ly, 2.5, 0, Math.PI * 2);
+            ctx.fillStyle = chainAccent;
+            ctx.strokeStyle = chainDark;
+            ctx.lineWidth = 1;
+            ctx.fill();
+            ctx.stroke();
+        }
 
         ctx.restore();
     }
@@ -2724,6 +2776,175 @@ class Renderer {
     cleanupBombEffect() {
         this.bombParticles = [];
         this.bombShockwave = null;
+    }
+
+    // ============================================================
+    //  Control (Domination) Chain Effect
+    // ============================================================
+
+    initControlEffect(cx, cy) {
+        // Nothing to pre-generate — all animation is time-based
+    }
+
+    drawControlEffect(now, elapsed, targetPos) {
+        const ctx = this.ctx;
+        const cx = targetPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+        const cy = targetPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+        const radius = CELL_SIZE / 2 - 10;
+
+        const chainColor = '#1A0012';
+        const chainLight = '#3A0828';
+        const chainDark = '#0A0008';
+        const glowColor = '#400030';
+
+        // Phase 1 (0-700ms): Chains grow from cell edges inward
+        const growPhase = Math.min(1, elapsed / 700);
+        // Phase 2 (500-1000ms): Chains wrap around player
+        const wrapPhase = Math.max(0, Math.min(1, (elapsed - 500) / 500));
+
+        // Dark purple overlay on the cell only
+        const cellX = targetPos.col * CELL_SIZE + BOARD_OFFSET_X;
+        const cellY = targetPos.row * CELL_SIZE + BOARD_OFFSET_Y;
+        if (growPhase > 0.1) {
+            const vigAlpha = Math.min(0.35, (growPhase - 0.1) * 0.4);
+            ctx.save();
+            ctx.globalAlpha = vigAlpha;
+            ctx.fillStyle = '#0A0008';
+            ctx.fillRect(cellX, cellY, CELL_SIZE, CELL_SIZE);
+            ctx.restore();
+        }
+
+        // 4 chains growing from cell edges toward center (within cell bounds)
+        const eased = 1 - Math.pow(1 - growPhase, 3);
+        const edges = [
+            { sx: cellX + CELL_SIZE / 2, sy: cellY },             // top edge
+            { sx: cellX + CELL_SIZE / 2, sy: cellY + CELL_SIZE },  // bottom edge
+            { sx: cellX, sy: cellY + CELL_SIZE / 2 },              // left edge
+            { sx: cellX + CELL_SIZE, sy: cellY + CELL_SIZE / 2 },  // right edge
+        ];
+        const linksPerChain = 4;
+
+        for (const edge of edges) {
+            const dx = cx - edge.sx;
+            const dy = cy - edge.sy;
+            const linkAngle = Math.atan2(dy, dx);
+
+            for (let i = 0; i < linksPerChain; i++) {
+                const lt = (i + 1) / linksPerChain;
+                const linkProgress = Math.max(0, Math.min(1, (eased - lt * 0.3) / (1 - lt * 0.3)));
+                if (linkProgress <= 0) continue;
+
+                const lx = edge.sx + dx * lt * linkProgress;
+                const ly = edge.sy + dy * lt * linkProgress;
+
+                ctx.save();
+                ctx.translate(lx, ly);
+                ctx.rotate(linkAngle + (i % 2 === 0 ? 0 : Math.PI / 2));
+                ctx.globalAlpha = linkProgress;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 5, 3, 0, 0, Math.PI * 2);
+                ctx.fillStyle = i % 2 === 0 ? chainColor : chainLight;
+                ctx.strokeStyle = chainDark;
+                ctx.lineWidth = 1.5;
+                ctx.shadowColor = glowColor;
+                ctx.shadowBlur = 3;
+                ctx.fill();
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+                ctx.restore();
+            }
+        }
+
+        // Wrap phase: ring + cross chains lock onto player
+        if (wrapPhase > 0) {
+            const wrapEased = 1 - Math.pow(1 - wrapPhase, 2);
+
+            // Connected chain ring (matching drawChainWrap style)
+            const chainRadius = radius + 3;
+            const segCount = 12;
+            const visibleSegs = Math.floor(segCount * wrapEased);
+            for (let i = 0; i < visibleSegs; i++) {
+                const startAngle = (Math.PI * 2 / segCount) * i;
+                const endAngle = startAngle + (Math.PI * 2 / segCount);
+                const r = chainRadius + (i % 2 === 0 ? 1.5 : -1.5);
+
+                ctx.save();
+                ctx.globalAlpha = wrapEased;
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, startAngle, endAngle);
+                ctx.strokeStyle = i % 2 === 0 ? chainLight : chainColor;
+                ctx.lineWidth = 3.5;
+                ctx.strokeStyle = i % 2 === 0 ? chainLight : chainColor;
+                ctx.shadowColor = glowColor;
+                ctx.shadowBlur = 4;
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+                ctx.restore();
+            }
+            // Link joints
+            for (let i = 0; i < visibleSegs; i++) {
+                const angle = (Math.PI * 2 / segCount) * i;
+                const lx = cx + Math.cos(angle) * chainRadius;
+                const ly = cy + Math.sin(angle) * chainRadius;
+                ctx.save();
+                ctx.globalAlpha = wrapEased;
+                ctx.beginPath();
+                ctx.arc(lx, ly, 2.5, 0, Math.PI * 2);
+                ctx.fillStyle = chainLight;
+                ctx.strokeStyle = chainColor;
+                ctx.lineWidth = 1;
+                ctx.fill();
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // Cross chains over center (hide the number during animation)
+            if (wrapPhase > 0.3) {
+                const crossAlpha = Math.min(1, (wrapPhase - 0.3) / 0.7);
+                ctx.save();
+                ctx.globalAlpha = crossAlpha;
+                // Dark overlay on center
+                ctx.fillStyle = 'rgba(15, 2, 10, 0.6)';
+                ctx.beginPath();
+                ctx.arc(cx, cy, radius * 0.6, 0, Math.PI * 2);
+                ctx.fill();
+                // X chains
+                for (let c = 0; c < 2; c++) {
+                    const baseAngle = c === 0 ? Math.PI * 0.25 : -Math.PI * 0.25;
+                    ctx.save();
+                    ctx.translate(cx, cy);
+                    ctx.rotate(baseAngle);
+                    ctx.beginPath();
+                    ctx.moveTo(-radius * 0.7, 0);
+                    ctx.lineTo(radius * 0.7, 0);
+                    ctx.strokeStyle = chainLight;
+                    ctx.lineWidth = 3;
+                    ctx.shadowColor = glowColor;
+                    ctx.shadowBlur = 4;
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                    ctx.restore();
+                }
+                ctx.restore();
+            }
+
+            // Subtle dark red glow at center
+            ctx.save();
+            ctx.globalAlpha = wrapEased * 0.25;
+            const lockGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+            lockGrad.addColorStop(0, '#3A0828');
+            lockGrad.addColorStop(1, 'rgba(50, 5, 30, 0)');
+            ctx.fillStyle = lockGrad;
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    cleanupControlEffect() {
+        this.controlChains = [];
+        this.controlParticles = [];
     }
 
     // ============================================================

@@ -494,6 +494,25 @@ function render(now) {
                 }
             }
 
+            // Control (domination) chain animation
+            if (game.controlAnimating) {
+                const elapsed = now - game.controlAnimStart;
+                if (!game.controlAnimInitialized) {
+                    game.controlAnimInitialized = true;
+                    const cx = game.controlAnimTargetPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+                    const cy = game.controlAnimTargetPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+                    renderer.initControlEffect(cx, cy);
+                }
+                renderer.drawControlEffect(now, elapsed, game.controlAnimTargetPos);
+
+                if (elapsed >= 1500) {
+                    game.controlAnimating = false;
+                    game.controlAnimInitialized = false;
+                    renderer.cleanupControlEffect();
+                    game.endTurn();
+                }
+            }
+
             // Bomb explosion animation
             if (game.bombAnimating) {
                 const elapsed = now - game.bombAnimStart;

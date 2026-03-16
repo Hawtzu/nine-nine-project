@@ -284,6 +284,7 @@ class Renderer {
         }
         if (tileType === MARKERS.ICE && this.iceTileImage && this.iceTileImage.complete && this.iceTileImage.naturalWidth > 0) {
             this.ctx.drawImage(this.iceTileImage, imgX, imgY, imgSize, imgSize);
+            this.drawIceEffect(x, y, now);
         }
         if (tileType === MARKERS.SWAMP && this.swampTileImage && this.swampTileImage.complete && this.swampTileImage.naturalWidth > 0) {
             this.ctx.drawImage(this.swampTileImage, imgX, imgY, imgSize, imgSize);
@@ -343,6 +344,70 @@ class Renderer {
         ctx.stroke();
 
         ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
+    drawIceEffect(cellX, cellY, now) {
+        const ctx = this.ctx;
+        const cx = cellX + CELL_SIZE / 2;
+        const cy = cellY + CELL_SIZE / 2;
+        const pad = 4;
+
+        ctx.save();
+
+        // 1. Frost overlay — semi-transparent white gradient from edges
+        const frostGrad = ctx.createRadialGradient(cx, cy, CELL_SIZE * 0.15, cx, cy, CELL_SIZE * 0.45);
+        frostGrad.addColorStop(0, 'rgba(200, 230, 255, 0)');
+        frostGrad.addColorStop(0.7, 'rgba(200, 230, 255, 0.05)');
+        frostGrad.addColorStop(1, 'rgba(180, 220, 255, 0.15)');
+        ctx.fillStyle = frostGrad;
+        ctx.fillRect(cellX + pad, cellY + pad, CELL_SIZE - pad * 2, CELL_SIZE - pad * 2);
+
+        // 2. Sparkle/shimmer dots — 5 sparkles that twinkle at different rates
+        const sparkles = [
+            { ox: 0.25, oy: 0.2, speed: 1.7, phase: 0 },
+            { ox: 0.7, oy: 0.35, speed: 2.3, phase: 1.5 },
+            { ox: 0.4, oy: 0.7, speed: 1.9, phase: 3.0 },
+            { ox: 0.8, oy: 0.75, speed: 2.7, phase: 4.5 },
+            { ox: 0.15, oy: 0.55, speed: 2.1, phase: 2.2 }
+        ];
+
+        for (const sp of sparkles) {
+            const alpha = 0.3 + 0.7 * Math.max(0, Math.sin((now || 0) / 400 * sp.speed + sp.phase));
+            const size = 1.5 + alpha * 1.5;
+            const sx = cellX + CELL_SIZE * sp.ox;
+            const sy = cellY + CELL_SIZE * sp.oy;
+
+            // Draw cross-shaped sparkle
+            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.9})`;
+            ctx.lineWidth = 0.8;
+            ctx.beginPath();
+            ctx.moveTo(sx - size, sy);
+            ctx.lineTo(sx + size, sy);
+            ctx.moveTo(sx, sy - size);
+            ctx.lineTo(sx, sy + size);
+            ctx.stroke();
+
+            // Center dot
+            ctx.fillStyle = `rgba(220, 240, 255, ${alpha})`;
+            ctx.beginPath();
+            ctx.arc(sx, sy, 0.8, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 3. Thin ice-crack lines (static, subtle)
+        ctx.strokeStyle = 'rgba(180, 220, 255, 0.12)';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(cellX + CELL_SIZE * 0.3, cellY + CELL_SIZE * 0.15);
+        ctx.lineTo(cellX + CELL_SIZE * 0.5, cellY + CELL_SIZE * 0.45);
+        ctx.lineTo(cellX + CELL_SIZE * 0.7, cellY + CELL_SIZE * 0.35);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(cellX + CELL_SIZE * 0.5, cellY + CELL_SIZE * 0.45);
+        ctx.lineTo(cellX + CELL_SIZE * 0.4, cellY + CELL_SIZE * 0.75);
+        ctx.stroke();
+
         ctx.restore();
     }
 

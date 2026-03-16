@@ -150,10 +150,14 @@ class Game {
                 this.placeObject(data.row, data.col);
                 break;
             case 'drill':
+                if (data.p1pts != null) this.player1.points = data.p1pts;
+                if (data.p2pts != null) this.player2.points = data.p2pts;
                 this.findDrillTargets();
                 this.useDrill(data.row, data.col);
                 break;
             case 'skill_target':
+                if (data.p1pts != null) this.player1.points = data.p1pts;
+                if (data.p2pts != null) this.player2.points = data.p2pts;
                 this.activeSkillType = data.skillType;
                 this.executeSkillTarget(data.row, data.col);
                 break;
@@ -2243,12 +2247,14 @@ class Game {
         if (x >= panelX && x <= panelX + 200 && y >= 365 && y <= 415) {
             this.drillForSurvival = false;
             this.setPlacementType('stone');
+            this._sendOnlineAction({ type: 'set_placement_type', placementType: 'stone' });
             return true;
         }
         // Skill button (Y: 423-473)
         if (x >= panelX && x <= panelX + 200 && y >= 423 && y <= 473) {
             this.drillForSurvival = false;
             this.activateSkill();
+            this._sendOnlineAction({ type: 'activate_skill' });
             return true;
         }
         // Drill button (Y: 481-531) — already in drill mode
@@ -2262,7 +2268,7 @@ class Game {
 
         for (const tile of this.drillTargetTiles) {
             if (tile.row === clickedCell.row && tile.col === clickedCell.col) {
-                this._sendOnlineAction({ type: 'drill', row: clickedCell.row, col: clickedCell.col, endsTurn: true });
+                this._sendOnlineAction({ type: 'drill', row: clickedCell.row, col: clickedCell.col, p1pts: this.player1.points, p2pts: this.player2.points, endsTurn: true });
                 this.useDrill(clickedCell.row, clickedCell.col);
                 return true;
             }
@@ -2281,6 +2287,7 @@ class Game {
             this.phase = PHASES.PLACE;
             this.placementType = 'stone';
             this.findPlaceableTiles();
+            this._sendOnlineAction({ type: 'set_placement_type', placementType: 'stone' });
             return true;
         }
         // Skill button (Y: 423-473) — cancel skill target, re-activate skill
@@ -2291,6 +2298,7 @@ class Game {
             this.placementType = 'stone';
             this.findPlaceableTiles();
             this.activateSkill();
+            this._sendOnlineAction({ type: 'activate_skill' });
             return true;
         }
         // Drill button (Y: 481-531) — cancel skill target, switch to drill
@@ -2300,6 +2308,7 @@ class Game {
             this.skillTargetTiles = [];
             this.phase = PHASES.PLACE;
             this.setPlacementType('drill');
+            this._sendOnlineAction({ type: 'set_placement_type', placementType: 'drill' });
             return true;
         }
 
@@ -2309,7 +2318,7 @@ class Game {
 
         for (const tile of this.skillTargetTiles) {
             if (tile.row === clickedCell.row && tile.col === clickedCell.col) {
-                this._sendOnlineAction({ type: 'skill_target', row: tile.row, col: tile.col, skillType: this.activeSkillType, endsTurn: true });
+                this._sendOnlineAction({ type: 'skill_target', row: tile.row, col: tile.col, skillType: this.activeSkillType, p1pts: this.player1.points, p2pts: this.player2.points, endsTurn: true });
                 switch (this.activeSkillType) {
                     case SPECIAL_SKILLS.SURIASHI:
                         this.executeSuriashi(tile.row, tile.col);

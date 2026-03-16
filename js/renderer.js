@@ -625,8 +625,18 @@ class Renderer {
             this.drawDifficultySelector();
         }
 
-        // Replay Button
-        this.drawButton(SCREEN_WIDTH / 2 - 150, 640, 300, 60, '#333355', 'Replay');
+        // Separator line
+        const cx = SCREEN_WIDTH / 2;
+        this.ctx.strokeStyle = '#333355';
+        this.ctx.lineWidth = 1;
+        this.ctx.beginPath();
+        this.ctx.moveTo(cx - 150, 640);
+        this.ctx.lineTo(cx + 150, 640);
+        this.ctx.stroke();
+
+        // Sub-function row: How to Play + Replay
+        this.drawSmallButton(cx - 150, 660, 145, 50, '#1A3A5A', '? How to Play');
+        this.drawSmallButton(cx + 5, 660, 145, 50, '#333355', '\u25B6 Replay');
 
         // Developer Settings gear icon
         this.drawGearIcon(SCREEN_WIDTH / 2 + 205, 390, 18);
@@ -686,6 +696,95 @@ class Renderer {
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(text, x + width / 2, y + height / 2);
+    }
+
+    drawSmallButton(x, y, width, height, color, text) {
+        this.ctx.fillStyle = color;
+        this.ctx.fillRect(x, y, width, height);
+        this.ctx.strokeStyle = '#666688';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(x, y, width, height);
+        this.ctx.fillStyle = COLORS.WHITE;
+        this.ctx.font = 'bold 16px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(text, x + width / 2, y + height / 2);
+    }
+
+    drawTutorialScreen(tutorial, now) {
+        this.clear();
+
+        // Update transition
+        tutorial.updateTransition(now);
+
+        // Dark background panel
+        const panelW = 900, panelH = 580;
+        const px = (SCREEN_WIDTH - panelW) / 2;
+        const py = (SCREEN_HEIGHT - panelH) / 2;
+
+        this.ctx.fillStyle = '#0a0a1a';
+        this.ctx.fillRect(px, py, panelW, panelH);
+        this.ctx.strokeStyle = '#333';
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(px, py, panelW, panelH);
+
+        // Slide canvas area
+        const slideX = px + 30, slideY = py + 20;
+        const slideW = 840, slideH = 420;
+
+        // Draw current slide with clipping
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(slideX, slideY, slideW, slideH);
+        this.ctx.clip();
+
+        // Fill slide background
+        this.ctx.fillStyle = '#0a0a1a';
+        this.ctx.fillRect(slideX, slideY, slideW, slideH);
+
+        this.ctx.translate(slideX, slideY);
+        this.ctx.globalAlpha = tutorial.transitionAlpha;
+        const slide = tutorial.getCurrentSlide();
+        slide.draw(this.ctx, slideW, slideH, now);
+        this.ctx.restore();
+
+        // Title
+        const titleY = slideY + slideH + 25;
+        this.ctx.fillStyle = '#00E5FF';
+        this.ctx.font = 'bold 20px "Segoe UI", Tahoma, sans-serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(slide.title, SCREEN_WIDTH / 2, titleY);
+
+        // Description
+        this.ctx.fillStyle = '#cccccc';
+        this.ctx.font = '14px "Segoe UI", Tahoma, sans-serif';
+        this.ctx.fillText(slide.description, SCREEN_WIDTH / 2, titleY + 28);
+
+        // Navigation bar
+        const navY = titleY + 55;
+
+        // Prev button
+        if (tutorial.currentSlide > 0) {
+            this.drawSmallButton(px + 20, navY, 80, 36, '#1a1a3e', '< Prev');
+        }
+
+        // Dots
+        const dotSpacing = 18;
+        const dotStartX = SCREEN_WIDTH / 2 - (tutorial.slideCount() * dotSpacing) / 2;
+        for (let i = 0; i < tutorial.slideCount(); i++) {
+            this.ctx.beginPath();
+            this.ctx.arc(dotStartX + i * dotSpacing + dotSpacing / 2, navY + 18, 5, 0, Math.PI * 2);
+            this.ctx.fillStyle = i === tutorial.currentSlide ? '#00E5FF' : '#333355';
+            this.ctx.fill();
+        }
+
+        // Next / Close button
+        const nextLabel = tutorial.isLastSlide() ? 'Close' : 'Next >';
+        this.drawSmallButton(px + panelW - 100, navY, 80, 36, '#1a1a3e', nextLabel);
+
+        // Skip button
+        this.drawSmallButton(px + panelW - 190, navY, 80, 36, '#3a0a0a', 'Skip \u00D7');
     }
 
     // --- Game Over ---

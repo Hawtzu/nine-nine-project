@@ -1325,13 +1325,16 @@ class Game {
             this.phase !== PHASES.GAME_OVER &&
             this.phase !== PHASES.SETTINGS &&
             this.phase !== PHASES.SKILL_SELECTION &&
-            this.phase !== PHASES.REPLAY) {
+            this.phase !== PHASES.REPLAY &&
+            this.phase !== PHASES.TUTORIAL) {
             return false;
         }
 
         switch (this.phase) {
             case PHASES.START_SCREEN:
                 return this.handleStartScreenClick(x, y);
+            case PHASES.TUTORIAL:
+                return this.handleTutorialClick(x, y);
             case PHASES.SETTINGS:
                 return this.handleSettingsClick(x, y);
             case PHASES.SKILL_SELECTION:
@@ -1426,8 +1429,15 @@ class Game {
             }
         }
 
-        // Replay button (below COM/difficulty area)
-        if (x >= cx - 150 && x <= cx + 150 && y >= 640 && y <= 700) {
+        // How to Play button (left half of sub-function row)
+        if (x >= cx - 150 && x <= cx - 5 && y >= 660 && y <= 710) {
+            this.phase = PHASES.TUTORIAL;
+            if (typeof tutorial !== 'undefined') tutorial.reset();
+            return true;
+        }
+
+        // Replay button (right half of sub-function row)
+        if (x >= cx + 5 && x <= cx + 150 && y >= 660 && y <= 710) {
             this.enterReplaySelect();
             return true;
         }
@@ -1438,6 +1448,57 @@ class Game {
             return true;
         }
         return false;
+    }
+
+    handleTutorialClick(x, y) {
+        const panelW = 900, panelH = 580;
+        const px = (SCREEN_WIDTH - panelW) / 2;
+        const py = (SCREEN_HEIGHT - panelH) / 2;
+        const slideH = 420;
+        const titleY = py + 20 + slideH + 25;
+        const navY = titleY + 55;
+
+        // Prev button
+        if (x >= px + 20 && x <= px + 100 && y >= navY && y <= navY + 36) {
+            if (typeof tutorial !== 'undefined' && tutorial.currentSlide > 0) {
+                tutorial.goToSlide(tutorial.currentSlide - 1);
+            }
+            return true;
+        }
+
+        // Next / Close button
+        if (x >= px + panelW - 100 && x <= px + panelW - 20 && y >= navY && y <= navY + 36) {
+            if (typeof tutorial !== 'undefined') {
+                if (tutorial.isLastSlide()) {
+                    this.phase = PHASES.START_SCREEN;
+                } else {
+                    tutorial.nextSlide();
+                }
+            }
+            return true;
+        }
+
+        // Skip button
+        if (x >= px + panelW - 190 && x <= px + panelW - 110 && y >= navY && y <= navY + 36) {
+            this.phase = PHASES.START_SCREEN;
+            return true;
+        }
+
+        // Dots
+        if (typeof tutorial !== 'undefined') {
+            const dotSpacing = 18;
+            const dotStartX = SCREEN_WIDTH / 2 - (tutorial.slideCount() * dotSpacing) / 2;
+            for (let i = 0; i < tutorial.slideCount(); i++) {
+                const dotX = dotStartX + i * dotSpacing + dotSpacing / 2;
+                const dotY = navY + 18;
+                if (Math.hypot(x - dotX, y - dotY) < 8) {
+                    tutorial.goToSlide(i);
+                    return true;
+                }
+            }
+        }
+
+        return true; // consume all clicks in tutorial mode
     }
 
     enterReplaySelect() {

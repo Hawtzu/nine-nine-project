@@ -6,6 +6,7 @@ let animManager;
 let comPlayer;
 let gameLog;
 let replayEngine;
+let tutorial;
 
 function init() {
     const canvas = document.getElementById('game-canvas');
@@ -16,6 +17,7 @@ function init() {
     comPlayer = new ComPlayer(game);
     gameLog = new GameLog();
     replayEngine = new ReplayEngine();
+    tutorial = new Tutorial();
 
     // Add event listeners
     canvas.addEventListener('click', handleClick);
@@ -159,6 +161,15 @@ function handleWheel(event) {
 }
 
 function handleKeyDown(event) {
+    // Tutorial keyboard navigation
+    if (game.phase === PHASES.TUTORIAL) {
+        if (event.key === 'ArrowRight') tutorial.nextSlide();
+        else if (event.key === 'ArrowLeft') tutorial.prevSlide();
+        else if (event.key === 'Escape') game.phase = PHASES.START_SCREEN;
+        event.preventDefault();
+        return;
+    }
+
     // Escape: confirm dialog cancel
     if (event.key === 'Escape' && game.showConfirmDialog) {
         game.showConfirmDialog = null;
@@ -361,6 +372,10 @@ function render(now) {
     switch (game.phase) {
         case PHASES.START_SCREEN:
             renderer.drawStartScreen(game.showDifficultySelect);
+            break;
+
+        case PHASES.TUTORIAL:
+            renderer.drawTutorialScreen(tutorial, now);
             break;
 
         case PHASES.SETTINGS:

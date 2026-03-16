@@ -96,7 +96,8 @@ const PHASES = {
     SKILL_TARGET: 'skill_target',
     GAME_OVER: 'game_over',
     REPLAY: 'replay',
-    ANIMATING: 'animating'
+    ANIMATING: 'animating',
+    TUTORIAL: 'tutorial'
 };
 
 // Start Animation Timing

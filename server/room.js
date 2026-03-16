@@ -1,0 +1,111 @@
+// Room & RoomManager — manages online game rooms
+
+function generateRoomId() {
+    // 6-character alphanumeric room code (easy to share)
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1 to avoid confusion
+    let id = '';
+    for (let i = 0; i < 6; i++) {
+        id += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return id;
+}
+
+class Room {
+    constructor(id, hostSocketId) {
+        this.id = id;
+        this.players = [hostSocketId, null]; // [player1, player2]
+        this.currentTurn = 1; // player 1 starts
+    }
+
+    isFull() {
+        return this.players[0] !== null && this.players[1] !== null;
+    }
+
+    addPlayer(socketId) {
+        if (this.players[1] !== null) {
+            return { error: 'Room is full' };
+        }
+        this.players[1] = socketId;
+        return { playerNum: 2 };
+    }
+
+    getPlayerNum(socketId) {
+        if (this.players[0] === socketId) return 1;
+        if (this.players[1] === socketId) return 2;
+        return null;
+    }
+
+    hasPlayer(socketId) {
+        return this.players.includes(socketId);
+    }
+}
+
+class RoomManager {
+    constructor() {
+        this.rooms = new Map();        // roomId -> Room
+        this.socketToRoom = new Map(); // socketId -> roomId
+    }
+
+    createRoom(hostSocketId) {
+        // Generate unique room ID
+        let id;
+        do {
+            id = generateRoomId();
+        } while (this.rooms.has(id));
+
+        const room = new Room(id, hostSocketId);
+        this.rooms.set(id, room);
+        this.socketToRoom.set(hostSocketId, id);
+        return room;
+    }
+
+    joinRoom(roomId, socketId) {
+        const room = this.rooms.get(roomId);
+        if (!room) {
+            return { error: 'Room not found' };
+        }
+        if (room.isFull()) {
+            return { error: 'Room is full' };
+        }
+
+        const result = room.addPlayer(socketId);
+        if (!result.error) {
+            this.socketToRoom.set(socketId, roomId);
+        }
+        return result;
+    }
+
+    getRoom(roomId) {
+        return this.rooms.get(roomId) || null;
+    }
+
+    getRoomBySocket(socketId) {
+        const roomId = this.socketToRoom.get(socketId);
+        if (!roomId) return null;
+        return this.rooms.get(roomId) || null;
+    }
+
+    removeRoom(roomId) {
+        const room = this.rooms.get(roomId);
+        if (!room) return;
+
+        // Clean up socket mappings
+        for (const socketId of room.players) {
+            if (socketId) {
+                this.socketToRoom.delete(socketId);
+            }
+        }
+        this.rooms.delete(roomId);
+    }
+
+    removeSocket(socketId) {
+        const roomId = this.socketToRoom.get(socketId);
+        if (roomId) {
+            this.socketToRoom.delete(socketId);
+            return this.rooms.get(roomId) || null;
+        }
+        return null;
+    }
+}
+
+module.exports = { Room, RoomManager };

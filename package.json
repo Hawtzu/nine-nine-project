@@ -1,0 +1,7 @@
+{
+  "name": "nine-nine-project",
+  "private": true,
+  "scripts": {
+    "dev": "node .claude/server.js"
+  }
+}

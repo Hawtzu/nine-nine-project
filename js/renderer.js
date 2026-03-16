@@ -78,7 +78,7 @@ class Renderer {
         this.menuHoverTimer = 0;
 
         // Scanline phases (I)
-        this.menuScanlinePhases = [0, 0.7, 1.4, 2.1];
+        this.menuScanlinePhases = [0, 0.7, 1.4, 2.1, 2.8];
 
         // Dice state (K) — 7 dice
         this.menuDice = [
@@ -1005,7 +1005,7 @@ class Renderer {
         this.menuHoverTimer += dt;
         if (this.menuHoverTimer > 3) {
             this.menuHoverTimer = 0;
-            this.menuHoveredIndex = (this.menuHoveredIndex + 1) % 4;
+            this.menuHoveredIndex = (this.menuHoveredIndex + 1) % 5;
         }
 
         // Dice (K)
@@ -1033,7 +1033,7 @@ class Renderer {
 
         // --- Separator line (neon gradient) ---
         ctx.save();
-        const sepY = 620;
+        const sepY = 640;
         const halfW = 200;
         const grad = ctx.createLinearGradient(cx - halfW, 0, cx + halfW, 0);
         grad.addColorStop(0, 'rgba(176, 64, 255, 0)');
@@ -1051,10 +1051,11 @@ class Renderer {
 
         // --- Buttons with Glow + Scanlines (G + I) ---
         const menuButtons = [
-            { label: 'Player vs Player', x: cx, y: 390, w: 300, h: 80, color: '#006400', glowColor: '#00FF66', fontSize: 24, hasGear: true },
-            { label: 'Player vs COM',    x: cx, y: 510, w: 300, h: 80, color: '#00224A', glowColor: '#00AAFF', fontSize: 24, hasGear: false },
-            { label: '? How to Play',    x: cx - 80, y: 660, w: 145, h: 50, color: '#1a2a3a', glowColor: '#00E5FF', fontSize: 16, hasGear: false },
-            { label: '\u25B6 Replay',    x: cx + 80, y: 660, w: 145, h: 50, color: '#1a2a3a', glowColor: '#B040FF', fontSize: 16, hasGear: false },
+            { label: 'Player vs Player', x: cx, y: 370, w: 300, h: 70, color: '#006400', glowColor: '#00FF66', fontSize: 24, hasGear: true },
+            { label: 'Player vs COM',    x: cx, y: 470, w: 300, h: 70, color: '#00224A', glowColor: '#00AAFF', fontSize: 24, hasGear: false },
+            { label: 'Online Match',     x: cx, y: 560, w: 300, h: 60, color: '#2A0A4A', glowColor: '#E040FF', fontSize: 22, hasGear: false },
+            { label: '? How to Play',    x: cx - 80, y: 680, w: 145, h: 50, color: '#1a2a3a', glowColor: '#00E5FF', fontSize: 16, hasGear: false },
+            { label: '\u25B6 Replay',    x: cx + 80, y: 680, w: 145, h: 50, color: '#1a2a3a', glowColor: '#B040FF', fontSize: 16, hasGear: false },
         ];
 
         for (let i = 0; i < menuButtons.length; i++) {
@@ -1387,7 +1388,7 @@ class Renderer {
         const cx = SCREEN_WIDTH / 2;
         const btnW = 90, btnH = 50, gap = 10;
         const startX = cx - (btnW * 3 + gap * 2) / 2;
-        const y = 560;
+        const y = 515;
         const t = this.menuTime;
 
         // Difficulty buttons with neon style
@@ -1476,6 +1477,158 @@ class Renderer {
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText(text, x + width / 2, y + height / 2);
+    }
+
+    drawOnlineLobby(game, now) {
+        this.clear();
+        const ctx = this.ctx;
+        const cx = SCREEN_WIDTH / 2;
+        const panelW = 500, panelH = 400;
+        const px = (SCREEN_WIDTH - panelW) / 2;
+        const py = (SCREEN_HEIGHT - panelH) / 2;
+
+        // Panel background
+        ctx.fillStyle = '#0D0D1A';
+        ctx.strokeStyle = '#B040FF';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = '#B040FF';
+        ctx.shadowBlur = 15;
+        this._menuRoundRect(ctx, px, py, panelW, panelH, 12);
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Title
+        ctx.fillStyle = '#E040FF';
+        ctx.font = 'bold 28px "Segoe UI", Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Online Match', cx, py + 50);
+
+        // Back button
+        ctx.fillStyle = '#1a1a2a';
+        ctx.strokeStyle = '#666';
+        ctx.lineWidth = 1;
+        this._menuRoundRect(ctx, px + 10, py + 10, 80, 32, 6);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#aaa';
+        ctx.font = '14px Arial';
+        ctx.fillText('← Back', px + 50, py + 26);
+
+        const mode = game.onlineLobbyMode;
+
+        if (mode === 'menu') {
+            // Create Room button
+            this._drawLobbyButton(cx, py + 185, 240, 50, '#1A4A1A', '#00FF66', 'Create Room');
+            // Join Room button
+            this._drawLobbyButton(cx, py + 255, 240, 50, '#1A1A4A', '#6699FF', 'Join Room');
+
+        } else if (mode === 'join') {
+            // Room code input
+            ctx.fillStyle = '#aaa';
+            ctx.font = '16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Enter Room Code:', cx, py + 140);
+
+            // Input box
+            ctx.fillStyle = '#0A0A14';
+            ctx.strokeStyle = '#B040FF';
+            ctx.lineWidth = 2;
+            this._menuRoundRect(ctx, cx - 100, py + 160, 200, 50, 8);
+            ctx.fill();
+            ctx.stroke();
+
+            // Room code text
+            ctx.fillStyle = COLORS.WHITE;
+            ctx.font = 'bold 28px "Courier New", monospace';
+            ctx.textAlign = 'center';
+            const displayText = game.onlineRoomInput + (Math.floor(now / 500) % 2 === 0 ? '_' : '');
+            ctx.fillText(displayText, cx, py + 188);
+
+            // Connect button
+            const canConnect = game.onlineRoomInput.length > 0;
+            this._drawLobbyButton(cx, py + 300, 120, 40, canConnect ? '#1A4A1A' : '#1a1a1a', canConnect ? '#00FF66' : '#444', 'Connect');
+
+            // Back link
+            ctx.fillStyle = '#888';
+            ctx.font = '14px Arial';
+            ctx.fillText('← Back', cx, py + 350);
+
+        } else if (mode === 'connecting') {
+            // Loading dots animation
+            const dots = '.'.repeat(Math.floor(now / 400) % 4);
+            ctx.fillStyle = '#aaa';
+            ctx.font = '18px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(game.onlineStatusMsg + dots, cx, py + 200);
+
+        } else if (mode === 'waiting') {
+            // Show room code
+            ctx.fillStyle = '#aaa';
+            ctx.font = '16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Room Code:', cx, py + 140);
+
+            // Room code display (big)
+            ctx.fillStyle = '#00FF66';
+            ctx.font = 'bold 48px "Courier New", monospace';
+            ctx.shadowColor = '#00FF66';
+            ctx.shadowBlur = 10;
+            const roomId = (typeof onlineManager !== 'undefined' && onlineManager.roomId) || '------';
+            ctx.fillText(roomId, cx, py + 195);
+            ctx.shadowBlur = 0;
+
+            ctx.fillStyle = '#888';
+            ctx.font = '14px Arial';
+            ctx.fillText('Click code to copy · Share with your opponent', cx, py + 230);
+
+            // Status message (waiting or "Copied!")
+            const statusMsg = game.onlineStatusMsg || 'Waiting for opponent...';
+            if (statusMsg === 'Copied!') {
+                ctx.fillStyle = '#00FF66';
+                ctx.font = 'bold 18px Arial';
+                ctx.fillText('Copied!', cx, py + 280);
+            } else {
+                const dots2 = '.'.repeat(Math.floor(now / 400) % 4);
+                ctx.fillStyle = '#E040FF';
+                ctx.font = '18px Arial';
+                ctx.fillText('Waiting for opponent' + dots2, cx, py + 280);
+            }
+
+            // Cancel button
+            this._drawLobbyButton(cx, py + 340, 120, 40, '#2a1a1a', '#ff6666', 'Cancel');
+
+        } else if (mode === 'error') {
+            // Error message
+            ctx.fillStyle = '#ff6666';
+            ctx.font = '18px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(game.onlineStatusMsg || 'An error occurred', cx, py + 200);
+
+            // Back button
+            this._drawLobbyButton(cx, py + 340, 120, 40, '#1a1a2a', '#6699FF', 'Back');
+        }
+    }
+
+    // Helper: draw a lobby button with glow
+    _drawLobbyButton(cx, cy, w, h, bgColor, glowColor, text) {
+        const ctx = this.ctx;
+        ctx.fillStyle = bgColor;
+        ctx.strokeStyle = glowColor;
+        ctx.lineWidth = 2;
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = 8;
+        this._menuRoundRect(ctx, cx - w / 2, cy - h / 2, w, h, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = 'bold 16px "Segoe UI", Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, cx, cy);
     }
 
     drawTutorialScreen(tutorial, now) {
@@ -2258,6 +2411,109 @@ class Renderer {
         this.drawButton(startX, btnY, btnW, btnH, '#006400', 'Save');
         this.drawButton(startX + btnW + 10, btnY, btnW, btnH, '#661122', 'Discard');
         this.drawButton(startX + (btnW + 10) * 2, btnY, btnW, btnH, '#333344', 'Cancel');
+    }
+
+    // Online connection indicator (top-center during online games)
+    drawOnlineIndicator(connected) {
+        const ctx = this.ctx;
+        const cx = SCREEN_WIDTH / 2;
+        const y = 12;
+
+        ctx.save();
+        ctx.globalAlpha = 0.7;
+
+        // Small dot + text
+        ctx.beginPath();
+        ctx.arc(cx - 35, y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = connected ? '#00FF66' : '#ff4444';
+        ctx.fill();
+
+        ctx.fillStyle = connected ? '#88ffaa' : '#ff8888';
+        ctx.font = '11px Arial';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(connected ? 'ONLINE' : 'DISCONNECTED', cx - 28, y);
+
+        ctx.restore();
+    }
+
+    // Online disconnect confirm dialog (player wants to leave)
+    drawOnlineDisconnectDialog() {
+        const ctx = this.ctx;
+
+        // Overlay
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+        // Dialog box
+        const dw = 420, dh = 180;
+        const dx = (SCREEN_WIDTH - dw) / 2;
+        const dy = (SCREEN_HEIGHT - dh) / 2;
+
+        ctx.fillStyle = '#1a1a3a';
+        ctx.fillRect(dx, dy, dw, dh);
+        ctx.strokeStyle = '#ff6666';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(dx, dy, dw, dh);
+
+        // Title
+        ctx.fillStyle = '#ff6666';
+        ctx.font = 'bold 22px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Leave Online Match?', SCREEN_WIDTH / 2, dy + 40);
+
+        // Message
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = '16px Arial';
+        ctx.fillText('You will be disconnected from this game.', SCREEN_WIDTH / 2, dy + 75);
+
+        // Buttons: Disconnect / Cancel
+        const btnW = 140, btnH = 45;
+        const btnY = dy + 110;
+        const gap = 20;
+        const totalW = btnW * 2 + gap;
+        const startX = (SCREEN_WIDTH - totalW) / 2;
+
+        this.drawButton(startX, btnY, btnW, btnH, '#661122', 'Disconnect');
+        this.drawButton(startX + btnW + gap, btnY, btnW, btnH, '#333344', 'Cancel');
+    }
+
+    // Opponent disconnected notification dialog
+    drawOpponentDisconnectedDialog() {
+        const ctx = this.ctx;
+
+        // Overlay
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+        // Dialog box
+        const dw = 420, dh = 180;
+        const dx = (SCREEN_WIDTH - dw) / 2;
+        const dy = (SCREEN_HEIGHT - dh) / 2;
+
+        ctx.fillStyle = '#1a1a3a';
+        ctx.fillRect(dx, dy, dw, dh);
+        ctx.strokeStyle = '#ff6666';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(dx, dy, dw, dh);
+
+        // Title
+        ctx.fillStyle = '#ff6666';
+        ctx.font = 'bold 22px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Opponent Disconnected', SCREEN_WIDTH / 2, dy + 40);
+
+        // Message
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = '16px Arial';
+        ctx.fillText('Your opponent has left the game.', SCREEN_WIDTH / 2, dy + 75);
+
+        // Single OK button
+        const btnW = 140, btnH = 45;
+        const btnX = (SCREEN_WIDTH - btnW) / 2;
+        const btnY = dy + 110;
+
+        this.drawButton(btnX, btnY, btnW, btnH, '#333366', 'OK');
     }
 
     // ─── Replay: Playback Controls ────────────────────────────

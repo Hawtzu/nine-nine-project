@@ -99,7 +99,8 @@ const PHASES = {
     GAME_OVER: 'game_over',
     REPLAY: 'replay',
     ANIMATING: 'animating',
-    TUTORIAL: 'tutorial'
+    TUTORIAL: 'tutorial',
+    ONLINE_LOBBY: 'online_lobby'
 };
 
 // Start Animation Timing

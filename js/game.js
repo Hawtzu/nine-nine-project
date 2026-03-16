@@ -51,11 +51,16 @@ class Game {
         this.pendingMoveRow = -1;
         this.pendingMoveCol = -1;
 
+        // Online lobby state
+        this.onlineLobbyMode = 'menu'; // 'menu', 'connecting', 'create', 'join', 'waiting', 'error'
+        this.onlineRoomInput = '';
+        this.onlineStatusMsg = '';
+
         // Replay state
         this.replaySelectScrollOffset = 0;
         this.replaySelectReplays = [];
         this.replayActionMode = null; // 'stone' | 'skill' | 'drill' — replay moved phase only
-        this.showConfirmDialog = null; // null or 'save_log' — menu confirm dialog
+        this.showConfirmDialog = null; // null, 'save_log', 'online_disconnect', 'opponent_disconnected'
 
         // Mouse tracking (for hover-reveal UI)
         this._mouseX = 0;
@@ -64,6 +69,172 @@ class Game {
         // Start animation state
         this.startAnimStart = 0;
         this.startAnimTileRevealOrder = [];
+    }
+
+    // --- Online Multiplayer Sync ---
+
+    // Check if we're in an online game
+    isOnlineMode() {
+        return this.gameMode === 'online' && typeof onlineManager !== 'undefined' && onlineManager.isOnline();
+    }
+
+    // Check if it's the local player's turn
+    isLocalPlayerTurn() {
+        if (!this.isOnlineMode()) return true;
+        return onlineManager.playerNum === this.currentTurn;
+    }
+
+    // Send a game action to the opponent via server
+    _sendOnlineAction(action) {
+        if (!this.isOnlineMode()) return;
+        onlineManager.sendAction(action);
+    }
+
+    // Apply an action received from the opponent
+    applyOnlineAction(data) {
+        switch (data.type) {
+            case 'roll_dice':
+                // Dice value comes from server via dice_result event
+                break;
+            case 'stock_dice':
+                this.stockCurrentDice();
+                break;
+            case 'use_stock':
+                this.useStockedDice();
+                break;
+            case 'toggle_mode':
+                this.toggleMoveMode();
+                break;
+            case 'move':
+                this.findMovableTiles();
+                this.movePlayer(data.row, data.col);
+                break;
+            case 'set_placement_type':
+                this.setPlacementType(data.placementType);
+                break;
+            case 'activate_skill':
+                this.activateSkill();
+                break;
+            case 'place':
+                this.placementType = data.placementType;
+                this.findPlaceableTiles();
+                this.placeObject(data.row, data.col);
+                break;
+            case 'drill':
+                this.findDrillTargets();
+                this.useDrill(data.row, data.col);
+                break;
+            case 'skill_target':
+                this.activeSkillType = data.skillType;
+                this.executeSkillTarget(data.row, data.col);
+                break;
+            case 'warp_select':
+                this.getCurrentPlayer().moveTo(data.row, data.col);
+                this.phase = PHASES.PLACE;
+                this.placementType = 'stone';
+                this.clearHighlights();
+                this.findPlaceableTiles();
+                break;
+            case 'fall_trigger':
+                this.findMovableTiles();
+                // Find the fall trigger tile and simulate the click
+                for (const tile of this.fallTriggerTiles) {
+                    if (tile.row === data.row && tile.col === data.col) {
+                        const currentPlayer = this.getCurrentPlayer();
+                        const fromRow = currentPlayer.row;
+                        const fromCol = currentPlayer.col;
+                        this.pendingFallDir = { dr: tile.dr || 0, dc: tile.dc || 0 };
+                        this.pendingFallPlayerNum = this.currentTurn;
+                        this.pendingFallElectromagnet = tile.electromagnet || false;
+                        currentPlayer.moveTo(tile.row, tile.col);
+                        if (typeof animManager !== 'undefined') {
+                            animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, tile.row, tile.col, 'move');
+                        }
+                        this.phase = PHASES.ANIMATING;
+                        if (typeof animManager !== 'undefined') {
+                            animManager.playerAnims[currentPlayer.playerNum].onComplete = () => {
+                                this.fallAnimating = true;
+                                this.fallAnimStart = performance.now();
+                                this.fallAnimDir = this.pendingFallDir;
+                                this.fallAnimPlayerNum = this.pendingFallPlayerNum;
+                                this.fallAnimPlayerPos = { row: tile.row, col: tile.col };
+                                this.fallAnimElectromagnet = this.pendingFallElectromagnet;
+                                this.fallAnimInitialized = false;
+                                this.phase = PHASES.MOVE;
+                            };
+                        }
+                        break;
+                    }
+                }
+                break;
+        }
+    }
+
+    // Execute a skill target action (used by both local and online)
+    executeSkillTarget(row, col) {
+        switch (this.activeSkillType) {
+            case SPECIAL_SKILLS.SNIPER:
+                this.executeSniper();
+                break;
+            case SPECIAL_SKILLS.HITOKIRI:
+                this.executeHitokiri(row, col);
+                break;
+            case SPECIAL_SKILLS.MOMONGA:
+                this.executeMomonga(row, col);
+                break;
+            case SPECIAL_SKILLS.KAMAKURA:
+                this.executeKamakura(row, col);
+                break;
+            case SPECIAL_SKILLS.METEOR:
+                this.executeMeteor();
+                break;
+        }
+    }
+
+    // Apply online dice result from server
+    applyOnlineDice(value) {
+        const currentPlayer = this.getCurrentPlayer();
+        // Override the dice queue so the next shift returns the server value
+        currentPlayer.diceQueue[0] = value;
+        this.rollDice();
+    }
+
+    // Send board setup to opponent (host only)
+    sendBoardSetup() {
+        if (!this.isOnlineMode()) return;
+        if (onlineManager.playerNum !== 1) return;
+
+        const data = {
+            tiles: this.board.tiles,
+            bombOwners: this.board.bombOwners,
+            checkpointOwners: this.board.checkpointOwners,
+            snowTurnsLeft: this.board.snowTurnsLeft,
+            electromagnetOwners: this.board.electromagnetOwners,
+            currentTurn: this.currentTurn,
+            p1Skill: this.player1.specialSkill,
+            p2Skill: this.player2.specialSkill,
+            p1Queue: [...this.player1.diceQueue],
+            p2Queue: [...this.player2.diceQueue]
+        };
+        onlineManager.sendBoardSetup(data);
+    }
+
+    // Receive and apply board setup (guest only)
+    receiveBoardSetup(data) {
+        // Apply board state
+        this.board.tiles = data.tiles;
+        this.board.bombOwners = data.bombOwners || {};
+        this.board.checkpointOwners = data.checkpointOwners || {};
+        this.board.snowTurnsLeft = data.snowTurnsLeft || {};
+        this.board.electromagnetOwners = data.electromagnetOwners || {};
+        this.currentTurn = data.currentTurn;
+        // Sync dice queues
+        this.player1.diceQueue = data.p1Queue;
+        this.player2.diceQueue = data.p2Queue;
+        // Start animation
+        this.startAnimTileRevealOrder = this._buildTileRevealOrder();
+        this.phase = PHASES.START_ANIM;
+        this.startAnimStart = performance.now();
     }
 
     generateDiceValue() {
@@ -135,14 +306,30 @@ class Game {
         if (!player.skillConfirmed) {
             player.setSpecialSkill(skill);
             if (typeof gameLog !== 'undefined') gameLog.log('skill_select', { player: playerNum, skill });
+
+            // Online: send skill selection to opponent
+            if (this.isOnlineMode() && playerNum === onlineManager.playerNum) {
+                onlineManager.sendSkillSelect({ skill });
+            }
         }
 
         if (this.player1.skillConfirmed && this.player2.skillConfirmed) {
-            this.setupInitialBoard();
-            // 開始アニメーションフェーズへ遷移
-            this.phase = PHASES.START_ANIM;
-            this.startAnimStart = performance.now();
-            this.startAnimTileRevealOrder = this._buildTileRevealOrder();
+            if (this.isOnlineMode()) {
+                // Host (P1) generates the board and sends to P2
+                if (onlineManager.playerNum === 1) {
+                    this.setupInitialBoard();
+                    this.sendBoardSetup();
+                    this.phase = PHASES.START_ANIM;
+                    this.startAnimStart = performance.now();
+                    this.startAnimTileRevealOrder = this._buildTileRevealOrder();
+                }
+                // P2 waits for board_setup event (handled in receiveBoardSetup)
+            } else {
+                this.setupInitialBoard();
+                this.phase = PHASES.START_ANIM;
+                this.startAnimStart = performance.now();
+                this.startAnimTileRevealOrder = this._buildTileRevealOrder();
+            }
         }
     }
 
@@ -1160,6 +1347,7 @@ class Game {
         if (!clickedCell) return false;
         for (const tile of this.warpSelectTiles) {
             if (tile.row === clickedCell.row && tile.col === clickedCell.col) {
+                this._sendOnlineAction({ type: 'warp_select', row: tile.row, col: tile.col });
                 this.completeWarp(tile.row, tile.col);
                 return true;
             }
@@ -1325,6 +1513,44 @@ class Game {
     // --- Click Handlers ---
 
     handleConfirmDialogClick(x, y) {
+        // Opponent disconnected dialog — single "OK" button
+        if (this.showConfirmDialog === 'opponent_disconnected') {
+            const btnW = 140, btnH = 45;
+            const dy = (SCREEN_HEIGHT - 180) / 2;
+            const btnX = (SCREEN_WIDTH - btnW) / 2;
+            const btnY = dy + 110;
+            if (x >= btnX && x <= btnX + btnW && y >= btnY && y <= btnY + btnH) {
+                this.showConfirmDialog = null;
+                this.phase = PHASES.START_SCREEN;
+            }
+            return true;
+        }
+
+        // Online disconnect confirm — "Disconnect" / "Cancel"
+        if (this.showConfirmDialog === 'online_disconnect') {
+            const btnW = 140, btnH = 45;
+            const dy = (SCREEN_HEIGHT - 180) / 2;
+            const btnY = dy + 110;
+            const gap = 20;
+            const totalW = btnW * 2 + gap;
+            const startX = (SCREEN_WIDTH - totalW) / 2;
+
+            // Disconnect button
+            if (x >= startX && x <= startX + btnW && y >= btnY && y <= btnY + btnH) {
+                this.showConfirmDialog = null;
+                onlineManager.disconnect();
+                this.phase = PHASES.START_SCREEN;
+                return true;
+            }
+            // Cancel button
+            if (x >= startX + btnW + gap && x <= startX + totalW && y >= btnY && y <= btnY + btnH) {
+                this.showConfirmDialog = null;
+                return true;
+            }
+            return true;
+        }
+
+        // Default: save_log dialog (3 buttons)
         const btnW = 110, btnH = 40;
         const dh = 180;
         const dy = (SCREEN_HEIGHT - dh) / 2;
@@ -1361,19 +1587,23 @@ class Game {
     }
 
     handleClick(x, y) {
-        // Block input during animation
-        if (this.phase === PHASES.ANIMATING) return false;
-        if (this.phase === PHASES.START_ANIM) return false;
-
-        // Confirm dialog takes priority over everything
+        // Confirm dialog takes priority over everything (even during animation)
         if (this.showConfirmDialog) {
             return this.handleConfirmDialogClick(x, y);
         }
 
-        // Hover-menu: skill selection → direct return to menu (no dialog)
+        // Block input during animation
+        if (this.phase === PHASES.ANIMATING) return false;
+        if (this.phase === PHASES.START_ANIM) return false;
+
+        // Hover-menu: skill selection → return to menu (online: disconnect confirm)
         if (this.phase === PHASES.SKILL_SELECTION && y < 50) {
             if (x >= 20 && x <= 160 && y >= 8 && y <= 42) {
-                this.phase = PHASES.START_SCREEN;
+                if (this.gameMode === 'online') {
+                    this.showConfirmDialog = 'online_disconnect';
+                } else {
+                    this.phase = PHASES.START_SCREEN;
+                }
                 return true;
             }
         }
@@ -1383,7 +1613,11 @@ class Game {
             PHASES.DRILL_TARGET, PHASES.SKILL_TARGET, PHASES.WARP_SELECT];
         if (gameplayPhases.includes(this.phase) && y < 50) {
             if (x >= 20 && x <= 160 && y >= 8 && y <= 42) {
-                this.showConfirmDialog = 'save_log';
+                if (this.gameMode === 'online') {
+                    this.showConfirmDialog = 'online_disconnect';
+                } else {
+                    this.showConfirmDialog = 'save_log';
+                }
                 return true;
             }
         }
@@ -1395,7 +1629,17 @@ class Game {
             this.phase !== PHASES.SETTINGS &&
             this.phase !== PHASES.SKILL_SELECTION &&
             this.phase !== PHASES.REPLAY &&
-            this.phase !== PHASES.TUTORIAL) {
+            this.phase !== PHASES.TUTORIAL &&
+            this.phase !== PHASES.ONLINE_LOBBY) {
+            return false;
+        }
+
+        // Block clicks during opponent's turn in online mode (except menus/skill_selection)
+        if (this.isOnlineMode() && !this.isLocalPlayerTurn() &&
+            this.phase !== PHASES.START_SCREEN &&
+            this.phase !== PHASES.GAME_OVER &&
+            this.phase !== PHASES.SKILL_SELECTION &&
+            this.phase !== PHASES.ONLINE_LOBBY) {
             return false;
         }
 
@@ -1404,6 +1648,8 @@ class Game {
                 return this.handleStartScreenClick(x, y);
             case PHASES.TUTORIAL:
                 return this.handleTutorialClick(x, y);
+            case PHASES.ONLINE_LOBBY:
+                return this.handleOnlineLobbyClick(x, y);
             case PHASES.SETTINGS:
                 return this.handleSettingsClick(x, y);
             case PHASES.SKILL_SELECTION:
@@ -1461,6 +1707,15 @@ class Game {
             return false;
         };
 
+        // Online mode: only allow clicking your own panel
+        if (this.isOnlineMode()) {
+            if (onlineManager.playerNum === 1) {
+                return checkPanel(this.player1, 20, 'skillTabP1');
+            } else {
+                return checkPanel(this.player2, SCREEN_WIDTH - PANEL_WIDTH + 20, 'skillTabP2');
+            }
+        }
+
         if (checkPanel(this.player1, 20, 'skillTabP1')) return true;
         if (this.gameMode !== 'com' && checkPanel(this.player2, SCREEN_WIDTH - PANEL_WIDTH + 20, 'skillTabP2')) return true;
 
@@ -1470,15 +1725,15 @@ class Game {
     handleStartScreenClick(x, y) {
         const cx = SCREEN_WIDTH / 2;
 
-        // PvP button
-        if (x >= cx - 150 && x <= cx + 150 && y >= 350 && y <= 430) {
+        // PvP button (center y=370, h=70)
+        if (x >= cx - 150 && x <= cx + 150 && y >= 335 && y <= 405) {
             this.showDifficultySelect = false;
             this.startGame('pvp');
             return true;
         }
 
-        // COM button
-        if (x >= cx - 150 && x <= cx + 150 && y >= 470 && y <= 550) {
+        // COM button (center y=470, h=70)
+        if (x >= cx - 150 && x <= cx + 150 && y >= 435 && y <= 505) {
             this.showDifficultySelect = true;
             return true;
         }
@@ -1487,7 +1742,7 @@ class Game {
         if (this.showDifficultySelect) {
             const btnW = 90, btnH = 50, gap = 10;
             const startX = cx - (btnW * 3 + gap * 2) / 2;
-            const btnY = 560;
+            const btnY = 515;
 
             if (y >= btnY && y <= btnY + btnH) {
                 if (x >= startX && x <= startX + btnW) {
@@ -1504,21 +1759,27 @@ class Game {
             }
         }
 
-        // How to Play button (center at cx-80, 660, size 145x50)
-        if (x >= cx - 152 && x <= cx - 8 && y >= 635 && y <= 685) {
+        // Online Match button (center y=560, h=60)
+        if (x >= cx - 150 && x <= cx + 150 && y >= 530 && y <= 590) {
+            this.phase = PHASES.ONLINE_LOBBY;
+            return true;
+        }
+
+        // How to Play button (center at cx-80, y=680, size 145x50)
+        if (x >= cx - 152 && x <= cx - 8 && y >= 655 && y <= 705) {
             this.phase = PHASES.TUTORIAL;
             if (typeof tutorial !== 'undefined') tutorial.reset();
             return true;
         }
 
-        // Replay button (center at cx+80, 660, size 145x50)
-        if (x >= cx + 8 && x <= cx + 152 && y >= 635 && y <= 685) {
+        // Replay button (center at cx+80, y=680, size 145x50)
+        if (x >= cx + 8 && x <= cx + 152 && y >= 655 && y <= 705) {
             this.enterReplaySelect();
             return true;
         }
 
-        // Developer Settings gear icon (at cx+175, 390)
-        if (x >= cx + 157 && x <= cx + 193 && y >= 372 && y <= 408) {
+        // Developer Settings gear icon (at cx+175, 370)
+        if (x >= cx + 157 && x <= cx + 193 && y >= 352 && y <= 388) {
             this.phase = PHASES.SETTINGS;
             return true;
         }
@@ -1576,6 +1837,176 @@ class Game {
         return true; // consume all clicks in tutorial mode
     }
 
+    handleOnlineLobbyClick(x, y) {
+        const cx = SCREEN_WIDTH / 2;
+        const panelW = 500, panelH = 400;
+        const px = (SCREEN_WIDTH - panelW) / 2;
+        const py = (SCREEN_HEIGHT - panelH) / 2;
+
+        // Back button (top-left of panel)
+        if (x >= px + 10 && x <= px + 90 && y >= py + 10 && y <= py + 42) {
+            if (typeof onlineManager !== 'undefined') onlineManager.disconnect();
+            this.onlineLobbyMode = 'menu';
+            this.phase = PHASES.START_SCREEN;
+            return true;
+        }
+
+        if (this.onlineLobbyMode === 'menu') {
+            // "Create Room" button
+            if (x >= cx - 120 && x <= cx + 120 && y >= py + 160 && y <= py + 210) {
+                this._onlineConnect('create');
+                return true;
+            }
+            // "Join Room" button
+            if (x >= cx - 120 && x <= cx + 120 && y >= py + 230 && y <= py + 280) {
+                this.onlineLobbyMode = 'join';
+                this.onlineRoomInput = '';
+                return true;
+            }
+        } else if (this.onlineLobbyMode === 'join') {
+            // "Connect" button
+            if (x >= cx - 60 && x <= cx + 60 && y >= py + 280 && y <= py + 320) {
+                if (this.onlineRoomInput.length > 0) {
+                    this._onlineConnect('join');
+                }
+                return true;
+            }
+            // "Back" to menu
+            if (x >= cx - 60 && x <= cx + 60 && y >= py + 335 && y <= py + 365) {
+                this.onlineLobbyMode = 'menu';
+                return true;
+            }
+        } else if (this.onlineLobbyMode === 'waiting') {
+            // Copy room code on click
+            if (x >= cx - 120 && x <= cx + 120 && y >= py + 160 && y <= py + 210) {
+                const roomId = onlineManager.roomId;
+                if (roomId) {
+                    const self = this;
+                    const showCopied = () => {
+                        self.onlineStatusMsg = 'Copied!';
+                        setTimeout(() => {
+                            if (self.onlineLobbyMode === 'waiting') {
+                                self.onlineStatusMsg = 'Waiting for opponent...';
+                            }
+                        }, 1500);
+                    };
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(roomId).then(showCopied).catch(() => {
+                            // Fallback: execCommand
+                            const ta = document.createElement('textarea');
+                            ta.value = roomId;
+                            ta.style.position = 'fixed';
+                            ta.style.left = '-9999px';
+                            document.body.appendChild(ta);
+                            ta.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(ta);
+                            showCopied();
+                        });
+                    } else {
+                        const ta = document.createElement('textarea');
+                        ta.value = roomId;
+                        ta.style.position = 'fixed';
+                        ta.style.left = '-9999px';
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(ta);
+                        showCopied();
+                    }
+                }
+                return true;
+            }
+            // Cancel button
+            if (x >= cx - 60 && x <= cx + 60 && y >= py + 320 && y <= py + 360) {
+                if (typeof onlineManager !== 'undefined') onlineManager.disconnect();
+                this.onlineLobbyMode = 'menu';
+                return true;
+            }
+        } else if (this.onlineLobbyMode === 'error') {
+            // Back button
+            if (x >= cx - 60 && x <= cx + 60 && y >= py + 320 && y <= py + 360) {
+                if (typeof onlineManager !== 'undefined') onlineManager.disconnect();
+                this.onlineLobbyMode = 'menu';
+                return true;
+            }
+        }
+
+        return true; // consume all clicks
+    }
+
+    // Connect to online server and create/join room
+    _onlineConnect(action) {
+        if (typeof onlineManager === 'undefined') return;
+
+        this.onlineLobbyMode = 'connecting';
+        this.onlineStatusMsg = 'Connecting to server...';
+
+        // Determine server URL (same origin for now)
+        const serverUrl = window.location.origin;
+
+        onlineManager.connect(serverUrl).then(() => {
+            if (action === 'create') {
+                this.onlineStatusMsg = 'Creating room...';
+                return onlineManager.createRoom();
+            } else {
+                this.onlineStatusMsg = 'Joining room...';
+                return onlineManager.joinRoom(this.onlineRoomInput);
+            }
+        }).then((result) => {
+            if (action === 'create') {
+                this.onlineLobbyMode = 'waiting';
+                this.onlineStatusMsg = 'Waiting for opponent...';
+            }
+            // If joining, room_ready event will fire from server
+        }).catch((err) => {
+            this.onlineLobbyMode = 'error';
+            this.onlineStatusMsg = err.message || 'Connection failed';
+        });
+
+        // Set up room_ready callback
+        onlineManager.onRoomReady = (data) => {
+            this.gameMode = 'online';
+            this.init();
+            this.phase = PHASES.SKILL_SELECTION;
+        };
+
+        // Opponent selected a skill
+        onlineManager.onOpponentSelectSkill = (data) => {
+            const opponentNum = onlineManager.playerNum === 1 ? 2 : 1;
+            this.selectSkill(opponentNum, data.skill);
+        };
+
+        // Board setup received from host (P2 only)
+        onlineManager.onBoardSetup = (data) => {
+            this.receiveBoardSetup(data);
+        };
+
+        // Server dice result
+        onlineManager.onDiceResult = (data) => {
+            this.applyOnlineDice(data.value);
+        };
+
+        // Opponent game action
+        onlineManager.onOpponentAction = (data) => {
+            this.applyOnlineAction(data);
+        };
+
+        // Opponent disconnected
+        onlineManager.onOpponentDisconnected = () => {
+            if (this.phase === PHASES.ONLINE_LOBBY || this.phase === PHASES.SKILL_SELECTION) {
+                // Not yet in game — go to lobby error
+                this.onlineStatusMsg = 'Opponent disconnected';
+                this.onlineLobbyMode = 'error';
+                this.phase = PHASES.ONLINE_LOBBY;
+            } else {
+                // Mid-game — show overlay dialog
+                this.showConfirmDialog = 'opponent_disconnected';
+            }
+            onlineManager.disconnect();
+        };
+    }
+
     enterReplaySelect() {
         if (typeof replayEngine !== 'undefined' && replayEngine) {
             this.replaySelectReplays = replayEngine.loadFromStorage();
@@ -1602,44 +2033,50 @@ class Game {
         return false;
     }
 
+    // Roll dice: for online mode, request from server; for offline, roll locally
+    _doRoll() {
+        if (this.isOnlineMode()) {
+            onlineManager.requestDice();
+            // Dice result will arrive via dice_result event → applyOnlineDice()
+        } else {
+            this.rollDice();
+        }
+    }
+
     handleRollPhaseClick(x, y) {
         const panelX = this.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
         const currentPlayer = this.getCurrentPlayer();
         const isDominated = currentPlayer.isDominated();
 
         if (isDominated) {
-            // Domination: only Roll Dice is available
             if (x >= panelX && x <= panelX + 200 && y >= 385 && y <= 435) {
-                this.rollDice();
+                this._doRoll();
                 return true;
             }
         } else if (this.stockedThisTurn) {
-            // Stock直後はSelectのみ
             if (x >= panelX && x <= panelX + 200 && y >= 385 && y <= 435) {
-                this.rollDice();
+                this._doRoll();
                 return true;
             }
         } else if (currentPlayer.hasStock()) {
-            // Roll Dice button (Y: 385-435)
             if (x >= panelX && x <= panelX + 200 && y >= 385 && y <= 435) {
-                this.rollDice();
+                this._doRoll();
                 return true;
             }
-            // Use Stock button (Y: 443-493)
             if (x >= panelX && x <= panelX + 200 && y >= 443 && y <= 493) {
                 this.useStockedDice();
+                this._sendOnlineAction({ type: 'use_stock' });
                 return true;
             }
         } else {
-            // Roll Dice button (Y: 385-435)
             if (x >= panelX && x <= panelX + 200 && y >= 385 && y <= 435) {
-                this.rollDice();
+                this._doRoll();
                 return true;
             }
-            // Stock button (Y: 443-493)
             if (x >= panelX && x <= panelX + 200 && y >= 443 && y <= 493) {
                 if (!currentPlayer.canAfford(SKILL_COSTS.stock)) return false;
                 this.stockCurrentDice();
+                this._sendOnlineAction({ type: 'stock_dice' });
                 return true;
             }
         }
@@ -1654,6 +2091,7 @@ class Game {
         const playerPos = currentPlayer.getPosition();
         if (clickedCell.row === playerPos.row && clickedCell.col === playerPos.col) {
             this.toggleMoveMode();
+            this._sendOnlineAction({ type: 'toggle_mode' });
             return true;
         }
 
@@ -1661,20 +2099,17 @@ class Game {
 
         for (const tile of this.fallTriggerTiles) {
             if (tile.row === clickedCell.row && tile.col === clickedCell.col) {
-                // First, move the piece to the edge tile, then start electrocution
+                this._sendOnlineAction({ type: 'fall_trigger', row: tile.row, col: tile.col, endsTurn: true });
                 const currentPlayer = this.getCurrentPlayer();
                 const fromRow = currentPlayer.row;
                 const fromCol = currentPlayer.col;
-                // Store fall info for after animation
                 this.pendingFallDir = { dr: tile.dr || 0, dc: tile.dc || 0 };
                 this.pendingFallPlayerNum = this.currentTurn;
                 this.pendingFallElectromagnet = tile.electromagnet || false;
-                // Move piece to the edge tile
                 currentPlayer.moveTo(tile.row, tile.col);
                 animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, tile.row, tile.col, 'move');
                 this.phase = PHASES.ANIMATING;
                 animManager.playerAnims[currentPlayer.playerNum].onComplete = () => {
-                    // After arriving at edge, start electrocution effect
                     this.fallAnimating = true;
                     this.fallAnimStart = performance.now();
                     this.fallAnimDir = this.pendingFallDir;
@@ -1682,7 +2117,7 @@ class Game {
                     this.fallAnimPlayerPos = { row: tile.row, col: tile.col };
                     this.fallAnimElectromagnet = this.pendingFallElectromagnet;
                     this.fallAnimInitialized = false;
-                    this.phase = PHASES.MOVE; // Return to MOVE so fall effect renders
+                    this.phase = PHASES.MOVE;
                 };
                 return true;
             }
@@ -1690,6 +2125,7 @@ class Game {
 
         for (const tile of this.movableTiles) {
             if (tile.row === clickedCell.row && tile.col === clickedCell.col) {
+                this._sendOnlineAction({ type: 'move', row: clickedCell.row, col: clickedCell.col });
                 this.movePlayer(clickedCell.row, clickedCell.col);
                 return true;
             }
@@ -1704,17 +2140,20 @@ class Game {
         // Stone button (Y: 365-415)
         if (x >= panelX && x <= panelX + 200 && y >= 365 && y <= 415) {
             this.setPlacementType('stone');
+            this._sendOnlineAction({ type: 'set_placement_type', placementType: 'stone' });
             return true;
         }
         // Skill button (Y: 423-473)
         if (x >= panelX && x <= panelX + 200 && y >= 423 && y <= 473) {
             this.activateSkill();
+            this._sendOnlineAction({ type: 'activate_skill' });
             return true;
         }
         // Drill button (Y: 481-531)
         if (x >= panelX && x <= panelX + 200 && y >= 481 && y <= 531) {
             if (this.getCurrentPlayer().isDominated()) return false;
             this.setPlacementType('drill');
+            this._sendOnlineAction({ type: 'set_placement_type', placementType: 'drill' });
             return true;
         }
 
@@ -1724,6 +2163,7 @@ class Game {
 
         for (const tile of this.placeableTiles) {
             if (tile.row === clickedCell.row && tile.col === clickedCell.col) {
+                this._sendOnlineAction({ type: 'place', row: clickedCell.row, col: clickedCell.col, placementType: this.placementType, endsTurn: true });
                 this.placeObject(clickedCell.row, clickedCell.col);
                 return true;
             }
@@ -1758,6 +2198,7 @@ class Game {
 
         for (const tile of this.drillTargetTiles) {
             if (tile.row === clickedCell.row && tile.col === clickedCell.col) {
+                this._sendOnlineAction({ type: 'drill', row: clickedCell.row, col: clickedCell.col, endsTurn: true });
                 this.useDrill(clickedCell.row, clickedCell.col);
                 return true;
             }
@@ -1804,6 +2245,7 @@ class Game {
 
         for (const tile of this.skillTargetTiles) {
             if (tile.row === clickedCell.row && tile.col === clickedCell.col) {
+                this._sendOnlineAction({ type: 'skill_target', row: tile.row, col: tile.col, skillType: this.activeSkillType, endsTurn: true });
                 switch (this.activeSkillType) {
                     case SPECIAL_SKILLS.SURIASHI:
                         this.executeSuriashi(tile.row, tile.col);
@@ -1829,6 +2271,7 @@ class Game {
         // Main Menu button
         if (x >= SCREEN_WIDTH / 2 - 230 && x <= SCREEN_WIDTH / 2 - 10 &&
             y >= SCREEN_HEIGHT / 2 + 50 && y <= SCREEN_HEIGHT / 2 + 120) {
+            if (this.gameMode === 'online') onlineManager.disconnect();
             this.phase = PHASES.START_SCREEN;
             return true;
         }

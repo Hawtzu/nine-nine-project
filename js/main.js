@@ -7,6 +7,7 @@ let comPlayer;
 let gameLog;
 let replayEngine;
 let tutorial;
+let onlineManager;
 
 function init() {
     const canvas = document.getElementById('game-canvas');
@@ -18,6 +19,7 @@ function init() {
     gameLog = new GameLog();
     replayEngine = new ReplayEngine();
     tutorial = new Tutorial();
+    onlineManager = new OnlineManager();
 
     // Add event listeners
     canvas.addEventListener('click', handleClick);
@@ -161,6 +163,30 @@ function handleWheel(event) {
 }
 
 function handleKeyDown(event) {
+    // Online lobby keyboard input (room code)
+    if (game.phase === PHASES.ONLINE_LOBBY && game.onlineLobbyMode === 'join') {
+        if (event.key === 'Backspace') {
+            game.onlineRoomInput = game.onlineRoomInput.slice(0, -1);
+        } else if (event.key === 'Enter' && game.onlineRoomInput.length > 0) {
+            game._onlineConnect('join');
+        } else if (event.key === 'Escape') {
+            game.onlineLobbyMode = 'menu';
+        } else if (/^[A-Za-z0-9]$/.test(event.key) && game.onlineRoomInput.length < 6) {
+            game.onlineRoomInput += event.key.toUpperCase();
+        }
+        event.preventDefault();
+        return;
+    }
+
+    // Online lobby escape
+    if (game.phase === PHASES.ONLINE_LOBBY && event.key === 'Escape') {
+        if (typeof onlineManager !== 'undefined') onlineManager.disconnect();
+        game.onlineLobbyMode = 'menu';
+        game.phase = PHASES.START_SCREEN;
+        event.preventDefault();
+        return;
+    }
+
     // Tutorial keyboard navigation
     if (game.phase === PHASES.TUTORIAL) {
         if (event.key === 'ArrowRight') tutorial.nextSlide();
@@ -376,6 +402,10 @@ function render(now) {
 
         case PHASES.TUTORIAL:
             renderer.drawTutorialScreen(tutorial, now);
+            break;
+
+        case PHASES.ONLINE_LOBBY:
+            renderer.drawOnlineLobby(game, now);
             break;
 
         case PHASES.SETTINGS:
@@ -723,9 +753,19 @@ function render(now) {
         renderer.drawComThinking(now);
     }
 
+    // Draw online connection indicator
+    if (game.gameMode === 'online' && game.phase !== PHASES.START_SCREEN &&
+        game.phase !== PHASES.ONLINE_LOBBY) {
+        renderer.drawOnlineIndicator(onlineManager.connected);
+    }
+
     // Draw confirm dialog overlay (on top of everything)
-    if (game.showConfirmDialog) {
+    if (game.showConfirmDialog === 'save_log') {
         renderer.drawConfirmDialog('Return to Menu', 'Save the game log?');
+    } else if (game.showConfirmDialog === 'online_disconnect') {
+        renderer.drawOnlineDisconnectDialog();
+    } else if (game.showConfirmDialog === 'opponent_disconnected') {
+        renderer.drawOpponentDisconnectedDialog();
     }
 
     // Show/hide game log toolbar

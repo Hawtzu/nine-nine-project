@@ -385,7 +385,7 @@ class Game {
                     visitedTiles.add(tileKey);
                 }
                 if (tile === MARKERS.SWAMP && !visitedTiles.has(tileKey)) {
-                    steps = Math.max(step, steps - 1);
+                    steps = Math.max(step, steps - 2);
                     visitedTiles.add(tileKey);
                 }
 
@@ -737,8 +737,8 @@ class Game {
             if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'checkpoint_place', pos: { row: pos.row, col: pos.col } });
             this.board.setCheckpoint(pos.row, pos.col, currentPlayer.playerNum);
             currentPlayer.setCheckpoint(pos.row, pos.col);
-            // Destroy surrounding 8-direction stones
-            const allDirs = [...CROSS_DIRECTIONS, ...DIAGONAL_DIRECTIONS];
+            // Destroy surrounding 4-direction stones (cross only)
+            const allDirs = CROSS_DIRECTIONS;
             for (const dir of allDirs) {
                 const r = pos.row + dir.dr;
                 const c = pos.col + dir.dc;

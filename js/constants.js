@@ -132,7 +132,7 @@ const SKILL_INFO = {
     [SPECIAL_SKILLS.MOMONGA]: { name: 'Momonga', color: '#90EE90', textColor: '#000000', costKey: 'momonga', desc: 'Fly to nearest stone (cross)', jaDesc: '最も近い石（マンハッタン距離）の十字方向に飛行する', image: 'assets/skills/momonga.png' },
     [SPECIAL_SKILLS.SWAMP]: { name: 'Swamp', color: '#8B6914', textColor: '#FFFFFF', costKey: 'swamp', desc: 'Place swamp to reduce movement', jaDesc: '沼タイルを配置し、移動距離を減少させる', image: 'assets/skills/swamp.png' },
     [SPECIAL_SKILLS.WARP]: { name: 'Warp Hole', color: '#6600CC', textColor: '#FFFFFF', costKey: 'warp', desc: 'Place warp hole to teleport', jaDesc: 'ワープホールを設置し、踏んだプレイヤーを瞬間移動させる', image: 'assets/skills/Warp hole.png' },
-    [SPECIAL_SKILLS.CHECKPOINT]: { name: 'Check Point', color: '#FF1493', textColor: '#FFFFFF', costKey: 'checkpoint', desc: 'Place checkpoint & destroy stones, or teleport to it', jaDesc: 'チェックポイントを設置し周囲の石を破壊、または瞬間移動する', image: 'assets/skills/Check point.png' },
+    [SPECIAL_SKILLS.CHECKPOINT]: { name: 'Check Point', color: '#FF1493', textColor: '#FFFFFF', costKey: 'checkpoint', desc: 'Place checkpoint & destroy adjacent stones, or teleport to it', jaDesc: 'チェックポイントを設置し十字方向の石を破壊、または瞬間移動する', image: 'assets/skills/Check point.png' },
     [SPECIAL_SKILLS.KAMAKURA]: { name: 'Kamakura', color: '#E8F0FE', textColor: '#000000', costKey: 'kamakura', desc: 'Convert U-shape stones to snow', jaDesc: 'コの字の石を雪に変換する', image: 'assets/skills/Kamakura.png' }
 };
 
@@ -154,14 +154,14 @@ const SKILL_COSTS = {
     diagonal_move: 10,
     stock: 20,
     domination: 100,
-    sniper: 100,
+    sniper: 110,
     suriashi: 50,
-    hitokiri: 100,
+    hitokiri: 70,
     meteor: 200,
     momonga: 60,
-    swamp: 20,
+    swamp: 30,
     warp: 60,
-    checkpoint: 100,
+    checkpoint: 120,
     kamakura: 50
 };
 

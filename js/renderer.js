@@ -1227,71 +1227,89 @@ class Renderer {
             ctx.restore();
         }
 
-        // --- Bottom control bar ---
-        const barY = SCREEN_HEIGHT - 55;
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-        ctx.fillRect(0, barY, SCREEN_WIDTH, 55);
+        // --- Bottom control bar (hover-reveal) ---
+        const showBottomBar = (mouseY !== undefined && mouseY > SCREEN_HEIGHT - 70);
 
-        const btnY = barY + 8;
-        const btnH = 40;
-        const btnW = 55;
+        if (showBottomBar) {
+            ctx.save();
+            ctx.globalAlpha = 0.9;
 
-        const canGoBack = currentIndex > 0;
-        const canGoForward = currentIndex < totalSnapshots - 1;
+            const barY = SCREEN_HEIGHT - 55;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.fillRect(0, barY, SCREEN_WIDTH, 55);
 
-        // ◀◀ First
-        this.drawButtonSmall(cx - 325, btnY, btnW, btnH,
-            canGoBack ? '#444466' : '#222233', '◀◀');
+            const btnY = barY + 8;
+            const btnH = 40;
+            const btnW = 55;
 
-        // ◀ Prev Turn
-        this.drawButtonSmall(cx - 260, btnY, btnW, btnH,
-            canGoBack ? '#444466' : '#222233', '◀');
+            const canGoBack = currentIndex > 0;
+            const canGoForward = currentIndex < totalSnapshots - 1;
 
-        // ◁ Prev Phase
-        this.drawButtonSmall(cx - 195, btnY, btnW, btnH,
-            canGoBack ? '#3a3a55' : '#222233', '◁');
+            // ◀◀ First
+            this.drawButtonSmall(cx - 325, btnY, btnW, btnH,
+                canGoBack ? '#444466' : '#222233', '◀◀');
 
-        // Phase label (centered)
-        ctx.fillStyle = COLORS.WHITE;
-        ctx.font = 'bold 20px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const phaseName = this._phaseDisplayName(snapshot);
-        const turnNum = snapshot ? snapshot.turnNumber : 0;
-        const turnLabel = turnNum === 0 ? 'Start' :
-            (snapshot && snapshot.winner ? 'End' : `T${turnNum} ${phaseName}`);
-        ctx.fillText(`${turnLabel}  (${currentIndex}/${totalSnapshots - 1})`,
-            cx - 30, btnY + btnH / 2);
-        ctx.textBaseline = 'alphabetic';
+            // ◀ Prev Turn
+            this.drawButtonSmall(cx - 260, btnY, btnW, btnH,
+                canGoBack ? '#444466' : '#222233', '◀');
 
-        // ▷ Next Phase
-        this.drawButtonSmall(cx + 140, btnY, btnW, btnH,
-            canGoForward ? '#3a3a55' : '#222233', '▷');
+            // ◁ Prev Phase
+            this.drawButtonSmall(cx - 195, btnY, btnW, btnH,
+                canGoBack ? '#3a3a55' : '#222233', '◁');
 
-        // ▶ Next Turn
-        this.drawButtonSmall(cx + 205, btnY, btnW, btnH,
-            canGoForward ? '#444466' : '#222233', '▶');
+            // Phase label (centered)
+            ctx.fillStyle = COLORS.WHITE;
+            ctx.font = 'bold 20px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const phaseName = this._phaseDisplayName(snapshot);
+            const turnNum = snapshot ? snapshot.turnNumber : 0;
+            const turnLabel = turnNum === 0 ? 'Start' :
+                (snapshot && snapshot.winner ? 'End' : `T${turnNum} ${phaseName}`);
+            ctx.fillText(`${turnLabel}  (${currentIndex}/${totalSnapshots - 1})`,
+                cx - 30, btnY + btnH / 2);
+            ctx.textBaseline = 'alphabetic';
 
-        // ▶▶ Last
-        this.drawButtonSmall(cx + 270, btnY, btnW, btnH,
-            canGoForward ? '#444466' : '#222233', '▶▶');
+            // ▷ Next Phase
+            this.drawButtonSmall(cx + 140, btnY, btnW, btnH,
+                canGoForward ? '#3a3a55' : '#222233', '▷');
 
-        // Game info (bottom bar, left side)
-        if (gameInfo) {
-            let infoText = gameInfo.mode === 'com' ? `COM (${gameInfo.difficulty || '?'})` : 'PvP';
+            // ▶ Next Turn
+            this.drawButtonSmall(cx + 205, btnY, btnW, btnH,
+                canGoForward ? '#444466' : '#222233', '▶');
+
+            // ▶▶ Last
+            this.drawButtonSmall(cx + 270, btnY, btnW, btnH,
+                canGoForward ? '#444466' : '#222233', '▶▶');
+
+            // Game info (bottom bar, left side)
+            if (gameInfo) {
+                let infoText = gameInfo.mode === 'com' ? `COM (${gameInfo.difficulty || '?'})` : 'PvP';
+                ctx.fillStyle = '#AAAACC';
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'left';
+                ctx.fillText(infoText, 30, barY + 32);
+            }
+
+            // Winner indicator (bottom bar, right side)
+            if (snapshot && snapshot.winner) {
+                const winLabel = (gameInfo && gameInfo.mode === 'com' && snapshot.winner === 2) ? 'COM' : `P${snapshot.winner}`;
+                ctx.fillStyle = '#FFD700';
+                ctx.font = 'bold 14px Arial';
+                ctx.textAlign = 'right';
+                ctx.fillText(`${winLabel} Wins! (${snapshot.winReason})`, SCREEN_WIDTH - 20, barY + 32);
+            }
+
+            ctx.restore();
+        } else {
+            // Subtle hint when not hovering
+            ctx.save();
+            ctx.globalAlpha = 0.25;
             ctx.fillStyle = '#AAAACC';
-            ctx.font = '14px Arial';
-            ctx.textAlign = 'left';
-            ctx.fillText(infoText, 30, barY + 32);
-        }
-
-        // Winner indicator (bottom bar, right side)
-        if (snapshot && snapshot.winner) {
-            const winLabel = (gameInfo && gameInfo.mode === 'com' && snapshot.winner === 2) ? 'COM' : `P${snapshot.winner}`;
-            ctx.fillStyle = '#FFD700';
-            ctx.font = 'bold 14px Arial';
-            ctx.textAlign = 'right';
-            ctx.fillText(`${winLabel} Wins! (${snapshot.winReason})`, SCREEN_WIDTH - 20, barY + 32);
+            ctx.font = '11px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('▼ hover for controls', SCREEN_WIDTH / 2, SCREEN_HEIGHT - 8);
+            ctx.restore();
         }
 
         // --- Action log panel (right side, below dice panels) ---

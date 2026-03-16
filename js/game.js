@@ -1846,14 +1846,15 @@ class Game {
             }
         }
 
-        // Control bar at bottom
+        // Control bar at bottom (only active when hover-revealed)
         const barY = SCREEN_HEIGHT - 55;
+        const showBottomBar = (this._mouseY !== undefined && this._mouseY > SCREEN_HEIGHT - 70);
         const btnY = barY + 8;
         const btnH = 40;
         const btnW = 55;
         const cx = SCREEN_WIDTH / 2;
 
-        if (y >= btnY && y <= btnY + btnH) {
+        if (showBottomBar && y >= btnY && y <= btnY + btnH) {
             // ◀◀ First
             if (x >= cx - 325 && x <= cx - 325 + btnW) {
                 replayEngine.first();

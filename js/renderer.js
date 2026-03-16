@@ -2546,7 +2546,7 @@ class Renderer {
             ctx.restore();
         }
 
-        // FELL OFF text
+        // Electrocuted text
         if (elapsed > 300) {
             const textT = Math.min(1, (elapsed - 300) / 300);
             ctx.save();
@@ -2556,7 +2556,7 @@ class Renderer {
             ctx.shadowColor = NEON.COLOR;
             ctx.shadowBlur = 15;
             ctx.globalAlpha = textT;
-            const fallText = isElectromagnet ? 'ELECTROCUTED!' : 'FELL OFF!';
+            const fallText = 'ELECTROCUTED!';
             ctx.fillText(fallText, BOARD_OFFSET_X + BOARD_SIZE * CELL_SIZE / 2, BOARD_OFFSET_Y + BOARD_SIZE * CELL_SIZE / 2);
             ctx.shadowBlur = 0;
             ctx.restore();

@@ -509,7 +509,7 @@ function render(now) {
                     game.fallAnimating = false;
                     game.fallAnimInitialized = false;
                     renderer.cleanupFallEffect();
-                    const fallMsg = game.fallAnimElectromagnet ? 'was electrocuted!' : 'fell off the cliff!';
+                    const fallMsg = 'was electrocuted!';
                     game.gameOver(game.fallAnimPlayerNum === 1 ? 2 : 1, fallMsg);
                 }
             }

@@ -450,7 +450,7 @@ class ComPlayer {
                     candidates = fallbacks;
                 } else {
                     // Only fall trigger tiles — COM falls off the cliff (same as human player)
-                    game.gameOver(game.currentTurn === 1 ? 2 : 1, 'fell off the cliff!');
+                    game.gameOver(game.currentTurn === 1 ? 2 : 1, 'was electrocuted!');
                     return;
                 }
             } else {

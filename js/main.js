@@ -494,6 +494,25 @@ function render(now) {
                 }
             }
 
+            // Bomb explosion animation
+            if (game.bombAnimating) {
+                const elapsed = now - game.bombAnimStart;
+                if (!game.bombAnimInitialized) {
+                    game.bombAnimInitialized = true;
+                    const cx = game.bombAnimPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+                    const cy = game.bombAnimPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+                    renderer.initBombEffect(cx, cy);
+                }
+                renderer.drawBombEffect(now, elapsed, game.bombAnimPos);
+
+                if (elapsed >= 2000) {
+                    game.bombAnimating = false;
+                    game.bombAnimInitialized = false;
+                    renderer.cleanupBombEffect();
+                    game.gameOver(game.bombAnimPlayerNum === 1 ? 2 : 1, 'stepped on a bomb!');
+                }
+            }
+
             // Fall-off electrocution animation
             if (game.fallAnimating) {
                 const elapsed = now - game.fallAnimStart;

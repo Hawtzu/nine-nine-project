@@ -54,6 +54,9 @@ class Renderer {
         // Fall effect particles
         this.fallLightning = [];
         this.fallSparks = [];
+        // Bomb effect particles
+        this.bombParticles = [];
+        this.bombShockwave = null;
 
         // ============================================================
         // Menu Effects State
@@ -235,7 +238,11 @@ class Renderer {
         // 2. Special tile overlay (dark muted color + inner glow)
         let tileColor = null;
         switch (tileType) {
-            case MARKERS.BOMB:       tileColor = COLORS.BOMB_TILE; break;
+            case MARKERS.BOMB: {
+                const bombO = board ? board.getBombOwner(row, col) : null;
+                tileColor = bombO === 2 ? '#2A0A00' : '#1A1000';
+                break;
+            }
             case MARKERS.ICE:        tileColor = COLORS.ICE_TILE; break;
             case MARKERS.FOUNTAIN:   tileColor = COLORS.FOUNTAIN_TILE; break;
             case MARKERS.SWAMP:      tileColor = COLORS.SWAMP_TILE; break;
@@ -281,6 +288,19 @@ class Renderer {
 
         if (tileType === MARKERS.BOMB && this.bombTileImage && this.bombTileImage.complete && this.bombTileImage.naturalWidth > 0) {
             this.ctx.drawImage(this.bombTileImage, imgX, imgY, imgSize, imgSize);
+            // Owner color indicator border
+            const bombOwner = board ? board.getBombOwner(row, col) : null;
+            if (bombOwner) {
+                const ownerColor = bombOwner === 1 ? '#00AAFF' : '#FF4444';
+                this.ctx.save();
+                this.ctx.strokeStyle = ownerColor;
+                this.ctx.lineWidth = 2;
+                this.ctx.shadowColor = ownerColor;
+                this.ctx.shadowBlur = 6;
+                this.ctx.strokeRect(x + 3, y + 3, CELL_SIZE - 6, CELL_SIZE - 6);
+                this.ctx.shadowBlur = 0;
+                this.ctx.restore();
+            }
         }
         if (tileType === MARKERS.ICE && this.iceTileImage && this.iceTileImage.complete && this.iceTileImage.naturalWidth > 0) {
             this.ctx.drawImage(this.iceTileImage, imgX, imgY, imgSize, imgSize);
@@ -2566,6 +2586,144 @@ class Renderer {
     cleanupFallEffect() {
         this.fallLightning = [];
         this.fallSparks = [];
+    }
+
+    // ============================================================
+    //  Bomb Explosion Effect
+    // ============================================================
+
+    initBombEffect(cx, cy) {
+        this.bombParticles = [];
+        this.bombShockwave = { cx, cy, radius: 0 };
+
+        // Explosion debris particles (radiating outward)
+        for (let i = 0; i < 50; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 1.5 + Math.random() * 5;
+            const hue = Math.random() < 0.5 ? 30 + Math.random() * 30 : 10 + Math.random() * 20; // orange-red
+            this.bombParticles.push({
+                x: cx, y: cy,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed - Math.random() * 2,
+                life: 0, maxLife: 400 + Math.random() * 600,
+                size: 2 + Math.random() * 4,
+                color: `hsl(${hue}, 100%, ${50 + Math.random() * 30}%)`
+            });
+        }
+    }
+
+    drawBombEffect(now, elapsed, bombPos) {
+        const ctx = this.ctx;
+        const cx = bombPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+        const cy = bombPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+        const t = Math.min(1, elapsed / 1500);
+
+        // Flash (initial bright white-orange flash)
+        if (elapsed < 150) {
+            ctx.save();
+            ctx.globalAlpha = 0.8 * (1 - elapsed / 150);
+            const flashGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, CELL_SIZE * 2);
+            flashGrad.addColorStop(0, '#FFFFFF');
+            flashGrad.addColorStop(0.3, '#FFAA00');
+            flashGrad.addColorStop(1, 'rgba(255, 68, 0, 0)');
+            ctx.fillStyle = flashGrad;
+            ctx.fillRect(BOARD_OFFSET_X, BOARD_OFFSET_Y, BOARD_SIZE * CELL_SIZE, BOARD_SIZE * CELL_SIZE);
+            ctx.restore();
+        }
+
+        // Shockwave ring
+        if (elapsed < 600) {
+            const swT = elapsed / 600;
+            const swRadius = swT * CELL_SIZE * 3;
+            ctx.save();
+            ctx.globalAlpha = 0.6 * (1 - swT);
+            ctx.strokeStyle = '#FF6600';
+            ctx.lineWidth = 4 * (1 - swT) + 1;
+            ctx.shadowColor = '#FF4400';
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.arc(cx, cy, swRadius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
+        // Fire ball (expanding then fading)
+        if (elapsed < 800) {
+            const fbT = elapsed / 800;
+            const fbRadius = CELL_SIZE * 0.3 + fbT * CELL_SIZE * 0.8;
+            ctx.save();
+            ctx.globalAlpha = 0.9 * (1 - fbT);
+            const fireGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, fbRadius);
+            fireGrad.addColorStop(0, '#FFFFFF');
+            fireGrad.addColorStop(0.2, '#FFCC00');
+            fireGrad.addColorStop(0.5, '#FF6600');
+            fireGrad.addColorStop(1, 'rgba(255, 0, 0, 0)');
+            ctx.fillStyle = fireGrad;
+            ctx.beginPath();
+            ctx.arc(cx, cy, fbRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // Debris particles
+        for (const p of this.bombParticles) {
+            p.life += 16;
+            if (p.life > p.maxLife) continue;
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += 0.08; // gravity
+            p.vx *= 0.99;
+            const pt = p.life / p.maxLife;
+            const alpha = pt < 0.1 ? pt / 0.1 : Math.max(0, 1 - (pt - 0.3) / 0.7);
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = p.color;
+            ctx.shadowColor = '#FF4400';
+            ctx.shadowBlur = 3;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size * (1 - pt * 0.5), 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
+        // Smoke (delayed, dark particles rising)
+        if (elapsed > 200 && elapsed < 1500) {
+            const smokeT = (elapsed - 200) / 1300;
+            for (let i = 0; i < 3; i++) {
+                const smokeRadius = 5 + smokeT * 20;
+                const sx = cx + (Math.random() - 0.5) * CELL_SIZE * 0.6;
+                const sy = cy - smokeT * 30 + (Math.random() - 0.5) * 10;
+                ctx.save();
+                ctx.globalAlpha = 0.2 * (1 - smokeT);
+                ctx.fillStyle = '#444444';
+                ctx.beginPath();
+                ctx.arc(sx, sy, smokeRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // "BOMB!" text
+        if (elapsed > 300) {
+            const textT = Math.min(1, (elapsed - 300) / 300);
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 36px Arial';
+            ctx.fillStyle = '#FF4400';
+            ctx.shadowColor = '#FF4400';
+            ctx.shadowBlur = 15;
+            ctx.globalAlpha = textT;
+            ctx.fillText('BOMB!', BOARD_OFFSET_X + BOARD_SIZE * CELL_SIZE / 2, BOARD_OFFSET_Y + BOARD_SIZE * CELL_SIZE / 2);
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+    }
+
+    cleanupBombEffect() {
+        this.bombParticles = [];
+        this.bombShockwave = null;
     }
 
     // ============================================================

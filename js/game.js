@@ -32,6 +32,11 @@ class Game {
         this.fallAnimInitialized = false;
         this.pendingFallDir = null;
         this.pendingFallPlayerNum = 0;
+        this.bombAnimating = false;
+        this.bombAnimStart = 0;
+        this.bombAnimPlayerNum = 0;
+        this.bombAnimPos = { row: 0, col: 0 };
+        this.bombAnimInitialized = false;
         this.hoveredSkill = null; // skill key hovered in selection screen
         this.kamakuraPatterns = [];       // [{middle:{row,col}, stones:[{row,col},...]}]
         this.hoveredKamakuraIndex = null; // index of hovered pattern
@@ -81,6 +86,11 @@ class Game {
         this.fallAnimInitialized = false;
         this.pendingFallDir = null;
         this.pendingFallPlayerNum = 0;
+        this.bombAnimating = false;
+        this.bombAnimStart = 0;
+        this.bombAnimPlayerNum = 0;
+        this.bombAnimPos = { row: 0, col: 0 };
+        this.bombAnimInitialized = false;
         this.kamakuraPatterns = [];
         this.hoveredKamakuraIndex = null;
         this.showDifficultySelect = false;
@@ -451,7 +461,13 @@ class Game {
         if (tile === MARKERS.BOMB) {
             const bombOwner = this.board.getBombOwner(row, col);
             if (bombOwner !== currentPlayer.playerNum) {
-                this.gameOver(this.currentTurn === 1 ? 2 : 1, 'stepped on a bomb!');
+                // Start bomb explosion animation
+                this.board.setTile(row, col, MARKERS.EMPTY);
+                this.bombAnimating = true;
+                this.bombAnimStart = performance.now();
+                this.bombAnimPlayerNum = currentPlayer.playerNum;
+                this.bombAnimPos = { row, col };
+                this.bombAnimInitialized = false;
                 return;
             }
             this.board.setTile(row, col, MARKERS.EMPTY);
@@ -1619,7 +1635,7 @@ class Game {
             return true;
         }
 
-        if (this.fallAnimating) return false;
+        if (this.fallAnimating || this.bombAnimating) return false;
 
         for (const tile of this.fallTriggerTiles) {
             if (tile.row === clickedCell.row && tile.col === clickedCell.col) {

@@ -96,14 +96,38 @@ class Game {
             case 'roll_dice':
                 // Dice value comes from server via dice_result event
                 break;
-            case 'stock_dice':
-                if (data.nextValue != null) this._onlineNextValue = data.nextValue;
-                this.stockCurrentDice();
-                this._onlineNextValue = null;
+            case 'stock_dice': {
+                const cp = this.getCurrentPlayer();
+                // Sync full state from the active player
+                if (data.queue) cp.diceQueue = [...data.queue];
+                if (data.stockedDice != null) cp.stockedDice = data.stockedDice;
+                if (data.points != null) cp.points = data.points;
+                // Trigger animation
+                if (typeof animManager !== 'undefined' && animManager) {
+                    animManager.startDiceTransition(cp.playerNum, 'stock', {
+                        oldQueue: data.queue,
+                        stockValue: data.stockedDice
+                    });
+                    animManager.startDiceReveal(cp.playerNum, cp.diceQueue[2]);
+                }
+                this.stockedThisTurn = true;
                 break;
-            case 'use_stock':
-                this.useStockedDice();
+            }
+            case 'use_stock': {
+                const cp2 = this.getCurrentPlayer();
+                // Sync queue state from active player
+                if (data.queue) cp2.diceQueue = [...data.queue];
+                cp2.stockedDice = null;
+                // Trigger animation
+                if (typeof animManager !== 'undefined' && animManager) {
+                    animManager.startDiceTransition(cp2.playerNum, 'useStock', {
+                        oldQueue: data.queue,
+                        oldStock: null
+                    });
+                }
+                this.stockedThisTurn = true;
                 break;
+            }
             case 'toggle_mode':
                 this.toggleMoveMode();
                 break;
@@ -118,6 +142,9 @@ class Game {
                 this.activateSkill();
                 break;
             case 'place':
+                // Sync points before placing to prevent canAfford divergence
+                if (data.p1pts != null) this.player1.points = data.p1pts;
+                if (data.p2pts != null) this.player2.points = data.p2pts;
                 this.placementType = data.placementType;
                 this.findPlaceableTiles();
                 this.placeObject(data.row, data.col);
@@ -194,10 +221,13 @@ class Game {
     }
 
     // Apply online dice result from server
-    applyOnlineDice(value, nextValue) {
-        // Queue is already synced — just provide the server's nextValue
-        // so both clients push the same value to the end of the queue
-        this._onlineNextValue = nextValue;
+    applyOnlineDice(data) {
+        const currentPlayer = this.getCurrentPlayer();
+        // Sync queue from the rolling player's state to prevent desync
+        if (data.queue && data.queue.length === 3) {
+            currentPlayer.diceQueue = [...data.queue];
+        }
+        this._onlineNextValue = data.nextValue;
         this.rollDice();
         this._onlineNextValue = null;
     }
@@ -1871,6 +1901,17 @@ class Game {
                 return true;
             }
         } else if (this.onlineLobbyMode === 'join') {
+            // "Paste" button (right of input box)
+            if (x >= cx + 110 && x <= cx + 170 && y >= py + 165 && y <= py + 205) {
+                const self = this;
+                if (navigator.clipboard && navigator.clipboard.readText) {
+                    navigator.clipboard.readText().then(text => {
+                        const cleaned = text.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 6);
+                        if (cleaned) self.onlineRoomInput = cleaned;
+                    }).catch(() => {});
+                }
+                return true;
+            }
             // "Connect" button
             if (x >= cx - 60 && x <= cx + 60 && y >= py + 280 && y <= py + 320) {
                 if (this.onlineRoomInput.length > 0) {
@@ -1991,7 +2032,7 @@ class Game {
 
         // Server dice result
         onlineManager.onDiceResult = (data) => {
-            this.applyOnlineDice(data.value, data.nextValue);
+            this.applyOnlineDice(data);
         };
 
         // Opponent game action
@@ -2043,7 +2084,8 @@ class Game {
     // Roll dice: for online mode, request from server; for offline, roll locally
     _doRoll() {
         if (this.isOnlineMode()) {
-            onlineManager.requestDice();
+            const currentPlayer = this.getCurrentPlayer();
+            onlineManager.requestDice([...currentPlayer.diceQueue]);
             // Dice result will arrive via dice_result event → applyOnlineDice()
         } else {
             this.rollDice();
@@ -2072,7 +2114,11 @@ class Game {
             }
             if (x >= panelX && x <= panelX + 200 && y >= 443 && y <= 493) {
                 this.useStockedDice();
-                this._sendOnlineAction({ type: 'use_stock' });
+                this._sendOnlineAction({
+                    type: 'use_stock',
+                    queue: [...currentPlayer.diceQueue],
+                    stockedDice: null
+                });
                 return true;
             }
         } else {
@@ -2083,9 +2129,13 @@ class Game {
             if (x >= panelX && x <= panelX + 200 && y >= 443 && y <= 493) {
                 if (!currentPlayer.canAfford(SKILL_COSTS.stock)) return false;
                 this.stockCurrentDice();
-                // Send the NEXT value that was generated locally so opponent uses the same
-                const lastNext = currentPlayer.diceQueue[currentPlayer.diceQueue.length - 1];
-                this._sendOnlineAction({ type: 'stock_dice', nextValue: lastNext });
+                // Send full queue state + stock value so opponent stays in sync
+                this._sendOnlineAction({
+                    type: 'stock_dice',
+                    queue: [...currentPlayer.diceQueue],
+                    stockedDice: currentPlayer.stockedDice,
+                    points: currentPlayer.points
+                });
                 return true;
             }
         }
@@ -2172,7 +2222,12 @@ class Game {
 
         for (const tile of this.placeableTiles) {
             if (tile.row === clickedCell.row && tile.col === clickedCell.col) {
-                this._sendOnlineAction({ type: 'place', row: clickedCell.row, col: clickedCell.col, placementType: this.placementType, endsTurn: true });
+                this._sendOnlineAction({
+                    type: 'place', row: clickedCell.row, col: clickedCell.col,
+                    placementType: this.placementType,
+                    p1pts: this.player1.points, p2pts: this.player2.points,
+                    endsTurn: true
+                });
                 this.placeObject(clickedCell.row, clickedCell.col);
                 return true;
             }

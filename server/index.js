@@ -112,17 +112,18 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Dice roll (server generates to prevent cheating)
-    socket.on('request_dice', () => {
+    // Dice roll (server generates nextValue, uses client queue[0] as roll value)
+    socket.on('request_dice', (data) => {
         const room = roomManager.getRoomBySocket(socket.id);
         if (!room) return;
 
         const playerNum = room.getPlayerNum(socket.id);
         if (playerNum !== room.currentTurn) return;
 
-        const value = Math.floor(Math.random() * 3) + 1;
+        const queue = data && data.queue ? data.queue : [1, 1, 1];
+        const value = queue[0]; // Use client's current dice (what they see as CURRENT)
         const nextValue = Math.floor(Math.random() * 3) + 1;
-        io.to(room.id).emit('dice_result', { playerNum, value, nextValue });
+        io.to(room.id).emit('dice_result', { playerNum, value, nextValue, queue });
     });
 
     // Disconnect

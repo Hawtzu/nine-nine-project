@@ -1546,6 +1546,20 @@ class Renderer {
             const displayText = game.onlineRoomInput + (Math.floor(now / 500) % 2 === 0 ? '_' : '');
             ctx.fillText(displayText, cx, py + 188);
 
+            // Paste button (right of input box)
+            ctx.fillStyle = '#222244';
+            ctx.strokeStyle = '#8866CC';
+            ctx.lineWidth = 1.5;
+            this._menuRoundRect(ctx, cx + 110, py + 165, 60, 40, 6);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#CCAAFF';
+            ctx.font = '13px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('Paste', cx + 140, py + 185);
+            ctx.textBaseline = 'alphabetic';
+
             // Connect button
             const canConnect = game.onlineRoomInput.length > 0;
             this._drawLobbyButton(cx, py + 300, 120, 40, canConnect ? '#1A4A1A' : '#1a1a1a', canConnect ? '#00FF66' : '#444', 'Connect');

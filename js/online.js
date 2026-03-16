@@ -167,9 +167,9 @@ class OnlineManager {
     }
 
     // Request a dice roll from server
-    requestDice() {
+    requestDice(queue) {
         if (!this.socket || !this.connected) return;
-        this.socket.emit('request_dice');
+        this.socket.emit('request_dice', { queue });
     }
 
     // Disconnect from server

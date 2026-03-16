@@ -35,7 +35,10 @@ class OnlineManager {
             this.socket.on('connect', () => {
                 console.log('[Online] Connected:', this.socket.id);
                 this.connected = true;
-                this.state = 'in_lobby';
+                // Preserve 'in_game' state on reconnect
+                if (this.state !== 'in_game') {
+                    this.state = 'in_lobby';
+                }
                 this.error = null;
                 resolve();
             });
@@ -162,13 +165,13 @@ class OnlineManager {
 
     // Send a game action to the server
     sendAction(data) {
-        if (!this.socket || !this.connected) return;
+        if (!this.socket) return;
         this.socket.emit('game_action', data);
     }
 
     // Request a dice roll from server
     requestDice(queue) {
-        if (!this.socket || !this.connected) return;
+        if (!this.socket) return;
         this.socket.emit('request_dice', { queue });
     }
 

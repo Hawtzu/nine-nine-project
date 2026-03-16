@@ -90,7 +90,8 @@ class Game {
 
     // Send a game action to the opponent via server
     _sendOnlineAction(action) {
-        if (!this.isOnlineMode()) return;
+        if (this.gameMode !== 'online') return;
+        if (typeof onlineManager === 'undefined') return;
         onlineManager.sendAction(action);
     }
 
@@ -230,6 +231,11 @@ class Game {
 
     // Apply online dice result from server
     applyOnlineDice(data) {
+        // Clear retry timeout
+        if (this._diceTimeout) {
+            clearTimeout(this._diceTimeout);
+            this._diceTimeout = null;
+        }
         const currentPlayer = this.getCurrentPlayer();
         // Sync queue from the rolling player's state to prevent desync
         if (data.queue && data.queue.length === 3) {
@@ -2108,6 +2114,14 @@ class Game {
             const currentPlayer = this.getCurrentPlayer();
             onlineManager.requestDice([...currentPlayer.diceQueue]);
             // Dice result will arrive via dice_result event → applyOnlineDice()
+            // Safety timeout: if server doesn't respond, retry request
+            if (this._diceTimeout) clearTimeout(this._diceTimeout);
+            this._diceTimeout = setTimeout(() => {
+                if (this.phase === PHASES.ROLL) {
+                    console.warn('[Online] Dice request timeout, retrying...');
+                    onlineManager.requestDice([...this.getCurrentPlayer().diceQueue]);
+                }
+            }, 3000);
         } else {
             this.rollDice();
         }

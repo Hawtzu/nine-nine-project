@@ -115,10 +115,16 @@ io.on('connection', (socket) => {
     // Dice roll (server generates nextValue, uses client queue[0] as roll value)
     socket.on('request_dice', (data) => {
         const room = roomManager.getRoomBySocket(socket.id);
-        if (!room) return;
+        if (!room) {
+            console.warn(`[Dice] ${socket.id} requested dice but not in a room`);
+            return;
+        }
 
         const playerNum = room.getPlayerNum(socket.id);
-        if (playerNum !== room.currentTurn) return;
+        if (playerNum !== room.currentTurn) {
+            console.warn(`[Dice] P${playerNum} requested dice but it's P${room.currentTurn}'s turn`);
+            return;
+        }
 
         const queue = data && data.queue ? data.queue : [1, 1, 1];
         const value = queue[0]; // Use client's current dice (what they see as CURRENT)

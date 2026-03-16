@@ -1429,21 +1429,21 @@ class Game {
             }
         }
 
-        // How to Play button (left half of sub-function row)
-        if (x >= cx - 150 && x <= cx - 5 && y >= 660 && y <= 710) {
+        // How to Play button (center at cx-80, 660, size 145x50)
+        if (x >= cx - 152 && x <= cx - 8 && y >= 635 && y <= 685) {
             this.phase = PHASES.TUTORIAL;
             if (typeof tutorial !== 'undefined') tutorial.reset();
             return true;
         }
 
-        // Replay button (right half of sub-function row)
-        if (x >= cx + 5 && x <= cx + 150 && y >= 660 && y <= 710) {
+        // Replay button (center at cx+80, 660, size 145x50)
+        if (x >= cx + 8 && x <= cx + 152 && y >= 635 && y <= 685) {
             this.enterReplaySelect();
             return true;
         }
 
-        // Developer Settings gear icon
-        if (x >= cx + 187 && x <= cx + 223 && y >= 372 && y <= 408) {
+        // Developer Settings gear icon (at cx+175, 390)
+        if (x >= cx + 157 && x <= cx + 193 && y >= 372 && y <= 408) {
             this.phase = PHASES.SETTINGS;
             return true;
         }

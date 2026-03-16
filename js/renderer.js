@@ -51,6 +51,142 @@ class Renderer {
         // Fall effect particles
         this.fallLightning = [];
         this.fallSparks = [];
+
+        // ============================================================
+        // Menu Effects State
+        // ============================================================
+        this.menuTime = 0;
+        this.menuFrameCount = 0;
+        this.menuLastTime = 0;
+
+        // Glitch effect (E)
+        this.menuGlitchActive = false;
+        this.menuGlitchTimer = 3 + Math.random() * 2;
+        this.menuGlitchDuration = 0;
+
+        // Hover cycling (G)
+        this.menuHoveredIndex = 0;
+        this.menuHoverTimer = 0;
+
+        // Scanline phases (I)
+        this.menuScanlinePhases = [0, 0.7, 1.4, 2.1];
+
+        // Dice state (K) — 7 dice
+        this.menuDice = [
+            this._createMenuDie(80, 280, 40),
+            this._createMenuDie(1200, 250, 38),
+            this._createMenuDie(140, 480, 34),
+            this._createMenuDie(1150, 450, 36),
+            this._createMenuDie(60, 650, 30),
+            this._createMenuDie(1220, 620, 32),
+            this._createMenuDie(200, 180, 28),
+        ];
+
+        // Board background auto-play state (C)
+        this.menuBoardState = new Array(81).fill(0);
+        this.menuAutoPlayTimer = 0;
+        this.menuAutoPlayTurn = 1;
+        this.menuAutoPlayMoveCount = 0;
+
+        // Board icon rotation (J)
+        this.menuBoardIconRotation = 0;
+    }
+
+    // --- Menu Die Factory ---
+    _createMenuDie(x, y, size) {
+        return {
+            x, y, baseX: x, baseY: y, size,
+            value: Math.floor(Math.random() * 6) + 1,
+            rotation: Math.random() * Math.PI * 2,
+            rotSpeed: (Math.random() - 0.5) * 1.5,
+            bobPhase: Math.random() * Math.PI * 2,
+            bobSpeed: 0.5 + Math.random() * 0.5,
+            bobAmp: 15 + Math.random() * 10,
+            rollTimer: 3 + Math.random() * 4,
+            rolling: false,
+            rollDuration: 0,
+        };
+    }
+
+    _updateMenuDie(die, dt) {
+        die.bobPhase += die.bobSpeed * dt;
+        die.y = die.baseY + Math.sin(die.bobPhase) * die.bobAmp;
+        die.x = die.baseX + Math.cos(die.bobPhase * 0.7) * 5;
+        die.rotation += die.rotSpeed * dt;
+
+        if (die.rolling) {
+            die.rollDuration -= dt;
+            die.rotSpeed = 8 * (Math.random() > 0.5 ? 1 : -1);
+            if (Math.random() < 0.3) die.value = Math.floor(Math.random() * 6) + 1;
+            if (die.rollDuration <= 0) {
+                die.rolling = false;
+                die.rotSpeed = (Math.random() - 0.5) * 1.5;
+                die.value = Math.floor(Math.random() * 6) + 1;
+                die.rollTimer = 3 + Math.random() * 4;
+            }
+        } else {
+            die.rollTimer -= dt;
+            if (die.rollTimer <= 0) {
+                die.rolling = true;
+                die.rollDuration = 0.6 + Math.random() * 0.4;
+            }
+        }
+    }
+
+    _drawMenuDie(die) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.translate(die.x, die.y);
+        ctx.rotate(die.rotation);
+        const s = die.size;
+        const half = s / 2;
+
+        // Die body
+        ctx.fillStyle = '#0a0a2a';
+        ctx.strokeStyle = '#B040FF';
+        ctx.lineWidth = 2;
+        ctx.shadowColor = '#B040FF';
+        ctx.shadowBlur = 10;
+        this._menuRoundRect(ctx, -half, -half, s, s, 6);
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Pips
+        ctx.fillStyle = '#00E5FF';
+        ctx.shadowColor = '#00E5FF';
+        ctx.shadowBlur = 4;
+        const pip = s * 0.1;
+        const o = half * 0.55;
+        const pips = [];
+        const v = die.value;
+        if (v === 1) pips.push([0, 0]);
+        if (v === 2) { pips.push([-o, -o], [o, o]); }
+        if (v === 3) { pips.push([-o, -o], [0, 0], [o, o]); }
+        if (v === 4) { pips.push([-o, -o], [o, -o], [-o, o], [o, o]); }
+        if (v === 5) { pips.push([-o, -o], [o, -o], [0, 0], [-o, o], [o, o]); }
+        if (v === 6) { pips.push([-o, -o], [o, -o], [-o, 0], [o, 0], [-o, o], [o, o]); }
+        for (const [px, py] of pips) {
+            ctx.beginPath();
+            ctx.arc(px, py, pip, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
+    _menuRoundRect(ctx, x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
     }
 
     // --- Utility Methods ---
@@ -603,71 +739,465 @@ class Renderer {
 
     // --- Start Screen ---
 
-    drawStartScreen(showDifficultySelect) {
-        this.clear();
+    drawStartScreen(showDifficultySelect, now) {
+        const ctx = this.ctx;
+        const dt = this.menuLastTime ? (now - this.menuLastTime) / 1000 : 0.016;
+        this.menuLastTime = now;
+        this.menuTime += dt;
+        this.menuFrameCount++;
+        const t = this.menuTime;
+        const cx = SCREEN_WIDTH / 2;
 
-        this.ctx.fillStyle = COLORS.WHITE;
-        this.ctx.font = 'bold 48px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText('Nine Nine', SCREEN_WIDTH / 2, 200);
+        // --- Update states ---
+        // Glitch (E)
+        if (this.menuGlitchActive) {
+            this.menuGlitchDuration -= dt;
+            if (this.menuGlitchDuration <= 0) {
+                this.menuGlitchActive = false;
+                this.menuGlitchTimer = 3 + Math.random() * 2;
+            }
+        } else {
+            this.menuGlitchTimer -= dt;
+            if (this.menuGlitchTimer <= 0) {
+                this.menuGlitchActive = true;
+                this.menuGlitchDuration = 0.1 + Math.random() * 0.05;
+            }
+        }
 
-        this.ctx.font = '24px Arial';
-        this.ctx.fillText('Turn-Based Strategy Game', SCREEN_WIDTH / 2, 250);
+        // Hover cycling (G)
+        this.menuHoverTimer += dt;
+        if (this.menuHoverTimer > 3) {
+            this.menuHoverTimer = 0;
+            this.menuHoveredIndex = (this.menuHoveredIndex + 1) % 4;
+        }
 
-        // PvP Button
-        this.drawButton(SCREEN_WIDTH / 2 - 150, 350, 300, 80, '#006400', 'Player vs Player');
+        // Dice (K)
+        for (const die of this.menuDice) this._updateMenuDie(die, dt);
 
-        // COM Button (active)
-        this.drawButton(SCREEN_WIDTH / 2 - 150, 470, 300, 80, '#00224A', 'Player vs COM');
+        // Board auto-play (C)
+        this.menuAutoPlayTimer += dt;
+        if (this.menuAutoPlayTimer > 1.2) {
+            this.menuAutoPlayTimer = 0;
+            this._menuAutoPlayStep();
+        }
 
-        // Difficulty selector (shown when COM button clicked)
+        // --- Clear with dark bg ---
+        ctx.fillStyle = '#0a0a1a';
+        ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+        // --- A: Neon Grid Background ---
+        this._drawMenuNeonGrid(t);
+
+        // --- C: Board Background ---
+        this._drawMenuBoardBackground();
+
+        // --- K: Dice ---
+        for (const die of this.menuDice) this._drawMenuDie(die);
+
+        // --- Separator line (neon gradient) ---
+        ctx.save();
+        const sepY = 620;
+        const halfW = 200;
+        const grad = ctx.createLinearGradient(cx - halfW, 0, cx + halfW, 0);
+        grad.addColorStop(0, 'rgba(176, 64, 255, 0)');
+        grad.addColorStop(0.3, 'rgba(176, 64, 255, 0.4)');
+        grad.addColorStop(0.5, 'rgba(176, 64, 255, 0.6)');
+        grad.addColorStop(0.7, 'rgba(176, 64, 255, 0.4)');
+        grad.addColorStop(1, 'rgba(176, 64, 255, 0)');
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx - halfW, sepY);
+        ctx.lineTo(cx + halfW, sepY);
+        ctx.stroke();
+        ctx.restore();
+
+        // --- Buttons with Glow + Scanlines (G + I) ---
+        const menuButtons = [
+            { label: 'Player vs Player', x: cx, y: 390, w: 300, h: 80, color: '#006400', glowColor: '#00FF66', fontSize: 24, hasGear: true },
+            { label: 'Player vs COM',    x: cx, y: 510, w: 300, h: 80, color: '#00224A', glowColor: '#00AAFF', fontSize: 24, hasGear: false },
+            { label: '? How to Play',    x: cx - 80, y: 660, w: 145, h: 50, color: '#1a2a3a', glowColor: '#00E5FF', fontSize: 16, hasGear: false },
+            { label: '\u25B6 Replay',    x: cx + 80, y: 660, w: 145, h: 50, color: '#1a2a3a', glowColor: '#B040FF', fontSize: 16, hasGear: false },
+        ];
+
+        for (let i = 0; i < menuButtons.length; i++) {
+            const btn = menuButtons[i];
+            const isHovered = (i === this.menuHoveredIndex);
+            const bx = btn.x - btn.w / 2;
+            const by = btn.y - btn.h / 2;
+
+            ctx.save();
+            const pulse = 4 + Math.sin(t * 2 + i) * 3;
+            const glowStrength = isHovered ? 20 : pulse;
+
+            // Button fill
+            ctx.fillStyle = btn.color;
+            ctx.strokeStyle = btn.glowColor;
+            ctx.lineWidth = isHovered ? 3 : 2;
+            ctx.shadowColor = btn.glowColor;
+            ctx.shadowBlur = glowStrength;
+            this._menuRoundRect(ctx, bx, by, btn.w, btn.h, 10);
+            ctx.fill();
+            ctx.stroke();
+
+            // Extra glow on hover
+            if (isHovered) {
+                ctx.shadowBlur = 30;
+                ctx.globalAlpha = 0.3;
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+            }
+            ctx.shadowBlur = 0;
+
+            // Button label
+            ctx.font = `bold ${btn.fontSize}px "Segoe UI", Arial, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = COLORS.WHITE;
+            ctx.fillText(btn.label, btn.x, btn.y);
+
+            // Gear icon for PvP
+            if (btn.hasGear) {
+                this._drawMenuGearIcon(bx + btn.w + 25, btn.y, t);
+            }
+
+            // Scanline sweep (I)
+            const scanCycle = 4;
+            const scanPhase = (t + this.menuScanlinePhases[i]) % scanCycle;
+            const scanProgress = scanPhase / scanCycle;
+            if (scanProgress < 0.3) {
+                const scanX = bx + btn.w * (scanProgress / 0.3);
+                ctx.save();
+                ctx.beginPath();
+                this._menuRoundRect(ctx, bx, by, btn.w, btn.h, 10);
+                ctx.clip();
+                const sGrad = ctx.createLinearGradient(scanX - 30, 0, scanX + 30, 0);
+                sGrad.addColorStop(0, 'rgba(255,255,255,0)');
+                sGrad.addColorStop(0.5, 'rgba(255,255,255,0.15)');
+                sGrad.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.fillStyle = sGrad;
+                ctx.fillRect(bx, by, btn.w, btn.h);
+                ctx.restore();
+            }
+
+            ctx.restore();
+        }
+
+        // --- Difficulty selector ---
         if (showDifficultySelect) {
             this.drawDifficultySelector();
         }
 
-        // Separator line
+        // --- E: Glitch Title ---
+        this._drawMenuTitle(t);
+    }
+
+    _menuAutoPlayStep() {
+        const empty = [];
+        for (let i = 0; i < 81; i++) {
+            if (this.menuBoardState[i] === 0) empty.push(i);
+        }
+        if (empty.length === 0 || this.menuAutoPlayMoveCount > 30) {
+            this.menuBoardState.fill(0);
+            this.menuAutoPlayTurn = 1;
+            this.menuAutoPlayMoveCount = 0;
+            return;
+        }
+        const idx = empty[Math.floor(Math.random() * empty.length)];
+        this.menuBoardState[idx] = this.menuAutoPlayTurn;
+        this.menuAutoPlayTurn = this.menuAutoPlayTurn === 1 ? 2 : 1;
+        this.menuAutoPlayMoveCount++;
+    }
+
+    _drawMenuNeonGrid(t) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.globalAlpha = 0.18;
         const cx = SCREEN_WIDTH / 2;
-        this.ctx.strokeStyle = '#333355';
-        this.ctx.lineWidth = 1;
-        this.ctx.beginPath();
-        this.ctx.moveTo(cx - 150, 640);
-        this.ctx.lineTo(cx + 150, 640);
-        this.ctx.stroke();
+        const horizon = 280;
+        const bottom = SCREEN_HEIGHT;
 
-        // Sub-function row: How to Play + Replay
-        this.drawSmallButton(cx - 150, 660, 145, 50, '#1A3A5A', '? How to Play');
-        this.drawSmallButton(cx + 5, 660, 145, 50, '#333355', '\u25B6 Replay');
+        // Horizontal lines (perspective)
+        const lineCount = 20;
+        ctx.strokeStyle = '#B040FF';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= lineCount; i++) {
+            const frac = i / lineCount;
+            const shift = (t * 0.15) % (1 / lineCount);
+            const adjFrac = frac + shift;
+            if (adjFrac > 1) continue;
+            const adjY = horizon + (bottom - horizon) * Math.pow(adjFrac, 1.5);
+            const spread = 800 * adjFrac + 200;
+            ctx.beginPath();
+            ctx.moveTo(cx - spread, adjY);
+            ctx.lineTo(cx + spread, adjY);
+            ctx.stroke();
+        }
 
-        // Developer Settings gear icon
-        this.drawGearIcon(SCREEN_WIDTH / 2 + 205, 390, 18);
+        // Vertical lines converging to vanishing point
+        const vLines = 24;
+        for (let i = -vLines / 2; i <= vLines / 2; i++) {
+            const xBottom = cx + i * 80;
+            ctx.beginPath();
+            ctx.moveTo(cx, horizon);
+            ctx.lineTo(xBottom, bottom + 50);
+            ctx.stroke();
+        }
+
+        // Glow at horizon
+        const grd = ctx.createRadialGradient(cx, horizon, 0, cx, horizon, 300);
+        grd.addColorStop(0, 'rgba(176, 64, 255, 0.3)');
+        grd.addColorStop(1, 'rgba(176, 64, 255, 0)');
+        ctx.fillStyle = grd;
+        ctx.globalAlpha = 0.12;
+        ctx.fillRect(cx - 400, horizon - 100, 800, 200);
+
+        ctx.restore();
+    }
+
+    _drawMenuBoardBackground() {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.globalAlpha = 0.08;
+        const cellSize = 52;
+        const boardSize = 9 * cellSize;
+        const ox = (SCREEN_WIDTH - boardSize) / 2;
+        const oy = (SCREEN_HEIGHT - boardSize) / 2 - 10;
+
+        // Grid
+        ctx.strokeStyle = '#B040FF';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 9; i++) {
+            ctx.beginPath();
+            ctx.moveTo(ox + i * cellSize, oy);
+            ctx.lineTo(ox + i * cellSize, oy + boardSize);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(ox, oy + i * cellSize);
+            ctx.lineTo(ox + boardSize, oy + i * cellSize);
+            ctx.stroke();
+        }
+
+        // Stones as cyber octagons
+        for (let r = 0; r < 9; r++) {
+            for (let c = 0; c < 9; c++) {
+                const v = this.menuBoardState[r * 9 + c];
+                if (v === 0) continue;
+                const sx = ox + c * cellSize + cellSize / 2;
+                const sy = oy + r * cellSize + cellSize / 2;
+                this._drawMenuCyberOctagon(sx, sy, cellSize * 0.38, 0.12);
+            }
+        }
+
+        // Player pieces
+        ctx.globalAlpha = 0.1;
+        // P1 at col=0, row=4
+        ctx.beginPath();
+        ctx.arc(ox + 0 * cellSize + cellSize / 2, oy + 4 * cellSize + cellSize / 2, cellSize * 0.32, 0, Math.PI * 2);
+        ctx.fillStyle = '#00E5FF';
+        ctx.shadowColor = '#00E5FF';
+        ctx.shadowBlur = 8;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        // P2 at col=8, row=4
+        ctx.beginPath();
+        ctx.arc(ox + 8 * cellSize + cellSize / 2, oy + 4 * cellSize + cellSize / 2, cellSize * 0.32, 0, Math.PI * 2);
+        ctx.fillStyle = '#FF4444';
+        ctx.shadowColor = '#FF4444';
+        ctx.shadowBlur = 8;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.restore();
+    }
+
+    _drawMenuCyberOctagon(cx, cy, r, alpha) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        const sides = 8;
+        ctx.beginPath();
+        for (let i = 0; i < sides; i++) {
+            const angle = (Math.PI * 2 * i) / sides - Math.PI / 8;
+            const px = cx + r * Math.cos(angle);
+            const py = cy + r * Math.sin(angle);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        grad.addColorStop(0, '#1A1A2E');
+        grad.addColorStop(1, '#2A2A3A');
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.strokeStyle = '#B040FF';
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = '#B040FF';
+        ctx.shadowBlur = 6;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
+    _drawMenuTitle(t) {
+        const ctx = this.ctx;
+        const cx = SCREEN_WIDTH / 2;
+        const ty = 200;
+        const breathe = 8 + Math.sin(t * 2) * 6;
+
+        if (this.menuGlitchActive) {
+            ctx.save();
+            ctx.font = 'bold 72px "Segoe UI", Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            const jitterX = (Math.random() - 0.5) * 8;
+            const jitterY = (Math.random() - 0.5) * 4;
+
+            // Red channel
+            ctx.globalAlpha = 0.7;
+            ctx.fillStyle = '#FF0000';
+            ctx.shadowColor = '#FF0000';
+            ctx.shadowBlur = breathe;
+            ctx.fillText('Nine Nine', cx + jitterX - 3, ty + jitterY - 1);
+
+            // Cyan channel
+            ctx.fillStyle = '#00FFFF';
+            ctx.shadowColor = '#00FFFF';
+            ctx.fillText('Nine Nine', cx + jitterX + 3, ty + jitterY + 1);
+
+            // Main text
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = COLORS.WHITE;
+            ctx.shadowColor = '#00E5FF';
+            ctx.shadowBlur = breathe;
+            ctx.fillText('Nine Nine', cx + jitterX, ty + jitterY);
+
+            // Horizontal slice
+            if (Math.random() < 0.5) {
+                const sliceY = ty - 30 + Math.random() * 60;
+                const sliceH = 3 + Math.random() * 8;
+                ctx.globalAlpha = 0.6;
+                ctx.drawImage(this.canvas, 0, sliceY, SCREEN_WIDTH, sliceH,
+                    (Math.random() - 0.5) * 20, sliceY, SCREEN_WIDTH, sliceH);
+            }
+            ctx.restore();
+        } else {
+            ctx.save();
+            ctx.font = 'bold 72px "Segoe UI", Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = COLORS.WHITE;
+            ctx.shadowColor = '#00E5FF';
+            ctx.shadowBlur = breathe;
+            ctx.fillText('Nine Nine', cx, ty);
+            // Double pass for stronger glow
+            ctx.globalAlpha = 0.4;
+            ctx.shadowBlur = breathe * 2;
+            ctx.fillText('Nine Nine', cx, ty);
+            ctx.restore();
+        }
+
+        // Subtitle
+        ctx.save();
+        ctx.font = '20px "Segoe UI", Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#cccccc';
+        ctx.globalAlpha = 0.7;
+        ctx.shadowColor = '#00E5FF';
+        ctx.shadowBlur = 4;
+        ctx.fillText('Turn-Based Strategy Game', cx, 250);
+        ctx.restore();
+    }
+
+    _drawMenuGearIcon(cx, cy, t) {
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(t * 0.3);
+
+        const r1 = 14, r2 = 10, teeth = 8;
+        ctx.beginPath();
+        for (let i = 0; i < teeth * 2; i++) {
+            const angle = (i * Math.PI) / teeth;
+            const r = i % 2 === 0 ? r1 : r2;
+            const x = Math.cos(angle) * r;
+            const y = Math.sin(angle) * r;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fillStyle = '#333';
+        ctx.strokeStyle = '#cccccc';
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = '#00E5FF';
+        ctx.shadowBlur = 4;
+        ctx.fill();
+        ctx.stroke();
+
+        // Center hole
+        ctx.beginPath();
+        ctx.arc(0, 0, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#0a0a1a';
+        ctx.fill();
+
+        ctx.restore();
     }
 
     drawDifficultySelector() {
+        const ctx = this.ctx;
         const cx = SCREEN_WIDTH / 2;
         const btnW = 90, btnH = 50, gap = 10;
         const startX = cx - (btnW * 3 + gap * 2) / 2;
         const y = 560;
+        const t = this.menuTime;
 
-        // Label
-        this.ctx.fillStyle = '#AAAACC';
-        this.ctx.font = '16px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText('Select Difficulty', cx, y - 8);
+        // Difficulty buttons with neon style
+        const diffButtons = [
+            { label: 'Easy',   x: startX,                      color: '#0a2a0a', glowColor: '#00FF66' },
+            { label: 'Normal', x: startX + btnW + gap,         color: '#2a1a00', glowColor: '#FFAA00' },
+            { label: 'Hard',   x: startX + 2 * (btnW + gap),  color: '#1a1a2a', glowColor: '#666688', disabled: true },
+        ];
 
-        // Easy
-        this.drawButton(startX, y, btnW, btnH, '#1A4A1A', 'Easy');
-        // Normal
-        this.drawButton(startX + btnW + gap, y, btnW, btnH, '#4A3A0A', 'Normal');
-        // Hard (Coming Soon)
-        const ctx = this.ctx;
+        for (let i = 0; i < diffButtons.length; i++) {
+            const btn = diffButtons[i];
+            ctx.save();
+
+            if (btn.disabled) {
+                ctx.globalAlpha = 0.4;
+            }
+
+            const pulse = 3 + Math.sin(t * 2.5 + i * 1.2) * 2;
+
+            // Button fill with rounded rect
+            ctx.fillStyle = btn.color;
+            ctx.strokeStyle = btn.glowColor;
+            ctx.lineWidth = 2;
+            ctx.shadowColor = btn.glowColor;
+            ctx.shadowBlur = btn.disabled ? 0 : pulse;
+            this._menuRoundRect(ctx, btn.x, y, btnW, btnH, 8);
+            ctx.fill();
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Label
+            ctx.font = 'bold 16px "Segoe UI", Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = COLORS.WHITE;
+            ctx.fillText(btn.label, btn.x + btnW / 2, y + btnH / 2);
+
+            ctx.restore();
+        }
+
+        // "Coming Soon" label for Hard
         ctx.save();
-        ctx.globalAlpha = 0.4;
-        this.drawButton(startX + 2 * (btnW + gap), y, btnW, btnH, '#222233', 'Hard');
-        ctx.restore();
         ctx.fillStyle = '#666688';
-        ctx.font = '11px Arial';
+        ctx.font = '11px "Segoe UI", Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('Coming Soon', startX + 2 * (btnW + gap) + btnW / 2, y + btnH + 14);
+        ctx.restore();
     }
 
     drawComThinking(now) {
@@ -811,58 +1341,119 @@ class Renderer {
     // --- Skill Selection ---
 
     drawSkillSelection(player1, player2, gameMode) {
-        this.clear();
+        const ctx = this.ctx;
 
-        this.ctx.fillStyle = COLORS.WHITE;
-        this.ctx.font = 'bold 36px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText('Select Special Skill', SCREEN_WIDTH / 2, 50);
+        // Dark neon background
+        ctx.fillStyle = '#0a0a1a';
+        ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+        // Subtle grid background
+        ctx.save();
+        ctx.globalAlpha = 0.06;
+        ctx.strokeStyle = '#B040FF';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < SCREEN_WIDTH; x += 60) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, SCREEN_HEIGHT);
+            ctx.stroke();
+        }
+        for (let y = 0; y < SCREEN_HEIGHT; y += 60) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(SCREEN_WIDTH, y);
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        // Title with neon glow
+        ctx.save();
+        ctx.font = 'bold 36px "Segoe UI", Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.shadowColor = '#00E5FF';
+        ctx.shadowBlur = 12;
+        ctx.fillText('Select Special Skill', SCREEN_WIDTH / 2, 50);
+        ctx.globalAlpha = 0.3;
+        ctx.shadowBlur = 24;
+        ctx.fillText('Select Special Skill', SCREEN_WIDTH / 2, 50);
+        ctx.restore();
 
         this.drawSkillPanel(player1, 20, COLORS.P1_PANEL_BG, gameMode);
         this.drawSkillPanel(player2, SCREEN_WIDTH - PANEL_WIDTH + 20, COLORS.P2_PANEL_BG, gameMode);
 
-        this.ctx.fillStyle = COLORS.WHITE;
-        this.ctx.font = '20px Arial';
-        this.ctx.textAlign = 'center';
+        // Center message
+        ctx.save();
+        ctx.font = '20px "Segoe UI", Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#B040FF';
+        ctx.shadowBlur = 8;
         if (player1.skillConfirmed && player2.skillConfirmed) {
-            this.ctx.fillText('Starting game...', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+            ctx.fillStyle = '#00FF66';
+            ctx.fillText('Starting game...', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
         } else {
-            this.ctx.fillText('Both players must select a skill', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+            ctx.fillStyle = '#cccccc';
+            ctx.fillText('Both players must select a skill', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
         }
+        ctx.restore();
     }
 
     drawSkillPanel(player, panelX, bgColor, gameMode) {
-        this.ctx.fillStyle = bgColor;
-        this.ctx.fillRect(panelX - 20, 80, PANEL_WIDTH, SCREEN_HEIGHT - 100);
+        const ctx = this.ctx;
+        const isP1 = player.playerNum === 1;
+        const panelGlow = isP1 ? '#00AAFF' : '#FF4444';
+
+        // Panel background with neon border
+        ctx.save();
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(panelX - 20, 80, PANEL_WIDTH, SCREEN_HEIGHT - 100);
+        ctx.strokeStyle = panelGlow;
+        ctx.lineWidth = 1;
+        ctx.shadowColor = panelGlow;
+        ctx.shadowBlur = 8;
+        ctx.strokeRect(panelX - 20, 80, PANEL_WIDTH, SCREEN_HEIGHT - 100);
+        ctx.shadowBlur = 0;
+        ctx.restore();
 
         const label = (gameMode === 'com' && player.playerNum === 2) ? 'COM' : `Player ${player.playerNum}`;
-        this.ctx.fillStyle = COLORS.WHITE;
-        this.ctx.font = 'bold 28px Arial';
-        this.ctx.textAlign = 'left';
-        this.ctx.fillText(label, panelX, 130);
+        ctx.save();
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = 'bold 28px "Segoe UI", Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.shadowColor = panelGlow;
+        ctx.shadowBlur = 8;
+        ctx.fillText(label, panelX, 130);
+        ctx.restore();
 
         if (player.skillConfirmed) {
-            this.ctx.fillStyle = '#00FF00';
-            this.ctx.font = 'bold 32px Arial';
-            this.ctx.fillText('Ready!', panelX, 200);
+            ctx.save();
+            ctx.fillStyle = '#00FF66';
+            ctx.font = 'bold 32px "Segoe UI", Arial, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.shadowColor = '#00FF66';
+            ctx.shadowBlur = 12;
+            ctx.fillText('Ready!', panelX, 200);
+            ctx.restore();
 
             const info = SKILL_INFO[player.specialSkill];
             if (info) {
                 const img = this.skillImages[player.specialSkill];
                 const iconY = 215;
                 if (img && img.complete && img.naturalWidth > 0) {
-                    this.ctx.drawImage(img, panelX, iconY, 32, 32);
+                    ctx.drawImage(img, panelX, iconY, 32, 32);
                 }
-                this.ctx.fillStyle = COLORS.WHITE;
-                this.ctx.font = '18px Arial';
-                this.ctx.textBaseline = 'middle';
-                this.ctx.fillText(info.name, panelX + 38, iconY + 16);
-                this.ctx.textBaseline = 'alphabetic';
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.font = '18px "Segoe UI", Arial, sans-serif';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(info.name, panelX + 38, iconY + 16);
+                ctx.textBaseline = 'alphabetic';
             }
         } else {
-            this.ctx.fillStyle = COLORS.WHITE;
-            this.ctx.font = '16px Arial';
-            this.ctx.fillText('Choose your skill:', panelX, 200);
+            ctx.fillStyle = '#cccccc';
+            ctx.font = '16px "Segoe UI", Arial, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText('Choose your skill:', panelX, 200);
 
             const btnWidth = 115;
             const btnHeight = 90;
@@ -879,29 +1470,48 @@ class Renderer {
                 const by = startY + row * (btnHeight + gapY);
                 const centerX = bx + btnWidth / 2;
 
-                this.ctx.fillStyle = info.color;
-                this.ctx.fillRect(bx, by, btnWidth, btnHeight);
-                this.ctx.strokeStyle = '#444466';
-                this.ctx.lineWidth = 2;
-                this.ctx.strokeRect(bx, by, btnWidth, btnHeight);
+                // Neon skill button
+                ctx.save();
+                ctx.fillStyle = this._darkenColor(info.color, 0.3);
+                this._menuRoundRect(ctx, bx, by, btnWidth, btnHeight, 8);
+                ctx.fill();
+                ctx.strokeStyle = info.color;
+                ctx.lineWidth = 2;
+                ctx.shadowColor = info.color;
+                ctx.shadowBlur = 6;
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+                ctx.restore();
 
+                // Skill icon
                 const img = this.skillImages[skill];
                 const iconSize = 36;
                 if (img && img.complete && img.naturalWidth > 0) {
-                    this.ctx.drawImage(img, centerX - iconSize / 2, by + 5, iconSize, iconSize);
+                    ctx.drawImage(img, centerX - iconSize / 2, by + 5, iconSize, iconSize);
                 }
 
-                this.ctx.fillStyle = info.textColor;
-                this.ctx.font = 'bold 13px Arial';
-                this.ctx.textAlign = 'center';
-                this.ctx.fillText(info.name, centerX, by + 52);
+                // Skill name
+                ctx.fillStyle = COLORS.WHITE;
+                ctx.font = 'bold 13px "Segoe UI", Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(info.name, centerX, by + 52);
 
+                // Cost
                 const cost = SKILL_COSTS[info.costKey];
-                this.ctx.font = '12px Arial';
-                this.ctx.fillText(`${cost}pt`, centerX, by + 68);
+                ctx.fillStyle = '#FFD700';
+                ctx.font = '12px "Segoe UI", Arial, sans-serif';
+                ctx.fillText(`${cost}pt`, centerX, by + 68);
             }
-            this.ctx.textAlign = 'left';
+            ctx.textAlign = 'left';
         }
+    }
+
+    // Darken a hex color for neon button backgrounds
+    _darkenColor(hex, factor) {
+        const r = Math.floor(parseInt(hex.slice(1, 3), 16) * factor);
+        const g = Math.floor(parseInt(hex.slice(3, 5), 16) * factor);
+        const b = Math.floor(parseInt(hex.slice(5, 7), 16) * factor);
+        return `rgb(${r},${g},${b})`;
     }
 
     // --- Tooltip ---

@@ -371,7 +371,7 @@ function render(now) {
 
     switch (game.phase) {
         case PHASES.START_SCREEN:
-            renderer.drawStartScreen(game.showDifficultySelect);
+            renderer.drawStartScreen(game.showDifficultySelect, now);
             break;
 
         case PHASES.TUTORIAL:

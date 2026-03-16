@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Nine Nine - Main Menu Combined Effects</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    font-family: 'Segoe UI', sans-serif;
+    color: #ccc;
+  }
+  .controls {
+    margin: 16px 0 8px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .toggle-btn {
+    padding: 8px 20px;
+    border: 2px solid #B040FF;
+    background: transparent;
+    color: #B040FF;
+    font-size: 14px;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.25s;
+  }
+  .toggle-btn:hover { background: #B040FF22; }
+  .toggle-btn.active { background: #B040FF; color: #fff; }
+  .label { font-size: 13px; color: #888; }
+  canvas {
+    border: 1px solid #2A1A4A;
+    display: block;
+    margin-bottom: 20px;
+  }
+</style>
+</head>
+<body>
+
+<div class="controls">
+  <span class="label">Decoration mode:</span>
+  <button class="toggle-btn active" id="btnJ" onclick="setMode('J')">J: Board Icon</button>
+  <button class="toggle-btn" id="btnC" onclick="setMode('C')">C: Board Background</button>
+</div>
+
+<canvas id="c" width="1284" height="800"></canvas>
+
+<script>
+// ============================================================
+// GLOBAL STATE
+// ============================================================
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let mode = 'J'; // 'J' = board icon, 'C' = board background
+let t = 0; // global time in seconds
+let frameCount = 0;
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('btnJ').classList.toggle('active', m === 'J');
+  document.getElementById('btnC').classList.toggle('active', m === 'C');
+}
+
+// ============================================================
+// COLOR PALETTE
+// ============================================================
+const COL = {
+  cyan: '#00E5FF',
+  purple: '#B040FF',
+  p1blue: '#00AAFF',
+  p2red: '#FF4444',
+  grid: '#2A1A4A',
+  bg: '#0a0a1a',
+  text: '#cccccc',
+  white: '#ffffff',
+  pvpGreen: '#006400',
+  vscomBlue: '#00224A',
+};
+
+// ============================================================
+// BUTTONS DEFINITION
+// ============================================================
+const buttons = [
+  { label: 'Player vs Player', x: 642, y: 350, w: 300, h: 80, color: COL.pvpGreen, glowColor: '#00FF66', hasGear: true },
+  { label: 'Player vs COM',    x: 642, y: 470, w: 300, h: 80, color: COL.vscomBlue, glowColor: '#00AAFF', hasGear: false },
+  { label: '? How to Play',    x: 642 - 80, y: 660, w: 145, h: 50, color: '#1a2a3a', glowColor: COL.cyan, hasGear: false },
+  { label: '\u25B6 Replay',    x: 642 + 80, y: 660, w: 145, h: 50, color: '#1a2a3a', glowColor: COL.purple, hasGear: false },
+];
+
+// Scanline and hover state
+let scanlinePhases = buttons.map((_, i) => i * 0.7); // staggered
+let hoveredIndex = 0;
+let hoverTimer = 0;
+
+// ============================================================
+// DICE STATE
+// ============================================================
+class Die {
+  constructor(x, y, size) {
+    this.x = x;
+    this.y = y;
+    this.baseX = x;
+    this.baseY = y;
+    this.size = size;
+    this.value = Math.floor(Math.random() * 6) + 1;
+    this.rotation = Math.random() * Math.PI * 2;
+    this.rotSpeed = (Math.random() - 0.5) * 1.5;
+    this.bobPhase = Math.random() * Math.PI * 2;
+    this.bobSpeed = 0.5 + Math.random() * 0.5;
+    this.bobAmp = 15 + Math.random() * 10;
+    this.rollTimer = 3 + Math.random() * 4;
+    this.rolling = false;
+    this.rollDuration = 0;
+  }
+
+  update(dt) {
+    this.bobPhase += this.bobSpeed * dt;
+    this.y = this.baseY + Math.sin(this.bobPhase) * this.bobAmp;
+    this.x = this.baseX + Math.cos(this.bobPhase * 0.7) * 5;
+    this.rotation += this.rotSpeed * dt;
+
+    if (this.rolling) {
+      this.rollDuration -= dt;
+      this.rotSpeed = 8 * (Math.random() > 0.5 ? 1 : -1);
+      if (Math.random() < 0.3) this.value = Math.floor(Math.random() * 6) + 1;
+      if (this.rollDuration <= 0) {
+        this.rolling = false;
+        this.rotSpeed = (Math.random() - 0.5) * 1.5;
+        this.value = Math.floor(Math.random() * 6) + 1;
+        this.rollTimer = 3 + Math.random() * 4;
+      }
+    } else {
+      this.rollTimer -= dt;
+      if (this.rollTimer <= 0) {
+        this.rolling = true;
+        this.rollDuration = 0.6 + Math.random() * 0.4;
+      }
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+    const s = this.size;
+    const half = s / 2;
+
+    // Die body
+    ctx.fillStyle = '#0a0a2a';
+    ctx.strokeStyle = COL.purple;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = COL.purple;
+    ctx.shadowBlur = 10;
+    roundRect(ctx, -half, -half, s, s, 6);
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Pips
+    ctx.fillStyle = COL.cyan;
+    ctx.shadowColor = COL.cyan;
+    ctx.shadowBlur = 4;
+    const pip = s * 0.1;
+    const positions = getDiePips(this.value, half, pip);
+    for (const [px, py] of positions) {
+      ctx.beginPath();
+      ctx.arc(px, py, pip, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+}
+
+function getDiePips(val, half, pip) {
+  const o = half * 0.55;
+  const pips = [];
+  const center = [0, 0];
+  const tl = [-o, -o], tr = [o, -o], bl = [-o, o], br = [o, o];
+  const ml = [-o, 0], mr = [o, 0];
+  if (val === 1) pips.push(center);
+  if (val === 2) { pips.push(tl, br); }
+  if (val === 3) { pips.push(tl, center, br); }
+  if (val === 4) { pips.push(tl, tr, bl, br); }
+  if (val === 5) { pips.push(tl, tr, center, bl, br); }
+  if (val === 6) { pips.push(tl, tr, ml, mr, bl, br); }
+  return pips;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+const dice = [
+  new Die(80, 280, 40),
+  new Die(1200, 250, 38),
+  new Die(140, 480, 34),
+  new Die(1150, 450, 36),
+  new Die(60, 650, 30),
+  new Die(1220, 620, 32),
+  new Die(200, 180, 28),
+];
+
+// ============================================================
+// GLITCH STATE
+// ============================================================
+let glitchActive = false;
+let glitchTimer = 3 + Math.random() * 2;
+let glitchDuration = 0;
+
+// ============================================================
+// MODE C: AUTO-PLAY BOARD STATE
+// ============================================================
+const boardState = [];
+for (let i = 0; i < 81; i++) boardState.push(0);
+let autoPlayTimer = 0;
+let autoPlayTurn = 1; // 1 = P1, 2 = P2
+let autoPlayMoveCount = 0;
+
+function autoPlayStep() {
+  // Find empty cells
+  const empty = [];
+  for (let i = 0; i < 81; i++) {
+    if (boardState[i] === 0) empty.push(i);
+  }
+  if (empty.length === 0 || autoPlayMoveCount > 30) {
+    // Reset board
+    for (let i = 0; i < 81; i++) boardState[i] = 0;
+    autoPlayTurn = 1;
+    autoPlayMoveCount = 0;
+    return;
+  }
+  const idx = empty[Math.floor(Math.random() * empty.length)];
+  boardState[idx] = autoPlayTurn;
+  autoPlayTurn = autoPlayTurn === 1 ? 2 : 1;
+  autoPlayMoveCount++;
+}
+
+// ============================================================
+// MODE J: ROTATING BOARD ICON STATE
+// ============================================================
+let boardIconRotation = 0;
+
+// ============================================================
+// DRAW: NEON GRID BACKGROUND (A)
+// ============================================================
+function drawNeonGrid() {
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+
+  const cx = 642;
+  const horizon = 280;
+  const bottom = 800;
+
+  // Horizontal lines (perspective)
+  const lineCount = 20;
+  ctx.strokeStyle = COL.purple;
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= lineCount; i++) {
+    const frac = i / lineCount;
+    const yy = horizon + (bottom - horizon) * Math.pow(frac, 1.5);
+    // Shift lines for flow animation
+    const shift = (t * 0.15) % (1 / lineCount);
+    const adjFrac = frac + shift;
+    if (adjFrac > 1) continue;
+    const adjY = horizon + (bottom - horizon) * Math.pow(adjFrac, 1.5);
+
+    const spread = 800 * adjFrac + 200;
+    ctx.beginPath();
+    ctx.moveTo(cx - spread, adjY);
+    ctx.lineTo(cx + spread, adjY);
+    ctx.stroke();
+  }
+
+  // Vertical lines converging to vanishing point
+  const vLines = 24;
+  for (let i = -vLines / 2; i <= vLines / 2; i++) {
+    const xBottom = cx + i * 80;
+    ctx.beginPath();
+    ctx.moveTo(cx, horizon);
+    ctx.lineTo(xBottom, bottom + 50);
+    ctx.stroke();
+  }
+
+  // Glow at horizon
+  const grad = ctx.createRadialGradient(cx, horizon, 0, cx, horizon, 300);
+  grad.addColorStop(0, 'rgba(176, 64, 255, 0.3)');
+  grad.addColorStop(1, 'rgba(176, 64, 255, 0)');
+  ctx.fillStyle = grad;
+  ctx.globalAlpha = 0.12;
+  ctx.fillRect(cx - 400, horizon - 100, 800, 200);
+
+  ctx.restore();
+}
+
+// ============================================================
+// DRAW: BOARD BACKGROUND (MODE C)
+// ============================================================
+function drawCyberOctagon(cx, cy, r, alpha) {
+  // Draw cyber stone octagon matching the actual game style
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const sides = 8;
+  ctx.beginPath();
+  for (let i = 0; i < sides; i++) {
+    const angle = (Math.PI * 2 * i) / sides - Math.PI / 8;
+    const px = cx + r * Math.cos(angle);
+    const py = cy + r * Math.sin(angle);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+
+  // Fill with dark gradient
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  grad.addColorStop(0, '#1A1A2E');
+  grad.addColorStop(1, '#2A2A3A');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Neon purple border
+  ctx.strokeStyle = COL.purple;
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = COL.purple;
+  ctx.shadowBlur = 6;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawBoardBackground() {
+  ctx.save();
+  ctx.globalAlpha = 0.08;
+  const cellSize = 52;
+  const boardSize = 9 * cellSize;
+  const ox = (1284 - boardSize) / 2;
+  const oy = (800 - boardSize) / 2 - 10;
+
+  // Grid
+  ctx.strokeStyle = COL.purple;
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 9; i++) {
+    ctx.beginPath();
+    ctx.moveTo(ox + i * cellSize, oy);
+    ctx.lineTo(ox + i * cellSize, oy + boardSize);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(ox, oy + i * cellSize);
+    ctx.lineTo(ox + boardSize, oy + i * cellSize);
+    ctx.stroke();
+  }
+
+  // Stones as cyber octagons (matching game style)
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const v = boardState[r * 9 + c];
+      if (v === 0) continue;
+      const sx = ox + c * cellSize + cellSize / 2;
+      const sy = oy + r * cellSize + cellSize / 2;
+      drawCyberOctagon(sx, sy, cellSize * 0.38, 0.12);
+    }
+  }
+
+  // Player pieces (P1 cyan, P2 magenta circles with glow)
+  ctx.globalAlpha = 0.1;
+  const p1x = ox + 0 * cellSize + cellSize / 2;
+  const p1y = oy + 4 * cellSize + cellSize / 2;
+  ctx.beginPath();
+  ctx.arc(p1x, p1y, cellSize * 0.32, 0, Math.PI * 2);
+  ctx.fillStyle = COL.cyan;
+  ctx.shadowColor = COL.cyan;
+  ctx.shadowBlur = 8;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  const p2x = ox + 8 * cellSize + cellSize / 2;
+  const p2y = oy + 4 * cellSize + cellSize / 2;
+  ctx.beginPath();
+  ctx.arc(p2x, p2y, cellSize * 0.32, 0, Math.PI * 2);
+  ctx.fillStyle = COL.p2red;
+  ctx.shadowColor = COL.p2red;
+  ctx.shadowBlur = 8;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+}
+
+// ============================================================
+// DRAW: BOARD ICON (MODE J)
+// ============================================================
+function drawBoardIcon() {
+  ctx.save();
+  const cx = 642;
+  const cy = 290;
+  boardIconRotation += 0.005;
+
+  ctx.translate(cx, cy);
+  ctx.rotate(Math.sin(boardIconRotation) * 0.15);
+  ctx.scale(0.7, 0.7);
+
+  const cellSize = 8;
+  const boardSize = 9 * cellSize;
+  const ox = -boardSize / 2;
+  const oy = -boardSize / 2;
+
+  ctx.globalAlpha = 0.35;
+  ctx.strokeStyle = COL.cyan;
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= 9; i++) {
+    ctx.beginPath();
+    ctx.moveTo(ox + i * cellSize, oy);
+    ctx.lineTo(ox + i * cellSize, oy + boardSize);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(ox, oy + i * cellSize);
+    ctx.lineTo(ox + boardSize, oy + i * cellSize);
+    ctx.stroke();
+  }
+
+  // A few decorative stones (cyber octagons matching game style)
+  const decoStones = [[2,2],[6,3],[4,4],[3,6],[7,7],[1,5],[5,1]];
+  for (const [r, c] of decoStones) {
+    const scx = ox + c * cellSize + cellSize / 2;
+    const scy = oy + r * cellSize + cellSize / 2;
+    // Mini octagon
+    ctx.globalAlpha = 0.5;
+    const sides = 8;
+    const sr = cellSize * 0.35;
+    ctx.beginPath();
+    for (let si = 0; si < sides; si++) {
+      const angle = (Math.PI * 2 * si) / sides - Math.PI / 8;
+      const px = scx + sr * Math.cos(angle);
+      const py = scy + sr * Math.sin(angle);
+      if (si === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#2A2A3A';
+    ctx.fill();
+    ctx.strokeStyle = COL.purple;
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+
+  // Player pieces (P1 at col=0 row=4, P2 at col=8 row=4)
+  ctx.globalAlpha = 0.6;
+  ctx.beginPath();
+  ctx.arc(ox + 0 * cellSize + cellSize / 2, oy + 4 * cellSize + cellSize / 2, cellSize * 0.3, 0, Math.PI * 2);
+  ctx.fillStyle = COL.cyan;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(ox + 8 * cellSize + cellSize / 2, oy + 4 * cellSize + cellSize / 2, cellSize * 0.3, 0, Math.PI * 2);
+  ctx.fillStyle = COL.p2red;
+  ctx.fill();
+
+  // Neon border glow
+  ctx.globalAlpha = 0.3;
+  ctx.strokeStyle = COL.cyan;
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = COL.cyan;
+  ctx.shadowBlur = 8;
+  ctx.strokeRect(ox - 2, oy - 2, boardSize + 4, boardSize + 4);
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+}
+
+// ============================================================
+// DRAW: TITLE WITH GLITCH (E)
+// ============================================================
+function drawTitle() {
+  const cx = 642;
+  const ty = 200;
+
+  // Breathing neon glow
+  const breathe = 8 + Math.sin(t * 2) * 6;
+
+  if (glitchActive) {
+    // Glitch: RGB split
+    ctx.save();
+    ctx.font = 'bold 72px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const jitterX = (Math.random() - 0.5) * 8;
+    const jitterY = (Math.random() - 0.5) * 4;
+
+    // Red channel offset
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = '#FF0000';
+    ctx.shadowColor = '#FF0000';
+    ctx.shadowBlur = breathe;
+    ctx.fillText('Nine Nine', cx + jitterX - 3, ty + jitterY - 1);
+
+    // Cyan channel offset
+    ctx.fillStyle = '#00FFFF';
+    ctx.shadowColor = '#00FFFF';
+    ctx.fillText('Nine Nine', cx + jitterX + 3, ty + jitterY + 1);
+
+    // Main text on top
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = COL.white;
+    ctx.shadowColor = COL.cyan;
+    ctx.shadowBlur = breathe;
+    ctx.fillText('Nine Nine', cx + jitterX, ty + jitterY);
+
+    // Occasional horizontal slice
+    if (Math.random() < 0.5) {
+      const sliceY = ty - 30 + Math.random() * 60;
+      const sliceH = 3 + Math.random() * 8;
+      ctx.globalAlpha = 0.6;
+      ctx.drawImage(canvas, 0, sliceY, 1284, sliceH, (Math.random() - 0.5) * 20, sliceY, 1284, sliceH);
+    }
+
+    ctx.restore();
+  } else {
+    // Normal neon glow
+    ctx.save();
+    ctx.font = 'bold 72px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = COL.white;
+    ctx.shadowColor = COL.cyan;
+    ctx.shadowBlur = breathe;
+    ctx.fillText('Nine Nine', cx, ty);
+    // Double pass for stronger glow
+    ctx.globalAlpha = 0.4;
+    ctx.shadowBlur = breathe * 2;
+    ctx.fillText('Nine Nine', cx, ty);
+    ctx.restore();
+  }
+
+  // Subtitle
+  ctx.save();
+  ctx.font = '20px "Segoe UI", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = COL.text;
+  ctx.globalAlpha = 0.7;
+  ctx.shadowColor = COL.cyan;
+  ctx.shadowBlur = 4;
+  ctx.fillText('Turn-Based Strategy Game', cx, 250);
+  ctx.restore();
+}
+
+// ============================================================
+// DRAW: BUTTONS WITH GLOW + SCANLINES (G + I)
+// ============================================================
+function drawButtons() {
+  for (let i = 0; i < buttons.length; i++) {
+    const btn = buttons[i];
+    const isHovered = (i === hoveredIndex);
+    const bx = btn.x - btn.w / 2;
+    const by = btn.y - btn.h / 2;
+
+    ctx.save();
+
+    // Idle glow pulse
+    const pulse = 4 + Math.sin(t * 2 + i) * 3;
+    const glowStrength = isHovered ? 20 : pulse;
+
+    // Button fill
+    ctx.fillStyle = btn.color;
+    ctx.strokeStyle = btn.glowColor;
+    ctx.lineWidth = isHovered ? 3 : 2;
+    ctx.shadowColor = btn.glowColor;
+    ctx.shadowBlur = glowStrength;
+    roundRect(ctx, bx, by, btn.w, btn.h, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    // Extra glow pass on hover
+    if (isHovered) {
+      ctx.shadowBlur = 30;
+      ctx.globalAlpha = 0.3;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.shadowBlur = 0;
+
+    // Button label
+    ctx.font = btn.h > 60 ? 'bold 24px "Segoe UI", sans-serif' : 'bold 16px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = COL.white;
+    ctx.fillText(btn.label, btn.x, btn.y);
+
+    // Gear icon for PvP
+    if (btn.hasGear) {
+      drawGearIcon(bx + btn.w + 25, btn.y);
+    }
+
+    // Scanline sweep (I)
+    const scanCycle = 4; // seconds per sweep
+    const scanPhase = (t + scanlinePhases[i]) % scanCycle;
+    const scanProgress = scanPhase / scanCycle;
+    if (scanProgress < 0.3) {
+      const scanX = bx + btn.w * (scanProgress / 0.3);
+      ctx.save();
+      ctx.beginPath();
+      roundRect(ctx, bx, by, btn.w, btn.h, 10);
+      ctx.clip();
+
+      const grad = ctx.createLinearGradient(scanX - 30, 0, scanX + 30, 0);
+      grad.addColorStop(0, 'rgba(255,255,255,0)');
+      grad.addColorStop(0.5, 'rgba(255,255,255,0.15)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(bx, by, btn.w, btn.h);
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+}
+
+function drawGearIcon(cx, cy) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(t * 0.3);
+
+  const r1 = 14, r2 = 10, teeth = 8;
+  ctx.beginPath();
+  for (let i = 0; i < teeth * 2; i++) {
+    const angle = (i * Math.PI) / teeth;
+    const r = i % 2 === 0 ? r1 : r2;
+    const x = Math.cos(angle) * r;
+    const y = Math.sin(angle) * r;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = '#333';
+  ctx.strokeStyle = COL.text;
+  ctx.lineWidth = 1.5;
+  ctx.shadowColor = COL.cyan;
+  ctx.shadowBlur = 4;
+  ctx.fill();
+  ctx.stroke();
+
+  // Center hole
+  ctx.beginPath();
+  ctx.arc(0, 0, 4, 0, Math.PI * 2);
+  ctx.fillStyle = COL.bg;
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// ============================================================
+// DRAW: SEPARATOR LINE
+// ============================================================
+function drawSeparator() {
+  ctx.save();
+  const y = 620;
+  const cx = 642;
+  const halfW = 200;
+  const grad = ctx.createLinearGradient(cx - halfW, 0, cx + halfW, 0);
+  grad.addColorStop(0, 'rgba(176, 64, 255, 0)');
+  grad.addColorStop(0.3, 'rgba(176, 64, 255, 0.4)');
+  grad.addColorStop(0.5, 'rgba(176, 64, 255, 0.6)');
+  grad.addColorStop(0.7, 'rgba(176, 64, 255, 0.4)');
+  grad.addColorStop(1, 'rgba(176, 64, 255, 0)');
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx - halfW, y);
+  ctx.lineTo(cx + halfW, y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+let lastTime = 0;
+
+function loop(timestamp) {
+  const dt = lastTime ? (timestamp - lastTime) / 1000 : 0.016;
+  lastTime = timestamp;
+  t += dt;
+  frameCount++;
+
+  // Update glitch
+  if (glitchActive) {
+    glitchDuration -= dt;
+    if (glitchDuration <= 0) {
+      glitchActive = false;
+      glitchTimer = 3 + Math.random() * 2;
+    }
+  } else {
+    glitchTimer -= dt;
+    if (glitchTimer <= 0) {
+      glitchActive = true;
+      glitchDuration = 0.1 + Math.random() * 0.05;
+    }
+  }
+
+  // Update hover cycling
+  hoverTimer += dt;
+  if (hoverTimer > 3) {
+    hoverTimer = 0;
+    hoveredIndex = (hoveredIndex + 1) % buttons.length;
+  }
+
+  // Update dice
+  for (const die of dice) die.update(dt);
+
+  // Update auto-play board (mode C)
+  autoPlayTimer += dt;
+  if (autoPlayTimer > 1.2) {
+    autoPlayTimer = 0;
+    autoPlayStep();
+  }
+
+  // ---- DRAW ----
+  // Clear
+  ctx.fillStyle = COL.bg;
+  ctx.fillRect(0, 0, 1284, 800);
+
+  // Background layers
+  drawNeonGrid();
+
+  // Mode C background board (drawn very faintly behind everything)
+  if (mode === 'C') {
+    drawBoardBackground();
+  }
+
+  // Dice (behind buttons)
+  for (const die of dice) die.draw(ctx);
+
+  // Separator
+  drawSeparator();
+
+  // Buttons
+  drawButtons();
+
+  // Mode J board icon
+  if (mode === 'J') {
+    drawBoardIcon();
+  }
+
+  // Title (drawn last so glitch slice works on canvas content)
+  drawTitle();
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

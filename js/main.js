@@ -1352,36 +1352,45 @@ function drawDot(ctx, x, y, radius) {
 }
 
 function updateSkillHover(x, y) {
-    const btnWidth = 115, btnHeight = 90, gapX = 10, gapY = 8, startY = 210;
+    const btnWidth = 115, btnHeight = 90, gapX = 10, gapY = 8, startY = 200;
+    const tabH = 28, tabGap = 4, tabY = 160;
+    const totalTabW = PANEL_WIDTH - 40;
+    const tabCount = SKILL_CATEGORIES.length;
+    const tabW = (totalTabW - tabGap * (tabCount - 1)) / tabCount;
+
     game.hoveredSkill = null;
+    game.hoveredTab = -1;
 
-    // Check P1 panel (left)
-    if (!game.player1.skillConfirmed) {
-        const panelX = 20;
-        for (let i = 0; i < SKILL_ORDER.length; i++) {
+    const checkPanel = (player, panelX, tabProp, playerNum) => {
+        if (player.skillConfirmed) return false;
+
+        // Check tab hover
+        for (let t = 0; t < tabCount; t++) {
+            const tx = panelX + t * (tabW + tabGap);
+            if (x >= tx && x <= tx + tabW && y >= tabY && y <= tabY + tabH) {
+                game.hoveredTab = t;
+                game.hoveredTabPanel = playerNum;
+                return true;
+            }
+        }
+
+        // Check skill hover
+        const cat = SKILL_CATEGORIES[game[tabProp]];
+        if (!cat) return false;
+        for (let i = 0; i < cat.skills.length; i++) {
             const row = Math.floor(i / 2), col = i % 2;
             const bx = panelX + col * (btnWidth + gapX);
             const by = startY + row * (btnHeight + gapY);
             if (x >= bx && x <= bx + btnWidth && y >= by && y <= by + btnHeight) {
-                game.hoveredSkill = SKILL_ORDER[i];
-                return;
+                game.hoveredSkill = cat.skills[i];
+                return true;
             }
         }
-    }
+        return false;
+    };
 
-    // Check P2 panel (right)
-    if (!game.player2.skillConfirmed) {
-        const panelX = SCREEN_WIDTH - PANEL_WIDTH + 20;
-        for (let i = 0; i < SKILL_ORDER.length; i++) {
-            const row = Math.floor(i / 2), col = i % 2;
-            const bx = panelX + col * (btnWidth + gapX);
-            const by = startY + row * (btnHeight + gapY);
-            if (x >= bx && x <= bx + btnWidth && y >= by && y <= by + btnHeight) {
-                game.hoveredSkill = SKILL_ORDER[i];
-                return;
-            }
-        }
-    }
+    if (checkPanel(game.player1, 20, 'skillTabP1', 1)) return;
+    checkPanel(game.player2, SCREEN_WIDTH - PANEL_WIDTH + 20, 'skillTabP2', 2);
 }
 
 function drawSkillButton(ctx, x, y, width, height, opts) {

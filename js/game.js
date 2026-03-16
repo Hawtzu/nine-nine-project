@@ -42,6 +42,10 @@ class Game {
         this.controlAnimTargetPos = { row: 0, col: 0 };
         this.controlAnimInitialized = false;
         this.hoveredSkill = null; // skill key hovered in selection screen
+        this.skillTabP1 = 0; // active category tab index for P1
+        this.skillTabP2 = 0; // active category tab index for P2
+        this.hoveredTab = -1; // hovered tab index (-1 = none)
+        this.hoveredTabPanel = 0; // which panel (1 or 2)
         this.kamakuraPatterns = [];       // [{middle:{row,col}, stones:[{row,col},...]}]
         this.hoveredKamakuraIndex = null; // index of hovered pattern
         this.pendingMoveRow = -1;
@@ -1424,35 +1428,41 @@ class Game {
     }
 
     handleSkillSelectionClick(x, y) {
-        const btnWidth = 115, btnHeight = 75, gapX = 10, gapY = 6, startY = 210;
+        const tabH = 28, tabGap = 4, tabY = 160;
+        const btnWidth = 115, btnHeight = 90, gapX = 10, gapY = 8, startY = 200;
 
-        // Player 1 panel (left side)
-        if (!this.player1.skillConfirmed) {
-            const panelX = 20;
-            for (let i = 0; i < SKILL_ORDER.length; i++) {
+        const checkPanel = (player, panelX, tabProp) => {
+            if (player.skillConfirmed) return false;
+
+            // Tab clicks
+            const tabCount = SKILL_CATEGORIES.length;
+            const totalTabW = PANEL_WIDTH - 40;
+            const tabW = (totalTabW - tabGap * (tabCount - 1)) / tabCount;
+            for (let t = 0; t < tabCount; t++) {
+                const tx = panelX + t * (tabW + tabGap);
+                if (x >= tx && x <= tx + tabW && y >= tabY && y <= tabY + tabH) {
+                    this[tabProp] = t;
+                    return true;
+                }
+            }
+
+            // Skill button clicks
+            const cat = SKILL_CATEGORIES[this[tabProp]];
+            if (!cat) return false;
+            for (let i = 0; i < cat.skills.length; i++) {
                 const row = Math.floor(i / 2), col = i % 2;
                 const bx = panelX + col * (btnWidth + gapX);
                 const by = startY + row * (btnHeight + gapY);
                 if (x >= bx && x <= bx + btnWidth && y >= by && y <= by + btnHeight) {
-                    this.selectSkill(1, SKILL_ORDER[i]);
+                    this.selectSkill(player.playerNum, cat.skills[i]);
                     return true;
                 }
             }
-        }
+            return false;
+        };
 
-        // Player 2 panel (right side) — skip in COM mode
-        if (!this.player2.skillConfirmed && this.gameMode !== 'com') {
-            const panelX = SCREEN_WIDTH - PANEL_WIDTH + 20;
-            for (let i = 0; i < SKILL_ORDER.length; i++) {
-                const row = Math.floor(i / 2), col = i % 2;
-                const bx = panelX + col * (btnWidth + gapX);
-                const by = startY + row * (btnHeight + gapY);
-                if (x >= bx && x <= bx + btnWidth && y >= by && y <= by + btnHeight) {
-                    this.selectSkill(2, SKILL_ORDER[i]);
-                    return true;
-                }
-            }
-        }
+        if (checkPanel(this.player1, 20, 'skillTabP1')) return true;
+        if (this.gameMode !== 'com' && checkPanel(this.player2, SCREEN_WIDTH - PANEL_WIDTH + 20, 'skillTabP2')) return true;
 
         return false;
     }

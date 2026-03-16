@@ -1687,19 +1687,79 @@ class Renderer {
                 ctx.textBaseline = 'alphabetic';
             }
         } else {
-            ctx.fillStyle = '#cccccc';
-            ctx.font = '16px "Segoe UI", Arial, sans-serif';
-            ctx.textAlign = 'left';
-            ctx.fillText('Choose your skill:', panelX, 200);
+            const activeTab = player.playerNum === 1 ? (typeof game !== 'undefined' ? game.skillTabP1 : 0) : (typeof game !== 'undefined' ? game.skillTabP2 : 0);
+
+            // Category tabs
+            const tabH = 28, tabGap = 4, tabY = 160;
+            const totalTabW = PANEL_WIDTH - 40;
+            const tabCount = SKILL_CATEGORIES.length;
+            const tabW = (totalTabW - tabGap * (tabCount - 1)) / tabCount;
+
+            for (let t = 0; t < tabCount; t++) {
+                const tx = panelX + t * (tabW + tabGap);
+                const isActive = t === activeTab;
+                const isHovered = typeof game !== 'undefined' && game.hoveredTab === t && game.hoveredTabPanel === player.playerNum;
+
+                ctx.save();
+                if (isActive) {
+                    ctx.fillStyle = '#1a1a3a';
+                    this._menuRoundRect(ctx, tx, tabY, tabW, tabH, 4);
+                    ctx.fill();
+                    ctx.strokeStyle = panelGlow;
+                    ctx.lineWidth = 1.5;
+                    ctx.shadowColor = panelGlow;
+                    ctx.shadowBlur = 4;
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                } else {
+                    ctx.fillStyle = isHovered ? '#151530' : '#0e0e1a';
+                    this._menuRoundRect(ctx, tx, tabY, tabW, tabH, 4);
+                    ctx.fill();
+                    ctx.strokeStyle = isHovered ? '#555' : '#333';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+                ctx.restore();
+
+                // Draw category icon
+                const iconColor = isActive ? '#ffffff' : (isHovered ? '#cccccc' : '#888888');
+                this._drawCategoryIcon(ctx, tx + tabW / 2, tabY + tabH / 2, SKILL_CATEGORIES[t].icon, iconColor);
+            }
+
+            // Tab hover tooltip
+            if (typeof game !== 'undefined' && game.hoveredTab >= 0 && game.hoveredTabPanel === player.playerNum) {
+                const ht = game.hoveredTab;
+                const htx = panelX + ht * (tabW + tabGap) + tabW / 2;
+                const catName = SKILL_CATEGORIES[ht].name;
+                ctx.save();
+                ctx.font = 'bold 12px "Segoe UI", Arial, sans-serif';
+                ctx.textAlign = 'center';
+                const tw = ctx.measureText(catName).width + 12;
+                const tooltipX = htx - tw / 2;
+                const tooltipY = tabY - 24;
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+                this._menuRoundRect(ctx, tooltipX, tooltipY, tw, 20, 4);
+                ctx.fill();
+                ctx.strokeStyle = '#555';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(catName, htx, tooltipY + 14);
+                ctx.restore();
+            }
+
+            // Skills for active category
+            const cat = SKILL_CATEGORIES[activeTab];
+            if (!cat) return;
 
             const btnWidth = 115;
-            const btnHeight = 75;
+            const btnHeight = 90;
             const gapX = 10;
-            const gapY = 6;
-            const startY = 210;
+            const gapY = 8;
+            const startY = 200;
 
-            for (let i = 0; i < SKILL_ORDER.length; i++) {
-                const skill = SKILL_ORDER[i];
+            for (let i = 0; i < cat.skills.length; i++) {
+                const skill = cat.skills[i];
                 const info = SKILL_INFO[skill];
                 const row = Math.floor(i / 2);
                 const col = i % 2;
@@ -1722,25 +1782,87 @@ class Renderer {
 
                 // Skill icon
                 const img = this.skillImages[skill];
-                const iconSize = 36;
+                const iconSize = 42;
                 if (img && img.complete && img.naturalWidth > 0) {
                     ctx.drawImage(img, centerX - iconSize / 2, by + 5, iconSize, iconSize);
                 }
 
                 // Skill name
                 ctx.fillStyle = COLORS.WHITE;
-                ctx.font = 'bold 13px "Segoe UI", Arial, sans-serif';
+                ctx.font = 'bold 14px "Segoe UI", Arial, sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText(info.name, centerX, by + 52);
+                ctx.fillText(info.name, centerX, by + 58);
 
                 // Cost
                 const cost = SKILL_COSTS[info.costKey];
                 ctx.fillStyle = '#FFD700';
-                ctx.font = '12px "Segoe UI", Arial, sans-serif';
-                ctx.fillText(`${cost}pt`, centerX, by + 68);
+                ctx.font = '13px "Segoe UI", Arial, sans-serif';
+                ctx.fillText(`${cost}pt`, centerX, by + 76);
             }
             ctx.textAlign = 'left';
         }
+    }
+
+    // Draw category tab icon
+    _drawCategoryIcon(ctx, cx, cy, iconType, color) {
+        ctx.save();
+        ctx.fillStyle = color;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+
+        switch (iconType) {
+            case 'tile': // Grid/tile square
+                ctx.fillRect(cx - 5, cy - 5, 4, 4);
+                ctx.fillRect(cx + 1, cy - 5, 4, 4);
+                ctx.fillRect(cx - 5, cy + 1, 4, 4);
+                ctx.fillRect(cx + 1, cy + 1, 4, 4);
+                break;
+            case 'move': // Arrow pointing right
+                ctx.beginPath();
+                ctx.moveTo(cx - 6, cy);
+                ctx.lineTo(cx + 3, cy);
+                ctx.moveTo(cx, cy - 4);
+                ctx.lineTo(cx + 5, cy);
+                ctx.lineTo(cx, cy + 4);
+                ctx.stroke();
+                break;
+            case 'assassin': // Crosshair
+                ctx.beginPath();
+                ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - 8);
+                ctx.lineTo(cx, cy + 8);
+                ctx.moveTo(cx - 8, cy);
+                ctx.lineTo(cx + 8, cy);
+                ctx.stroke();
+                break;
+            case 'mind': // Chain link (two interlocking ovals)
+                ctx.beginPath();
+                ctx.ellipse(cx - 2, cy, 4, 6, 0, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.ellipse(cx + 2, cy, 4, 6, 0, 0, Math.PI * 2);
+                ctx.stroke();
+                break;
+            case 'stone': // Hexagon
+                ctx.beginPath();
+                for (let i = 0; i < 6; i++) {
+                    const angle = (Math.PI / 3) * i - Math.PI / 6;
+                    const px = cx + Math.cos(angle) * 7;
+                    const py = cy + Math.sin(angle) * 7;
+                    if (i === 0) ctx.moveTo(px, py);
+                    else ctx.lineTo(px, py);
+                }
+                ctx.closePath();
+                ctx.stroke();
+                break;
+            default:
+                ctx.font = 'bold 14px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('?', cx, cy + 5);
+        }
+        ctx.restore();
     }
 
     // Darken a hex color for neon button backgrounds

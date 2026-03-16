@@ -151,6 +151,15 @@ const SKILL_ORDER = [
     SPECIAL_SKILLS.ELECTROMAGNET
 ];
 
+// Skill categories for selection screen
+const SKILL_CATEGORIES = [
+    { name: 'Tile', icon: 'tile', skills: [SPECIAL_SKILLS.ICE, SPECIAL_SKILLS.SWAMP, SPECIAL_SKILLS.BOMB, SPECIAL_SKILLS.WARP, SPECIAL_SKILLS.CHECKPOINT] },
+    { name: 'Move', icon: 'move', skills: [SPECIAL_SKILLS.MOMONGA, SPECIAL_SKILLS.SURIASHI] },
+    { name: 'Assassin', icon: 'assassin', skills: [SPECIAL_SKILLS.SNIPER, SPECIAL_SKILLS.HITOKIRI] },
+    { name: 'Mind', icon: 'mind', skills: [SPECIAL_SKILLS.DOMINATION] },
+    { name: 'Stone', icon: 'stone', skills: [SPECIAL_SKILLS.KAMAKURA, SPECIAL_SKILLS.ELECTROMAGNET, SPECIAL_SKILLS.METEOR] },
+];
+
 // Skill Costs
 const SKILL_COSTS = {
     bomb: 40,

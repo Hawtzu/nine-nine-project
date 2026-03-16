@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Skill Categorizer</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background: #0a0a14;
+    color: #e0e0e0;
+    font-family: Arial, sans-serif;
+    min-height: 100vh;
+    padding: 20px;
+}
+h1 { text-align: center; color: #00e5ff; margin-bottom: 10px; font-size: 22px; }
+.subtitle { text-align: center; color: #888; margin-bottom: 20px; font-size: 13px; }
+
+/* Source area */
+#source-area {
+    background: #12121e;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 20px;
+    min-height: 80px;
+}
+#source-area h2 { color: #aaa; font-size: 14px; margin-bottom: 10px; }
+#source-skills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 50px;
+}
+
+/* Skill card */
+.skill-card {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #1a1a2e;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: grab;
+    user-select: none;
+    transition: box-shadow 0.15s, transform 0.1s;
+    font-size: 13px;
+}
+.skill-card:hover {
+    box-shadow: 0 0 8px rgba(0, 229, 255, 0.3);
+    transform: translateY(-1px);
+}
+.skill-card.dragging {
+    opacity: 0.4;
+    transform: scale(0.95);
+}
+.skill-card img {
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+}
+.skill-name { font-weight: bold; }
+.skill-cost { color: #ffcc00; font-size: 11px; margin-left: 2px; }
+
+/* Category area */
+#categories-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.category {
+    background: #12121e;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 12px;
+    transition: border-color 0.2s;
+}
+.category.drag-over {
+    border-color: #00e5ff;
+    background: #151528;
+}
+.category-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+.category-name {
+    background: transparent;
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 15px;
+    font-weight: bold;
+    padding: 4px 8px;
+    flex: 1;
+}
+.category-name:focus { border-color: #00e5ff; outline: none; }
+.category-count {
+    color: #888;
+    font-size: 12px;
+    min-width: 20px;
+}
+.btn-remove-cat {
+    background: #3a1a1a;
+    color: #ff6666;
+    border: 1px solid #552222;
+    border-radius: 4px;
+    padding: 3px 8px;
+    cursor: pointer;
+    font-size: 12px;
+}
+.btn-remove-cat:hover { background: #552222; }
+
+.category-skills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 42px;
+    padding: 5px;
+    border: 1px dashed #333;
+    border-radius: 4px;
+}
+.category-skills.empty::after {
+    content: 'ここにスキルをドロップ';
+    color: #555;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
+
+/* Controls */
+#controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+.btn {
+    padding: 8px 16px;
+    border: 1px solid #444;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s;
+}
+.btn-add {
+    background: #1a2a1a;
+    color: #66ff66;
+    border-color: #225522;
+}
+.btn-add:hover { background: #225522; }
+.btn-export {
+    background: #1a1a2a;
+    color: #6699ff;
+    border-color: #223355;
+}
+.btn-export:hover { background: #223355; }
+.btn-reset {
+    background: #2a1a1a;
+    color: #ff8888;
+    border-color: #442222;
+}
+.btn-reset:hover { background: #442222; }
+
+/* Output */
+#output-area {
+    display: none;
+    margin-top: 15px;
+    background: #12121e;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 15px;
+}
+#output-area h3 { color: #6699ff; margin-bottom: 8px; font-size: 14px; }
+#output-text {
+    width: 100%;
+    min-height: 120px;
+    background: #0a0a14;
+    color: #e0e0e0;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 10px;
+    font-family: monospace;
+    font-size: 13px;
+    resize: vertical;
+}
+.btn-copy {
+    background: #1a2a2a;
+    color: #66ffcc;
+    border-color: #225544;
+    margin-top: 8px;
+}
+.btn-copy:hover { background: #225544; }
+</style>
+</head>
+<body>
+
+<h1>Skill Categorizer</h1>
+<p class="subtitle">スキルをドラッグ＆ドロップでカテゴリに分類</p>
+
+<div id="source-area">
+    <h2>未分類スキル</h2>
+    <div id="source-skills"></div>
+</div>
+
+<div id="controls">
+    <button class="btn btn-add" onclick="addCategory()">+ カテゴリ追加</button>
+    <button class="btn btn-export" onclick="exportResult()">テキスト出力</button>
+    <button class="btn btn-reset" onclick="resetAll()">リセット</button>
+</div>
+
+<div id="categories-container"></div>
+
+<div id="output-area">
+    <h3>分類結果</h3>
+    <textarea id="output-text" readonly></textarea>
+    <button class="btn btn-copy" onclick="copyOutput()">コピー</button>
+</div>
+
+<script>
+// Skill data
+const skills = [
+    { id: 'ice', name: 'Ice Tile', cost: 30, image: '../assets/skills/ice tile.png' },
+    { id: 'bomb', name: 'Bomb', cost: 40, image: '../assets/skills/bomb.png' },
+    { id: 'control', name: 'Control', cost: 70, image: '../assets/skills/control.png' },
+    { id: 'sniper', name: 'Sniper', cost: 110, image: '../assets/skills/sniper.png' },
+    { id: 'sneak', name: 'Sneak', cost: 50, image: '../assets/skills/sneak.png' },
+    { id: 'landshark', name: 'Landshark', cost: 70, image: '../assets/skills/landshark.png' },
+    { id: 'meteor', name: 'Meteor Shower', cost: 200, image: '../assets/skills/meteor shower.png' },
+    { id: 'momonga', name: 'Momonga', cost: 60, image: '../assets/skills/momonga.png' },
+    { id: 'swamp', name: 'Swamp', cost: 30, image: '../assets/skills/swamp.png' },
+    { id: 'warp', name: 'Warp Hole', cost: 60, image: '../assets/skills/Warp hole.png' },
+    { id: 'checkpoint', name: 'Check Point', cost: 120, image: '../assets/skills/Check point.png' },
+    { id: 'kamakura', name: 'Kamakura', cost: 50, image: '../assets/skills/Kamakura.png' },
+    { id: 'electromagnet', name: 'Electromagnet', cost: 50, image: '../assets/skills/electromagnet.svg' },
+];
+
+let categoryId = 0;
+let draggedCard = null;
+
+function createSkillCard(skill) {
+    const card = document.createElement('div');
+    card.className = 'skill-card';
+    card.draggable = true;
+    card.dataset.skillId = skill.id;
+    card.innerHTML = `
+        <img src="${skill.image}" alt="${skill.name}">
+        <span class="skill-name">${skill.name}</span>
+        <span class="skill-cost">${skill.cost}pt</span>
+    `;
+
+    card.addEventListener('dragstart', (e) => {
+        draggedCard = card;
+        card.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+    });
+    card.addEventListener('dragend', () => {
+        card.classList.remove('dragging');
+        draggedCard = null;
+        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        updateCounts();
+    });
+
+    return card;
+}
+
+function setupDropZone(el) {
+    el.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const target = el.closest('.category') || el.closest('#source-area');
+        if (target) target.classList.add('drag-over');
+    });
+    el.addEventListener('dragleave', (e) => {
+        const target = el.closest('.category') || el.closest('#source-area');
+        if (target && !target.contains(e.relatedTarget)) {
+            target.classList.remove('drag-over');
+        }
+    });
+    el.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const target = el.closest('.category') || el.closest('#source-area');
+        if (target) target.classList.remove('drag-over');
+        if (draggedCard) {
+            const dropTarget = el.classList.contains('category-skills') ? el : el.querySelector('.category-skills, #source-skills');
+            if (dropTarget) {
+                dropTarget.appendChild(draggedCard);
+                updateCounts();
+            }
+        }
+    });
+}
+
+function addCategory(name) {
+    const id = ++categoryId;
+    const cat = document.createElement('div');
+    cat.className = 'category';
+    cat.id = `cat-${id}`;
+    cat.innerHTML = `
+        <div class="category-header">
+            <input class="category-name" type="text" value="${name || 'カテゴリ ' + id}" placeholder="カテゴリ名">
+            <span class="category-count">0</span>
+            <button class="btn-remove-cat" onclick="removeCategory('cat-${id}')">削除</button>
+        </div>
+        <div class="category-skills empty"></div>
+    `;
+
+    const skillsZone = cat.querySelector('.category-skills');
+    setupDropZone(skillsZone);
+    setupDropZone(cat);
+
+    document.getElementById('categories-container').appendChild(cat);
+}
+
+function removeCategory(catId) {
+    const cat = document.getElementById(catId);
+    if (!cat) return;
+    // Move skills back to source
+    const cards = cat.querySelectorAll('.skill-card');
+    const source = document.getElementById('source-skills');
+    cards.forEach(card => source.appendChild(card));
+    cat.remove();
+    updateCounts();
+}
+
+function updateCounts() {
+    document.querySelectorAll('.category').forEach(cat => {
+        const count = cat.querySelectorAll('.skill-card').length;
+        cat.querySelector('.category-count').textContent = count;
+        const zone = cat.querySelector('.category-skills');
+        if (count === 0) zone.classList.add('empty');
+        else zone.classList.remove('empty');
+    });
+}
+
+function exportResult() {
+    let output = '';
+    const categories = document.querySelectorAll('.category');
+    categories.forEach(cat => {
+        const name = cat.querySelector('.category-name').value || '(名前なし)';
+        const cards = cat.querySelectorAll('.skill-card');
+        if (cards.length === 0) return;
+        output += `【${name}】\n`;
+        cards.forEach(card => {
+            const skillName = card.querySelector('.skill-name').textContent;
+            const skillCost = card.querySelector('.skill-cost').textContent;
+            output += `  - ${skillName} (${skillCost})\n`;
+        });
+        output += '\n';
+    });
+
+    // Uncategorized
+    const sourceCards = document.getElementById('source-skills').querySelectorAll('.skill-card');
+    if (sourceCards.length > 0) {
+        output += `【未分類】\n`;
+        sourceCards.forEach(card => {
+            const skillName = card.querySelector('.skill-name').textContent;
+            const skillCost = card.querySelector('.skill-cost').textContent;
+            output += `  - ${skillName} (${skillCost})\n`;
+        });
+    }
+
+    document.getElementById('output-text').value = output.trim();
+    document.getElementById('output-area').style.display = 'block';
+}
+
+function copyOutput() {
+    const text = document.getElementById('output-text');
+    text.select();
+    document.execCommand('copy');
+    const btn = document.querySelector('.btn-copy');
+    btn.textContent = 'コピーしました!';
+    setTimeout(() => btn.textContent = 'コピー', 1500);
+}
+
+function resetAll() {
+    const source = document.getElementById('source-skills');
+    document.querySelectorAll('.category .skill-card').forEach(card => {
+        source.appendChild(card);
+    });
+    document.getElementById('categories-container').innerHTML = '';
+    document.getElementById('output-area').style.display = 'none';
+    categoryId = 0;
+}
+
+// Initialize
+const sourceEl = document.getElementById('source-skills');
+skills.forEach(skill => {
+    sourceEl.appendChild(createSkillCard(skill));
+});
+setupDropZone(document.getElementById('source-area'));
+setupDropZone(sourceEl);
+</script>
+</body>
+</html>

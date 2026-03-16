@@ -195,10 +195,8 @@ class Game {
 
     // Apply online dice result from server
     applyOnlineDice(value, nextValue) {
-        const currentPlayer = this.getCurrentPlayer();
-        // Override the dice queue so the next shift returns the server value
-        currentPlayer.diceQueue[0] = value;
-        // Use server-provided nextValue instead of local random
+        // Queue is already synced — just provide the server's nextValue
+        // so both clients push the same value to the end of the queue
         this._onlineNextValue = nextValue;
         this.rollDice();
         this._onlineNextValue = null;

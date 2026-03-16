@@ -2732,7 +2732,7 @@ class Renderer {
         }
     }
 
-    // "YOUR TURN" テキストを画面中央に表示
+    // "READY" テキストを画面中央に表示
     drawStartYourTurnText(alpha) {
         const ctx = this.ctx;
         ctx.save();
@@ -2743,7 +2743,7 @@ class Renderer {
         ctx.textBaseline = 'middle';
         ctx.shadowColor = NEON.COLOR;
         ctx.shadowBlur = 20;
-        ctx.fillText('YOUR TURN', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+        ctx.fillText('READY', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
         ctx.restore();
     }
 
@@ -2762,7 +2762,7 @@ class Renderer {
         ctx.save();
 
         if (t < 0.1) {
-            // 中央で揺れる YOUR TURN
+            // 中央で揺れる READY
             const wobble = Math.sin(now * 0.015) * 2;
             ctx.globalAlpha = 1;
             ctx.fillStyle = COLORS.WHITE;
@@ -2771,7 +2771,7 @@ class Renderer {
             ctx.textBaseline = 'middle';
             ctx.shadowColor = NEON.COLOR;
             ctx.shadowBlur = 20;
-            ctx.fillText('YOUR TURN', startX + wobble, startY);
+            ctx.fillText('READY', startX + wobble, startY);
         }
         else if (t < 0.7) {
             const ft = (t - 0.1) / 0.6;
@@ -2809,7 +2809,9 @@ class Renderer {
                 ctx.textBaseline = 'middle';
                 ctx.shadowColor = NEON.COLOR;
                 ctx.shadowBlur = 15 * (1 - st);
-                ctx.fillText('YOUR TURN', 0, -(stripH * i - textHeight / 2 + stripH / 2));
+                // READY → YOUR TURN へテキスト切り替え（進行度 0.4 で切り替わる）
+                const stripText = st < 0.4 ? 'READY' : 'YOUR TURN';
+                ctx.fillText(stripText, 0, -(stripH * i - textHeight / 2 + stripH / 2));
                 ctx.restore();
             }
 

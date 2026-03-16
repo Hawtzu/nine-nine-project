@@ -252,9 +252,9 @@ function gameLoop(timestamp) {
 //  Phase 2 (0.15-0.35): タイトルフェード + パネルスライドイン
 //  Phase 3 (0.35-0.5):  グリッド線を1本ずつ描画
 //  Phase 4 (0.5-0.6):   ネオンボーダー点灯
-//  Phase 5 (0.6-0.7):   プレイヤー出現 + "YOUR TURN" テキスト
+//  Phase 5 (0.6-0.7):   プレイヤー出現 + "READY" テキスト
 //  Phase 6 (0.7-0.85):  タイル（石・ファウンテン）が光りながら出現
-//  Phase 7 (0.85-1.0):  "YOUR TURN" 布フロー → 選ばれたプレイヤーのパネルへ
+//  Phase 7 (0.85-1.0):  "READY" → "YOUR TURN" 布フロー → 選ばれたプレイヤーのパネルへ
 // ============================================================
 function renderStartAnimation(now) {
     const elapsed = now - game.startAnimStart;
@@ -322,7 +322,7 @@ function renderStartAnimation(now) {
             renderer.drawPlayer(game.player2, null, now);
             renderer.ctx.restore();
         }
-        // YOUR TURN テキスト（中央）
+        // READY テキスト（中央）
         if (tt > 0.3) {
             renderer.drawStartYourTurnText(Math.min((tt - 0.3) / 0.4, 1));
         }
@@ -340,14 +340,14 @@ function renderStartAnimation(now) {
         renderer.drawBorderSparks(now);
         renderer.drawPlayer(game.player1, null, now);
         renderer.drawPlayer(game.player2, null, now);
-        // YOUR TURN テキストフェードアウト
+        // READY テキストフェードアウト
         if (tt < 0.3) {
             renderer.drawStartYourTurnText(1 - tt / 0.3);
         }
         return;
     }
 
-    // Phase 7 (0.85-1.0): YOUR TURN 布フロー
+    // Phase 7 (0.85-1.0): READY → YOUR TURN 布フロー
     const ct = (t - 0.85) / 0.15;
     renderer.clear();
     renderer.drawNeonBorderBackground();

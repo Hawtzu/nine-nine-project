@@ -1466,8 +1466,8 @@ class Game {
             return true;
         }
 
-        // Next / Close button
-        if (x >= px + panelW - 100 && x <= px + panelW - 20 && y >= navY && y <= navY + 36) {
+        // Next / Close button (left side)
+        if (x >= px + panelW - 190 && x <= px + panelW - 110 && y >= navY && y <= navY + 36) {
             if (typeof tutorial !== 'undefined') {
                 if (tutorial.isLastSlide()) {
                     this.phase = PHASES.START_SCREEN;
@@ -1478,8 +1478,8 @@ class Game {
             return true;
         }
 
-        // Skip button
-        if (x >= px + panelW - 190 && x <= px + panelW - 110 && y >= navY && y <= navY + 36) {
+        // Skip button (right side)
+        if (x >= px + panelW - 100 && x <= px + panelW - 20 && y >= navY && y <= navY + 36) {
             this.phase = PHASES.START_SCREEN;
             return true;
         }

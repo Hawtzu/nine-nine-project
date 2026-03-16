@@ -1309,12 +1309,12 @@ class Renderer {
             this.ctx.fill();
         }
 
-        // Next / Close button
+        // Next / Close button (left side)
         const nextLabel = tutorial.isLastSlide() ? 'Close' : 'Next >';
-        this.drawSmallButton(px + panelW - 100, navY, 80, 36, '#1a1a3e', nextLabel);
+        this.drawSmallButton(px + panelW - 190, navY, 80, 36, '#1a1a3e', nextLabel);
 
-        // Skip button
-        this.drawSmallButton(px + panelW - 190, navY, 80, 36, '#3a0a0a', 'Skip \u00D7');
+        // Skip button (right side)
+        this.drawSmallButton(px + panelW - 100, navY, 80, 36, '#3a0a0a', 'Skip \u00D7');
     }
 
     // --- Game Over ---

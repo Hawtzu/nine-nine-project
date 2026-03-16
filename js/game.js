@@ -97,7 +97,9 @@ class Game {
                 // Dice value comes from server via dice_result event
                 break;
             case 'stock_dice':
+                if (data.nextValue != null) this._onlineNextValue = data.nextValue;
                 this.stockCurrentDice();
+                this._onlineNextValue = null;
                 break;
             case 'use_stock':
                 this.useStockedDice();
@@ -192,11 +194,14 @@ class Game {
     }
 
     // Apply online dice result from server
-    applyOnlineDice(value) {
+    applyOnlineDice(value, nextValue) {
         const currentPlayer = this.getCurrentPlayer();
         // Override the dice queue so the next shift returns the server value
         currentPlayer.diceQueue[0] = value;
+        // Use server-provided nextValue instead of local random
+        this._onlineNextValue = nextValue;
         this.rollDice();
+        this._onlineNextValue = null;
     }
 
     // Send board setup to opponent (host only)
@@ -480,7 +485,9 @@ class Game {
         this.moveMode = DIRECTION_TYPE.CROSS;
         const currentPlayer = this.getCurrentPlayer();
         const oldQueue = [...currentPlayer.diceQueue];
-        this.diceRoll = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
+        this.diceRoll = currentPlayer.shiftDiceQueue(() =>
+            this._onlineNextValue != null ? this._onlineNextValue : this.generateDiceValue()
+        );
         if (typeof animManager !== 'undefined' && animManager) {
             animManager.startDiceTransition(currentPlayer.playerNum, 'roll', {
                 oldQueue: oldQueue,
@@ -503,7 +510,9 @@ class Game {
         }
         const oldQueue = [...currentPlayer.diceQueue];
         currentPlayer.deductPoints(SKILL_COSTS.stock);
-        const diceValue = currentPlayer.shiftDiceQueue(() => this.generateDiceValue());
+        const diceValue = currentPlayer.shiftDiceQueue(() =>
+            this._onlineNextValue != null ? this._onlineNextValue : this.generateDiceValue()
+        );
         currentPlayer.stockDice(diceValue);
         this.stockedThisTurn = true;
         if (typeof gameLog !== 'undefined') gameLog.log('stock', { player: this.currentTurn, storedDice: diceValue });
@@ -1984,7 +1993,7 @@ class Game {
 
         // Server dice result
         onlineManager.onDiceResult = (data) => {
-            this.applyOnlineDice(data.value);
+            this.applyOnlineDice(data.value, data.nextValue);
         };
 
         // Opponent game action
@@ -2076,7 +2085,9 @@ class Game {
             if (x >= panelX && x <= panelX + 200 && y >= 443 && y <= 493) {
                 if (!currentPlayer.canAfford(SKILL_COSTS.stock)) return false;
                 this.stockCurrentDice();
-                this._sendOnlineAction({ type: 'stock_dice' });
+                // Send the NEXT value that was generated locally so opponent uses the same
+                const lastNext = currentPlayer.diceQueue[currentPlayer.diceQueue.length - 1];
+                this._sendOnlineAction({ type: 'stock_dice', nextValue: lastNext });
                 return true;
             }
         }

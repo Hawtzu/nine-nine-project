@@ -121,7 +121,8 @@ io.on('connection', (socket) => {
         if (playerNum !== room.currentTurn) return;
 
         const value = Math.floor(Math.random() * 3) + 1;
-        io.to(room.id).emit('dice_result', { playerNum, value });
+        const nextValue = Math.floor(Math.random() * 3) + 1;
+        io.to(room.id).emit('dice_result', { playerNum, value, nextValue });
     });
 
     // Disconnect

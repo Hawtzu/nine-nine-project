@@ -124,12 +124,27 @@ class Game {
         }
         // Queue actions that arrive during animation (endTurn not yet called)
         const isAnimating = this.phase === PHASES.ANIMATING ||
+            this.phase === PHASES.START_ANIM ||
             this.bombAnimating || this.fallAnimating ||
             this.controlAnimating || this.sniperAnimating;
         if (isAnimating) {
             if (!this._onlineActionQueue) this._onlineActionQueue = [];
             console.log('[Online] Queuing action during animation:', data.type);
             this._onlineActionQueue.push(data);
+            // Set up a retry timer to flush the queue once animation ends
+            if (!this._flushRetryTimer) {
+                this._flushRetryTimer = setInterval(() => {
+                    const stillAnimating = this.phase === PHASES.ANIMATING ||
+                        this.phase === PHASES.START_ANIM ||
+                        this.bombAnimating || this.fallAnimating ||
+                        this.controlAnimating || this.sniperAnimating;
+                    if (!stillAnimating) {
+                        clearInterval(this._flushRetryTimer);
+                        this._flushRetryTimer = null;
+                        this._flushOnlineActionQueue();
+                    }
+                }, 200);
+            }
             return;
         }
         switch (data.type) {
@@ -828,6 +843,11 @@ class Game {
         this.placementType = 'stone';
         this.clearHighlights();
         this.findPlaceableTiles();
+
+        // Flush any queued online actions that arrived during animation
+        if (this.gameMode === 'online') {
+            this._flushOnlineActionQueue();
+        }
 
         // Trigger COM place decision
         if (this.gameMode === 'com' && this.currentTurn === 2 && !this.winner) {

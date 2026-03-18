@@ -38,7 +38,9 @@ const httpServer = http.createServer((req, res) => {
 
 // Socket.io server
 const io = new Server(httpServer, {
-    cors: { origin: '*' }
+    cors: { origin: '*' },
+    pingInterval: 10000,  // ping every 10s (keep connection alive on Render)
+    pingTimeout: 15000    // disconnect if no pong within 15s
 });
 
 const roomManager = new RoomManager();

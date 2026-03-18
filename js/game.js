@@ -253,6 +253,9 @@ class Game {
             case SPECIAL_SKILLS.MOMONGA:
                 this.executeMomonga(row, col);
                 break;
+            case SPECIAL_SKILLS.SURIASHI:
+                this.executeSuriashi(row, col);
+                break;
             case SPECIAL_SKILLS.KAMAKURA:
                 this.executeKamakura(row, col);
                 break;

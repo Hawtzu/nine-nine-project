@@ -97,6 +97,17 @@ class Game {
         onlineManager.sendAction(action);
     }
 
+    // Flush queued online actions (called after animation completes)
+    _flushOnlineActionQueue() {
+        if (!this._onlineActionQueue || this._onlineActionQueue.length === 0) return;
+        const queue = this._onlineActionQueue;
+        this._onlineActionQueue = [];
+        for (const action of queue) {
+            console.log('[Online] Replaying queued action:', action.type);
+            this.applyOnlineAction(action);
+        }
+    }
+
     // Apply an action received from the opponent
     applyOnlineAction(data) {
         // Detect duplicate/out-of-order actions
@@ -110,6 +121,13 @@ class Game {
                 console.warn('[Online] Gap detected: expected', this._lastReceivedSeq + 1, 'got', data.seq);
             }
             this._lastReceivedSeq = data.seq;
+        }
+        // Queue actions that arrive during animation (endTurn not yet called)
+        if (this.phase === PHASES.ANIMATING) {
+            if (!this._onlineActionQueue) this._onlineActionQueue = [];
+            console.log('[Online] Queuing action during animation:', data.type);
+            this._onlineActionQueue.push(data);
+            return;
         }
         switch (data.type) {
             case 'roll_dice':
@@ -1392,6 +1410,11 @@ class Game {
         // Trigger COM turn
         if (this.gameMode === 'com' && this.currentTurn === 2 && !this.winner) {
             comPlayer.startTurn();
+        }
+
+        // Flush any queued online actions that arrived during animation
+        if (this.gameMode === 'online') {
+            this._flushOnlineActionQueue();
         }
     }
 

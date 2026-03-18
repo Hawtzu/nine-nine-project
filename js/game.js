@@ -763,6 +763,7 @@ class Game {
                 this.bombAnimPlayerNum = currentPlayer.playerNum;
                 this.bombAnimPos = { row, col };
                 this.bombAnimInitialized = false;
+                this.phase = PHASES.ANIMATING;
                 return;
             }
             this.board.setTile(row, col, MARKERS.EMPTY);

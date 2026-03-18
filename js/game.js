@@ -244,12 +244,6 @@ class Game {
     // Execute a skill target action (used by both local and online)
     executeSkillTarget(row, col) {
         switch (this.activeSkillType) {
-            case SPECIAL_SKILLS.SNIPER:
-                this.executeSniper();
-                break;
-            case SPECIAL_SKILLS.HITOKIRI:
-                this.executeHitokiri(row, col);
-                break;
             case SPECIAL_SKILLS.MOMONGA:
                 this.executeMomonga(row, col);
                 break;
@@ -260,7 +254,10 @@ class Game {
                 this.executeKamakura(row, col);
                 break;
             case SPECIAL_SKILLS.METEOR:
-                this.executeMeteor();
+                this.executeMeteor(row, col);
+                break;
+            default:
+                console.warn('[executeSkillTarget] Unhandled skill type:', this.activeSkillType);
                 break;
         }
     }

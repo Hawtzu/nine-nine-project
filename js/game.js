@@ -97,17 +97,6 @@ class Game {
         onlineManager.sendAction(action);
     }
 
-    // Flush queued online actions (called after animation completes)
-    _flushOnlineActionQueue() {
-        if (!this._onlineActionQueue || this._onlineActionQueue.length === 0) return;
-        const queue = this._onlineActionQueue;
-        this._onlineActionQueue = [];
-        for (const action of queue) {
-            console.log('[Online] Replaying queued action:', action.type);
-            this.applyOnlineAction(action);
-        }
-    }
-
     // Apply an action received from the opponent
     applyOnlineAction(data) {
         // Detect duplicate/out-of-order actions
@@ -122,30 +111,24 @@ class Game {
             }
             this._lastReceivedSeq = data.seq;
         }
-        // Queue actions that arrive during animation (endTurn not yet called)
-        const isAnimating = this.phase === PHASES.ANIMATING ||
-            this.phase === PHASES.START_ANIM ||
-            this.bombAnimating || this.fallAnimating ||
-            this.controlAnimating || this.sniperAnimating;
-        if (isAnimating) {
-            if (!this._onlineActionQueue) this._onlineActionQueue = [];
-            console.log('[Online] Queuing action during animation:', data.type);
-            this._onlineActionQueue.push(data);
-            // Set up a retry timer to flush the queue once animation ends
-            if (!this._flushRetryTimer) {
-                this._flushRetryTimer = setInterval(() => {
-                    const stillAnimating = this.phase === PHASES.ANIMATING ||
-                        this.phase === PHASES.START_ANIM ||
-                        this.bombAnimating || this.fallAnimating ||
-                        this.controlAnimating || this.sniperAnimating;
-                    if (!stillAnimating) {
-                        clearInterval(this._flushRetryTimer);
-                        this._flushRetryTimer = null;
-                        this._flushOnlineActionQueue();
+        // If animating, skip animation immediately so action can be processed
+        if (this.phase === PHASES.ANIMATING || this.phase === PHASES.START_ANIM) {
+            if (this.phase === PHASES.START_ANIM) {
+                this.finishStartAnim();
+            } else if (typeof animManager !== 'undefined') {
+                // Force-complete any active player animations
+                for (const pNum of [1, 2]) {
+                    const anim = animManager.playerAnims[pNum];
+                    if (anim && anim.active) {
+                        anim.active = false;
+                        if (anim.onComplete) {
+                            const cb = anim.onComplete;
+                            anim.onComplete = null;
+                            cb();
+                        }
                     }
-                }, 200);
+                }
             }
-            return;
         }
         switch (data.type) {
             case 'roll_dice':
@@ -844,11 +827,6 @@ class Game {
         this.clearHighlights();
         this.findPlaceableTiles();
 
-        // Flush any queued online actions that arrived during animation
-        if (this.gameMode === 'online') {
-            this._flushOnlineActionQueue();
-        }
-
         // Trigger COM place decision
         if (this.gameMode === 'com' && this.currentTurn === 2 && !this.winner) {
             comPlayer.executeAfterDelay(() => comPlayer.decidePlacePhase(), 'PLACE');
@@ -1436,10 +1414,6 @@ class Game {
             comPlayer.startTurn();
         }
 
-        // Flush any queued online actions that arrived during animation
-        if (this.gameMode === 'online') {
-            this._flushOnlineActionQueue();
-        }
     }
 
     getOtherWarpHoles(currentRow, currentCol) {

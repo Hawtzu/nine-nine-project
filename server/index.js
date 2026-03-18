@@ -51,7 +51,7 @@ io.on('connection', (socket) => {
         const room = roomManager.createRoom(socket.id);
         socket.join(room.id);
         console.log(`[Room] ${socket.id} created room ${room.id}`);
-        callback({ roomId: room.id, playerNum: 1 });
+        callback({ roomId: room.id, playerNum: 1, roomSecret: room.roomSecret });
     });
 
     // Join an existing room
@@ -63,12 +63,13 @@ io.on('connection', (socket) => {
         }
         socket.join(roomId);
         console.log(`[Room] ${socket.id} joined room ${roomId}`);
-        callback({ roomId, playerNum: result.playerNum });
+        const room = roomManager.getRoom(roomId);
+        callback({ roomId, playerNum: result.playerNum, roomSecret: room.roomSecret });
 
         // Notify both players that the room is full and game can start
         io.to(roomId).emit('room_ready', {
             roomId,
-            players: roomManager.getRoom(roomId).players
+            players: room.players
         });
     });
 
@@ -103,6 +104,15 @@ io.on('connection', (socket) => {
             return;
         }
 
+        // Reject duplicate turn-ending actions (prevents double-click race)
+        if (data.endsTurn && data.seq) {
+            if (data.seq <= room.lastActionSeq[playerNum]) {
+                socket.emit('action_rejected', { reason: 'Duplicate action' });
+                return;
+            }
+            room.lastActionSeq[playerNum] = data.seq;
+        }
+
         // Forward to opponent
         socket.to(room.id).emit('opponent_action', data);
 
@@ -127,18 +137,63 @@ io.on('connection', (socket) => {
         }
 
         const queue = data && data.queue ? data.queue : [1, 1, 1];
+        const nonce = data && data.nonce ? data.nonce : null;
         const value = queue[0]; // Use client's current dice (what they see as CURRENT)
         const nextValue = Math.floor(Math.random() * 3) + 1;
-        io.to(room.id).emit('dice_result', { playerNum, value, nextValue, queue });
+        io.to(room.id).emit('dice_result', { playerNum, value, nextValue, queue, nonce });
     });
 
-    // Disconnect
+    // Rejoin a room after reconnection
+    socket.on('rejoin_room', (data, callback) => {
+        if (!data || !data.roomId || !data.playerNum || !data.roomSecret) {
+            callback({ error: 'Invalid rejoin data' });
+            return;
+        }
+        const room = roomManager.getRoom(data.roomId);
+        if (!room) {
+            callback({ error: 'Room no longer exists' });
+            return;
+        }
+        if (room.roomSecret !== data.roomSecret) {
+            callback({ error: 'Invalid room secret' });
+            return;
+        }
+        // Cancel the grace period timer
+        if (room.disconnectTimers[data.playerNum]) {
+            clearTimeout(room.disconnectTimers[data.playerNum]);
+            delete room.disconnectTimers[data.playerNum];
+        }
+        // Replace the old socket with the new one
+        const oldSocketId = room.players[data.playerNum - 1];
+        room.replacePlayer(data.playerNum, socket.id);
+        roomManager.socketToRoom.delete(oldSocketId);
+        roomManager.socketToRoom.set(socket.id, room.id);
+        socket.join(room.id);
+        console.log(`[Rejoin] P${data.playerNum} rejoined room ${room.id} (${socket.id})`);
+        // Notify opponent
+        socket.to(room.id).emit('opponent_reconnected');
+        callback({ success: true, currentTurn: room.currentTurn });
+    });
+
+    // Disconnect — grace period before destroying room
     socket.on('disconnect', () => {
         console.log(`[Disconnect] ${socket.id}`);
         const room = roomManager.getRoomBySocket(socket.id);
         if (room) {
-            socket.to(room.id).emit('opponent_disconnected');
-            roomManager.removeRoom(room.id);
+            const playerNum = room.getPlayerNum(socket.id);
+            // Notify opponent about connection loss
+            socket.to(room.id).emit('opponent_connection_lost');
+            // Start 30-second grace period
+            room.disconnectTimers[playerNum] = setTimeout(() => {
+                console.log(`[Timeout] P${playerNum} did not rejoin room ${room.id}, destroying`);
+                // Notify remaining player
+                const remainingSocketIdx = playerNum === 1 ? 1 : 0;
+                const remainingSocketId = room.players[remainingSocketIdx];
+                if (remainingSocketId) {
+                    io.to(remainingSocketId).emit('opponent_disconnected');
+                }
+                roomManager.removeRoom(room.id);
+            }, 30000);
         }
     });
 });

@@ -15,6 +15,9 @@ class Room {
         this.id = id;
         this.players = [hostSocketId, null]; // [player1, player2]
         this.currentTurn = 1; // player 1 starts
+        this.lastActionSeq = { 1: 0, 2: 0 }; // per-player action seq tracking
+        this.roomSecret = Math.random().toString(36).substr(2, 12); // for rejoin auth
+        this.disconnectTimers = {}; // playerNum -> setTimeout handle
     }
 
     isFull() {
@@ -37,6 +40,10 @@ class Room {
 
     hasPlayer(socketId) {
         return this.players.includes(socketId);
+    }
+
+    replacePlayer(playerNum, newSocketId) {
+        this.players[playerNum - 1] = newSocketId;
     }
 }
 

@@ -765,6 +765,13 @@ function render(now) {
                 renderer.drawTurnBanner(game.turnBannerText, bannerElapsed);
             }
         }
+
+        // Draw reconnection overlay
+        if (game._opponentReconnecting) {
+            renderer.drawReconnectingOverlay('Opponent reconnecting...');
+        } else if (onlineManager.reconnecting) {
+            renderer.drawReconnectingOverlay('Reconnecting...');
+        }
     }
 
     // Draw confirm dialog overlay (on top of everything)

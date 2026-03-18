@@ -92,11 +92,25 @@ class Game {
     _sendOnlineAction(action) {
         if (this.gameMode !== 'online') return;
         if (typeof onlineManager === 'undefined') return;
+        if (!this._actionSeq) this._actionSeq = 0;
+        action.seq = ++this._actionSeq;
         onlineManager.sendAction(action);
     }
 
     // Apply an action received from the opponent
     applyOnlineAction(data) {
+        // Detect duplicate/out-of-order actions
+        if (!this._lastReceivedSeq) this._lastReceivedSeq = 0;
+        if (data.seq) {
+            if (data.seq <= this._lastReceivedSeq) {
+                console.warn('[Online] Ignoring duplicate action seq:', data.seq);
+                return;
+            }
+            if (data.seq > this._lastReceivedSeq + 1) {
+                console.warn('[Online] Gap detected: expected', this._lastReceivedSeq + 1, 'got', data.seq);
+            }
+            this._lastReceivedSeq = data.seq;
+        }
         switch (data.type) {
             case 'roll_dice':
                 // Dice value comes from server via dice_result event
@@ -236,6 +250,12 @@ class Game {
             clearTimeout(this._diceTimeout);
             this._diceTimeout = null;
         }
+        // Ignore stale/duplicate dice results via nonce check
+        if (this.isLocalPlayerTurn() && data.nonce && data.nonce !== this._pendingDiceNonce) {
+            console.warn('[Online] Ignoring stale dice result (nonce mismatch)');
+            return;
+        }
+        this._pendingDiceNonce = null;
         const currentPlayer = this.getCurrentPlayer();
         // Sync queue from the rolling player's state to prevent desync
         if (data.queue && data.queue.length === 3) {
@@ -2067,15 +2087,36 @@ class Game {
             this.applyOnlineAction(data);
         };
 
-        // Opponent disconnected
-        onlineManager.onOpponentDisconnected = () => {
+        // Opponent's connection was lost (grace period started, may rejoin)
+        onlineManager.onOpponentConnectionLost = () => {
             if (this.phase === PHASES.ONLINE_LOBBY || this.phase === PHASES.SKILL_SELECTION) {
-                // Not yet in game — go to lobby error
+                this.onlineStatusMsg = 'Opponent connection lost...';
+            } else {
+                this._opponentReconnecting = true;
+            }
+        };
+
+        // Opponent reconnected after connection loss
+        onlineManager.onOpponentReconnected = () => {
+            this._opponentReconnecting = false;
+            if (this.phase === PHASES.ONLINE_LOBBY) {
+                this.onlineStatusMsg = '';
+            }
+        };
+
+        // Self reconnected after connection loss
+        onlineManager.onReconnected = () => {
+            this._selfReconnecting = false;
+        };
+
+        // Opponent disconnected permanently (grace period expired)
+        onlineManager.onOpponentDisconnected = () => {
+            this._opponentReconnecting = false;
+            if (this.phase === PHASES.ONLINE_LOBBY || this.phase === PHASES.SKILL_SELECTION) {
                 this.onlineStatusMsg = 'Opponent disconnected';
                 this.onlineLobbyMode = 'error';
                 this.phase = PHASES.ONLINE_LOBBY;
             } else {
-                // Mid-game — show overlay dialog
                 this.showConfirmDialog = 'opponent_disconnected';
             }
             onlineManager.disconnect();
@@ -2112,14 +2153,16 @@ class Game {
     _doRoll() {
         if (this.isOnlineMode()) {
             const currentPlayer = this.getCurrentPlayer();
-            onlineManager.requestDice([...currentPlayer.diceQueue]);
-            // Dice result will arrive via dice_result event → applyOnlineDice()
-            // Safety timeout: if server doesn't respond, retry request
+            // Generate nonce to prevent duplicate dice processing
+            this._pendingDiceNonce = Date.now() + '_' + Math.random();
+            onlineManager.requestDice([...currentPlayer.diceQueue], this._pendingDiceNonce);
+            // Safety timeout: if server doesn't respond, retry with NEW nonce
             if (this._diceTimeout) clearTimeout(this._diceTimeout);
             this._diceTimeout = setTimeout(() => {
                 if (this.phase === PHASES.ROLL) {
                     console.warn('[Online] Dice request timeout, retrying...');
-                    onlineManager.requestDice([...this.getCurrentPlayer().diceQueue]);
+                    this._pendingDiceNonce = Date.now() + '_' + Math.random();
+                    onlineManager.requestDice([...this.getCurrentPlayer().diceQueue], this._pendingDiceNonce);
                 }
             }, 3000);
         } else {

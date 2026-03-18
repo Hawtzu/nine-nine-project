@@ -2597,6 +2597,33 @@ class Renderer {
         this.drawButton(btnX, btnY, btnW, btnH, '#333366', 'OK');
     }
 
+    // Reconnecting overlay (semi-transparent banner)
+    drawReconnectingOverlay(message) {
+        const ctx = this.ctx;
+        // Semi-transparent overlay
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+        // Banner in center
+        const bw = 350, bh = 60;
+        const bx = (SCREEN_WIDTH - bw) / 2;
+        const by = (SCREEN_HEIGHT - bh) / 2;
+
+        ctx.fillStyle = 'rgba(20, 20, 50, 0.9)';
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeStyle = '#ffaa00';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(bx, by, bw, bh);
+
+        // Animated dots
+        const dots = '.'.repeat(Math.floor((performance.now() / 500) % 4));
+        ctx.fillStyle = '#ffaa00';
+        ctx.font = 'bold 18px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(message + dots, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+    }
+
     // ─── Replay: Playback Controls ────────────────────────────
 
     drawReplayControls(currentIndex, totalSnapshots, actions, gameInfo, snapshot, mouseY, skillCosts) {

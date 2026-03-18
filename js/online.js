@@ -5,7 +5,9 @@ class OnlineManager {
         this.socket = null;
         this.roomId = null;
         this.playerNum = null;  // 1 or 2
+        this.roomSecret = null; // for rejoin auth
         this.connected = false;
+        this.reconnecting = false; // true while attempting auto-rejoin
         this.state = 'idle'; // idle, connecting, in_lobby, waiting, in_game
         this.error = null;
         this.serverUrl = null;
@@ -29,24 +31,33 @@ class OnlineManager {
 
             this.socket = io(serverUrl, {
                 transports: ['websocket', 'polling'],
-                timeout: 10000
+                timeout: 10000,
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000
             });
 
             this.socket.on('connect', () => {
                 console.log('[Online] Connected:', this.socket.id);
                 this.connected = true;
-                // Preserve 'in_game' state on reconnect
-                if (this.state !== 'in_game') {
+                this.error = null;
+
+                // Auto-rejoin if we were in a game
+                if (this.state === 'in_game' && this.roomId && this.roomSecret) {
+                    this._attemptRejoin();
+                } else if (this.state !== 'in_game') {
                     this.state = 'in_lobby';
                 }
-                this.error = null;
                 resolve();
             });
 
             this.socket.on('connect_error', (err) => {
                 console.error('[Online] Connection error:', err.message);
-                this.error = 'Could not connect to server';
-                this.state = 'idle';
+                if (this.state !== 'in_game') {
+                    this.error = 'Could not connect to server';
+                    this.state = 'idle';
+                }
                 this.connected = false;
                 reject(err);
             });
@@ -55,11 +66,35 @@ class OnlineManager {
                 console.log('[Online] Disconnected:', reason);
                 this.connected = false;
                 if (this.state === 'in_game') {
-                    this.error = 'Disconnected from server';
+                    this.reconnecting = true;
+                    this.error = 'Reconnecting...';
                 }
             });
 
             this._setupGameEvents();
+        });
+    }
+
+    // Attempt to rejoin room after reconnection
+    _attemptRejoin() {
+        this.reconnecting = true;
+        console.log('[Online] Attempting rejoin room:', this.roomId);
+        this.socket.emit('rejoin_room', {
+            roomId: this.roomId,
+            playerNum: this.playerNum,
+            roomSecret: this.roomSecret
+        }, (response) => {
+            this.reconnecting = false;
+            if (response.error) {
+                console.error('[Online] Rejoin failed:', response.error);
+                this.error = 'Could not rejoin game';
+                this.state = 'idle';
+                if (this.onOpponentDisconnected) this.onOpponentDisconnected();
+            } else {
+                console.log('[Online] Rejoined successfully');
+                this.error = null;
+                if (this.onReconnected) this.onReconnected();
+            }
         });
     }
 
@@ -98,9 +133,21 @@ class OnlineManager {
             console.warn('[Online] Action rejected:', data.reason);
         });
 
-        // Opponent disconnected
+        // Opponent's connection was lost (grace period started)
+        this.socket.on('opponent_connection_lost', () => {
+            console.log('[Online] Opponent connection lost (waiting for rejoin...)');
+            if (this.onOpponentConnectionLost) this.onOpponentConnectionLost();
+        });
+
+        // Opponent reconnected after connection loss
+        this.socket.on('opponent_reconnected', () => {
+            console.log('[Online] Opponent reconnected');
+            if (this.onOpponentReconnected) this.onOpponentReconnected();
+        });
+
+        // Opponent disconnected permanently (grace period expired)
         this.socket.on('opponent_disconnected', () => {
-            console.log('[Online] Opponent disconnected');
+            console.log('[Online] Opponent disconnected permanently');
             this.state = 'idle';
             if (this.onOpponentDisconnected) this.onOpponentDisconnected();
         });
@@ -122,6 +169,7 @@ class OnlineManager {
                 }
                 this.roomId = response.roomId;
                 this.playerNum = response.playerNum;
+                this.roomSecret = response.roomSecret;
                 this.state = 'waiting';
                 console.log('[Online] Created room:', this.roomId, 'as P' + this.playerNum);
                 resolve(response);
@@ -145,6 +193,7 @@ class OnlineManager {
                 }
                 this.roomId = response.roomId;
                 this.playerNum = response.playerNum;
+                this.roomSecret = response.roomSecret;
                 console.log('[Online] Joined room:', this.roomId, 'as P' + this.playerNum);
                 resolve(response);
             });
@@ -170,9 +219,9 @@ class OnlineManager {
     }
 
     // Request a dice roll from server
-    requestDice(queue) {
+    requestDice(queue, nonce) {
         if (!this.socket) return;
-        this.socket.emit('request_dice', { queue });
+        this.socket.emit('request_dice', { queue, nonce });
     }
 
     // Disconnect from server
@@ -182,9 +231,11 @@ class OnlineManager {
             this.socket = null;
         }
         this.connected = false;
+        this.reconnecting = false;
         this.state = 'idle';
         this.roomId = null;
         this.playerNum = null;
+        this.roomSecret = null;
         this.error = null;
     }
 

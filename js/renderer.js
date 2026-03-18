@@ -1819,6 +1819,148 @@ class Renderer {
         ctx.restore();
     }
 
+    drawTurnOrderSelect(p1Choice, p2Choice, conflict, conflictStart, gameMode) {
+        const ctx = this.ctx;
+
+        // Dark neon background
+        ctx.fillStyle = '#0a0a1a';
+        ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+        // Subtle grid background
+        ctx.save();
+        ctx.globalAlpha = 0.06;
+        ctx.strokeStyle = '#B040FF';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < SCREEN_WIDTH; x += 60) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, SCREEN_HEIGHT); ctx.stroke();
+        }
+        for (let y = 0; y < SCREEN_HEIGHT; y += 60) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(SCREEN_WIDTH, y); ctx.stroke();
+        }
+        ctx.restore();
+
+        // Title
+        ctx.save();
+        ctx.font = 'bold 36px "Segoe UI", Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.shadowColor = '#00E5FF';
+        ctx.shadowBlur = 12;
+        ctx.fillText('Choose Turn Order', SCREEN_WIDTH / 2, 50);
+        ctx.restore();
+
+        // Draw panels
+        this._drawTurnOrderPanel('Player 1', 20, COLORS.P1_PANEL_BG, p1Choice, gameMode !== 'com');
+        this._drawTurnOrderPanel('Player 2', SCREEN_WIDTH - PANEL_WIDTH + 20, COLORS.P2_PANEL_BG, p2Choice, gameMode !== 'com');
+
+        // Center message
+        ctx.save();
+        ctx.font = '20px "Segoe UI", Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#B040FF';
+        ctx.shadowBlur = 8;
+        if (conflict) {
+            ctx.fillStyle = '#FF6644';
+            ctx.fillText('Conflict! Deciding randomly...', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+        } else if (p1Choice && p2Choice) {
+            ctx.fillStyle = '#00FF66';
+            ctx.fillText('Starting game...', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+        } else {
+            ctx.fillStyle = '#cccccc';
+            ctx.fillText('Both players must choose', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+        }
+        ctx.restore();
+    }
+
+    _drawTurnOrderPanel(title, panelX, bgColor, choice, interactive) {
+        const ctx = this.ctx;
+        const panelW = PANEL_WIDTH - 40;
+        const panelH = SCREEN_HEIGHT - 40;
+
+        // Panel background
+        ctx.save();
+        ctx.fillStyle = bgColor;
+        ctx.globalAlpha = 0.25;
+        ctx.fillRect(panelX - 10, 70, panelW + 20, panelH - 50);
+        ctx.restore();
+
+        // Panel border
+        ctx.save();
+        ctx.strokeStyle = bgColor;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.6;
+        ctx.strokeRect(panelX - 10, 70, panelW + 20, panelH - 50);
+        ctx.restore();
+
+        // Player title
+        ctx.save();
+        ctx.font = 'bold 24px "Segoe UI", Arial, sans-serif';
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.fillText(title, panelX, 105);
+        ctx.restore();
+
+        if (choice) {
+            // Show "Ready!" with selected choice
+            ctx.save();
+            ctx.font = 'bold 28px "Segoe UI", Arial, sans-serif';
+            ctx.fillStyle = '#00FF66';
+            ctx.fillText('Ready!', panelX, 155);
+            ctx.font = '18px "Segoe UI", Arial, sans-serif';
+            ctx.fillStyle = '#aaaaaa';
+            const labels = { first: 'Go First', second: 'Go Second', any: 'Either is fine', random: 'Random' };
+            ctx.fillText(labels[choice] || choice, panelX, 185);
+            ctx.restore();
+            return;
+        }
+
+        if (!interactive) {
+            ctx.save();
+            ctx.font = '18px "Segoe UI", Arial, sans-serif';
+            ctx.fillStyle = '#888888';
+            ctx.fillText('Waiting...', panelX, 200);
+            ctx.restore();
+            return;
+        }
+
+        // Draw 4 buttons
+        const btnW = 200, btnH = 50, gap = 10, startY = 200;
+        const buttons = [
+            { label: 'Go First', color: '#2196F3' },
+            { label: 'Go Second', color: '#FF9800' },
+            { label: 'Either is fine', color: '#4CAF50' },
+            { label: 'Random', color: '#9C27B0' }
+        ];
+
+        for (let i = 0; i < buttons.length; i++) {
+            const bx = panelX;
+            const by = startY + i * (btnH + gap);
+            const btn = buttons[i];
+
+            // Button background
+            ctx.save();
+            ctx.fillStyle = btn.color;
+            ctx.globalAlpha = 0.3;
+            ctx.fillRect(bx, by, btnW, btnH);
+            ctx.restore();
+
+            // Button border
+            ctx.save();
+            ctx.strokeStyle = btn.color;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(bx, by, btnW, btnH);
+            ctx.restore();
+
+            // Button text
+            ctx.save();
+            ctx.font = 'bold 18px "Segoe UI", Arial, sans-serif';
+            ctx.fillStyle = COLORS.WHITE;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(btn.label, bx + btnW / 2, by + btnH / 2);
+            ctx.restore();
+        }
+    }
+
     drawSkillPanel(player, panelX, bgColor, gameMode) {
         const ctx = this.ctx;
         const isP1 = player.playerNum === 1;

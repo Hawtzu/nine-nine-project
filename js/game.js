@@ -411,12 +411,107 @@ class Game {
                 }
                 // P2 waits for board_setup event (handled in receiveBoardSetup)
             } else {
-                this.setupInitialBoard();
-                this.phase = PHASES.START_ANIM;
-                this.startAnimStart = performance.now();
-                this.startAnimTileRevealOrder = this._buildTileRevealOrder();
+                // PvP/COM: go to turn order selection
+                this.turnOrderP1 = null;
+                this.turnOrderP2 = null;
+                this._turnOrderConflict = false;
+                this._resolvedFirstTurn = null;
+                if (this.gameMode === 'com') {
+                    // COM auto-selects "any"
+                    this.turnOrderP2 = 'any';
+                }
+                this.phase = PHASES.TURN_ORDER_SELECT;
             }
         }
+    }
+
+    // Turn order selection
+    selectTurnOrder(playerNum, choice) {
+        if (playerNum === 1) this.turnOrderP1 = choice;
+        else this.turnOrderP2 = choice;
+
+        // COM mode: auto-confirm when P1 selects
+        if (this.gameMode === 'com' && playerNum === 1) {
+            this.turnOrderP2 = 'any';
+        }
+
+        if (this.turnOrderP1 && this.turnOrderP2) {
+            this.resolveTurnOrder();
+        }
+    }
+
+    resolveTurnOrder() {
+        const p1 = this.turnOrderP1;
+        const p2 = this.turnOrderP2;
+        this._turnOrderConflict = false;
+
+        // If either chose random, result is random
+        if (p1 === 'random' || p2 === 'random') {
+            this._resolvedFirstTurn = Math.random() < 0.5 ? 1 : 2;
+        }
+        // Both chose first or both chose second → conflict → random
+        else if (p1 === p2 && (p1 === 'first' || p1 === 'second')) {
+            this._turnOrderConflict = true;
+            this._resolvedFirstTurn = Math.random() < 0.5 ? 1 : 2;
+        }
+        // One wants first, other wants second
+        else if (p1 === 'first' && p2 === 'second') {
+            this._resolvedFirstTurn = 1;
+        } else if (p1 === 'second' && p2 === 'first') {
+            this._resolvedFirstTurn = 2;
+        }
+        // One chose "any", other has preference
+        else if (p1 === 'any' && p2 === 'first') {
+            this._resolvedFirstTurn = 2;
+        } else if (p1 === 'any' && p2 === 'second') {
+            this._resolvedFirstTurn = 1;
+        } else if (p1 === 'first' && p2 === 'any') {
+            this._resolvedFirstTurn = 1;
+        } else if (p1 === 'second' && p2 === 'any') {
+            this._resolvedFirstTurn = 2;
+        }
+        // Both "any"
+        else {
+            this._resolvedFirstTurn = Math.random() < 0.5 ? 1 : 2;
+        }
+
+        // Show conflict message briefly, then proceed
+        if (this._turnOrderConflict) {
+            this._turnOrderConflictStart = performance.now();
+            // Proceed after 1.5 seconds
+            setTimeout(() => this._startGameAfterTurnOrder(), 1500);
+        } else {
+            this._startGameAfterTurnOrder();
+        }
+    }
+
+    _startGameAfterTurnOrder() {
+        this.setupInitialBoard();
+        this.phase = PHASES.START_ANIM;
+        this.startAnimStart = performance.now();
+        this.startAnimTileRevealOrder = this._buildTileRevealOrder();
+    }
+
+    handleTurnOrderClick(x, y) {
+        const btnW = 200, btnH = 50, gap = 10;
+        const choices = ['first', 'second', 'any', 'random'];
+        const startY = 200;
+
+        const checkPanel = (panelX, playerNum) => {
+            for (let i = 0; i < choices.length; i++) {
+                const bx = panelX;
+                const by = startY + i * (btnH + gap);
+                if (x >= bx && x <= bx + btnW && y >= by && y <= by + btnH) {
+                    this.selectTurnOrder(playerNum, choices[i]);
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        if (checkPanel(40, 1)) return true;
+        if (this.gameMode !== 'com' && checkPanel(SCREEN_WIDTH - PANEL_WIDTH + 40, 2)) return true;
+        return false;
     }
 
     setupInitialBoard() {
@@ -432,7 +527,7 @@ class Game {
         for (const pos of stonePositions) {
             this.board.setTile(pos.row, pos.col, MARKERS.STONE);
         }
-        this.currentTurn = Math.random() < 0.5 ? 1 : 2;
+        this.currentTurn = this._resolvedFirstTurn || (Math.random() < 0.5 ? 1 : 2);
         if (typeof gameLog !== 'undefined') gameLog.recordSetup(this);
     }
 
@@ -1763,6 +1858,8 @@ class Game {
                 return this.handleSettingsClick(x, y);
             case PHASES.SKILL_SELECTION:
                 return this.handleSkillSelectionClick(x, y);
+            case PHASES.TURN_ORDER_SELECT:
+                return this.handleTurnOrderClick(x, y);
             case PHASES.ROLL:
                 return this.handleRollPhaseClick(x, y);
             case PHASES.MOVE:

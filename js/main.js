@@ -427,6 +427,15 @@ function render(now) {
             renderer.drawHoverMenuBar(game._mouseY);
             break;
 
+        case PHASES.TURN_ORDER_SELECT:
+            renderer.drawTurnOrderSelect(
+                game.turnOrderP1, game.turnOrderP2,
+                game._turnOrderConflict, game._turnOrderConflictStart,
+                game.gameMode
+            );
+            renderer.drawHoverMenuBar(game._mouseY);
+            break;
+
         case PHASES.START_ANIM:
             renderStartAnimation(now);
             break;

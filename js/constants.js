@@ -89,6 +89,7 @@ const PHASES = {
     START_SCREEN: 'start_screen',
     SETTINGS: 'settings',
     SKILL_SELECTION: 'skill_selection',
+    TURN_ORDER_SELECT: 'turn_order_select',
     START_ANIM: 'start_anim',
     ROLL: 'roll',
     MOVE: 'move',

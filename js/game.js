@@ -1628,6 +1628,7 @@ class Game {
             const btnY = dy + 110;
             if (x >= btnX && x <= btnX + btnW && y >= btnY && y <= btnY + btnH) {
                 this.showConfirmDialog = null;
+                this.gameMode = null;
                 this.phase = PHASES.START_SCREEN;
             }
             return true;
@@ -1646,6 +1647,7 @@ class Game {
             if (x >= startX && x <= startX + btnW && y >= btnY && y <= btnY + btnH) {
                 this.showConfirmDialog = null;
                 onlineManager.disconnect();
+                this.gameMode = null;
                 this.phase = PHASES.START_SCREEN;
                 return true;
             }
@@ -1742,7 +1744,9 @@ class Game {
         }
 
         // Block clicks during opponent's turn in online mode (except menus/skill_selection)
-        if (this.isOnlineMode() && !this.isLocalPlayerTurn() &&
+        // Use gameMode check (not isOnlineMode) to keep blocking even after disconnect
+        if (this.gameMode === 'online' && typeof onlineManager !== 'undefined' &&
+            onlineManager.playerNum !== this.currentTurn &&
             this.phase !== PHASES.START_SCREEN &&
             this.phase !== PHASES.GAME_OVER &&
             this.phase !== PHASES.SKILL_SELECTION &&

@@ -1907,7 +1907,7 @@ class Renderer {
             ctx.fillText('Ready!', panelX, 155);
             ctx.font = '18px "Segoe UI", Arial, sans-serif';
             ctx.fillStyle = '#aaaaaa';
-            const labels = { first: 'Go First', second: 'Go Second', any: 'Either is fine', random: 'Random' };
+            const labels = { first: '1st', second: '2nd', any: 'Any', random: 'Random' };
             ctx.fillText(labels[choice] || choice, panelX, 185);
             ctx.restore();
             return;
@@ -1925,9 +1925,9 @@ class Renderer {
         // Draw 4 buttons
         const btnW = 200, btnH = 50, gap = 10, startY = 200;
         const buttons = [
-            { label: 'Go First', color: '#2196F3' },
-            { label: 'Go Second', color: '#FF9800' },
-            { label: 'Either is fine', color: '#4CAF50' },
+            { label: '1st', color: '#2196F3' },
+            { label: '2nd', color: '#FF9800' },
+            { label: 'Any', color: '#4CAF50' },
             { label: 'Random', color: '#9C27B0' }
         ];
 

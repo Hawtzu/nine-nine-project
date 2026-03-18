@@ -123,7 +123,10 @@ class Game {
             this._lastReceivedSeq = data.seq;
         }
         // Queue actions that arrive during animation (endTurn not yet called)
-        if (this.phase === PHASES.ANIMATING) {
+        const isAnimating = this.phase === PHASES.ANIMATING ||
+            this.bombAnimating || this.fallAnimating ||
+            this.controlAnimating || this.sniperAnimating;
+        if (isAnimating) {
             if (!this._onlineActionQueue) this._onlineActionQueue = [];
             console.log('[Online] Queuing action during animation:', data.type);
             this._onlineActionQueue.push(data);
@@ -763,7 +766,7 @@ class Game {
                 this.bombAnimPlayerNum = currentPlayer.playerNum;
                 this.bombAnimPos = { row, col };
                 this.bombAnimInitialized = false;
-                this.phase = PHASES.ANIMATING;
+                // Keep phase as MOVE (bomb anim renders in MOVE/PLACE case block)
                 return;
             }
             this.board.setTile(row, col, MARKERS.EMPTY);

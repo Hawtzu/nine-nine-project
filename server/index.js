@@ -83,6 +83,13 @@ io.on('connection', (socket) => {
         socket.to(room.id).emit('opponent_select_skill', data);
     });
 
+    // Turn order selection
+    socket.on('select_turn_order', (data) => {
+        const room = roomManager.getRoomBySocket(socket.id);
+        if (!room) return;
+        socket.to(room.id).emit('opponent_select_turn_order', data);
+    });
+
     // Board setup (host sends initial board state to opponent)
     socket.on('board_setup', (data) => {
         const room = roomManager.getRoomBySocket(socket.id);

@@ -112,6 +112,11 @@ class OnlineManager {
             if (this.onOpponentSelectSkill) this.onOpponentSelectSkill(data);
         });
 
+        // Opponent selected turn order
+        this.socket.on('opponent_select_turn_order', (data) => {
+            if (this.onOpponentSelectTurnOrder) this.onOpponentSelectTurnOrder(data);
+        });
+
         // Board setup from host
         this.socket.on('board_setup', (data) => {
             console.log('[Online] Received board setup');
@@ -204,6 +209,12 @@ class OnlineManager {
     sendSkillSelect(data) {
         if (!this.socket || !this.connected) return;
         this.socket.emit('select_skill', data);
+    }
+
+    // Send turn order selection to opponent
+    sendTurnOrder(data) {
+        if (!this.socket || !this.connected) return;
+        this.socket.emit('select_turn_order', data);
     }
 
     // Send board setup (host only)

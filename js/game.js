@@ -400,28 +400,16 @@ class Game {
         }
 
         if (this.player1.skillConfirmed && this.player2.skillConfirmed) {
-            if (this.isOnlineMode()) {
-                // Host (P1) generates the board and sends to P2
-                if (onlineManager.playerNum === 1) {
-                    this.setupInitialBoard();
-                    this.sendBoardSetup();
-                    this.phase = PHASES.START_ANIM;
-                    this.startAnimStart = performance.now();
-                    this.startAnimTileRevealOrder = this._buildTileRevealOrder();
-                }
-                // P2 waits for board_setup event (handled in receiveBoardSetup)
-            } else {
-                // PvP/COM: go to turn order selection
-                this.turnOrderP1 = null;
-                this.turnOrderP2 = null;
-                this._turnOrderConflict = false;
-                this._resolvedFirstTurn = null;
-                if (this.gameMode === 'com') {
-                    // COM auto-selects "any"
-                    this.turnOrderP2 = 'any';
-                }
-                this.phase = PHASES.TURN_ORDER_SELECT;
+            // All modes: go to turn order selection
+            this.turnOrderP1 = null;
+            this.turnOrderP2 = null;
+            this._turnOrderConflict = false;
+            this._resolvedFirstTurn = null;
+            if (this.gameMode === 'com') {
+                // COM auto-selects "any"
+                this.turnOrderP2 = 'any';
             }
+            this.phase = PHASES.TURN_ORDER_SELECT;
         }
     }
 
@@ -429,6 +417,11 @@ class Game {
     selectTurnOrder(playerNum, choice) {
         if (playerNum === 1) this.turnOrderP1 = choice;
         else this.turnOrderP2 = choice;
+
+        // Online: send selection to opponent
+        if (this.isOnlineMode() && typeof onlineManager !== 'undefined' && playerNum === onlineManager.playerNum) {
+            onlineManager.sendTurnOrder({ choice });
+        }
 
         // COM mode: auto-confirm when P1 selects
         if (this.gameMode === 'com' && playerNum === 1) {
@@ -486,10 +479,22 @@ class Game {
     }
 
     _startGameAfterTurnOrder() {
-        this.setupInitialBoard();
-        this.phase = PHASES.START_ANIM;
-        this.startAnimStart = performance.now();
-        this.startAnimTileRevealOrder = this._buildTileRevealOrder();
+        if (this.isOnlineMode()) {
+            // Only host (P1) generates the board
+            if (typeof onlineManager !== 'undefined' && onlineManager.playerNum === 1) {
+                this.setupInitialBoard();
+                this.sendBoardSetup();
+                this.phase = PHASES.START_ANIM;
+                this.startAnimStart = performance.now();
+                this.startAnimTileRevealOrder = this._buildTileRevealOrder();
+            }
+            // P2 waits for board_setup event (handled in receiveBoardSetup)
+        } else {
+            this.setupInitialBoard();
+            this.phase = PHASES.START_ANIM;
+            this.startAnimStart = performance.now();
+            this.startAnimTileRevealOrder = this._buildTileRevealOrder();
+        }
     }
 
     handleTurnOrderClick(x, y) {
@@ -508,6 +513,15 @@ class Game {
             }
             return false;
         };
+
+        // Online: only click own panel
+        if (this.isOnlineMode()) {
+            if (typeof onlineManager !== 'undefined' && onlineManager.playerNum === 1) {
+                return checkPanel(40, 1);
+            } else {
+                return checkPanel(SCREEN_WIDTH - PANEL_WIDTH + 40, 2);
+            }
+        }
 
         if (checkPanel(40, 1)) return true;
         if (this.gameMode !== 'com' && checkPanel(SCREEN_WIDTH - PANEL_WIDTH + 40, 2)) return true;
@@ -2192,6 +2206,12 @@ class Game {
         onlineManager.onOpponentSelectSkill = (data) => {
             const opponentNum = onlineManager.playerNum === 1 ? 2 : 1;
             this.selectSkill(opponentNum, data.skill);
+        };
+
+        // Opponent selected turn order
+        onlineManager.onOpponentSelectTurnOrder = (data) => {
+            const opponentNum = onlineManager.playerNum === 1 ? 2 : 1;
+            this.selectTurnOrder(opponentNum, data.choice);
         };
 
         // Board setup received from host (P2 only)

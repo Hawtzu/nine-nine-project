@@ -1857,6 +1857,7 @@ class Game {
             this.phase !== PHASES.START_SCREEN &&
             this.phase !== PHASES.GAME_OVER &&
             this.phase !== PHASES.SKILL_SELECTION &&
+            this.phase !== PHASES.TURN_ORDER_SELECT &&
             this.phase !== PHASES.ONLINE_LOBBY) {
             return false;
         }

@@ -20,6 +20,7 @@ class Game {
         this.activeSkillType = null;
         this.winner = null;
         this.winReason = '';
+        this.rematchState = 'available';
         this.lastMoveDirectionType = DIRECTION_TYPE.CROSS;
         this.moveMode = DIRECTION_TYPE.CROSS;
         this.sniperAnimating = false;
@@ -1784,6 +1785,31 @@ class Game {
             return true;
         }
 
+        // Rematch request dialog — "Accept" / "Decline"
+        if (this.showConfirmDialog === 'rematch_request') {
+            const btnW = 140, btnH = 45;
+            const dy = (SCREEN_HEIGHT - 180) / 2;
+            const btnY = dy + 110;
+            const gap = 20;
+            const totalW = btnW * 2 + gap;
+            const startX = (SCREEN_WIDTH - totalW) / 2;
+
+            // Accept
+            if (x >= startX && x <= startX + btnW && y >= btnY && y <= btnY + btnH) {
+                this.showConfirmDialog = null;
+                onlineManager.sendRematchAccept();
+                return true;
+            }
+            // Decline
+            if (x >= startX + btnW + gap && x <= startX + totalW && y >= btnY && y <= btnY + btnH) {
+                this.showConfirmDialog = null;
+                this.rematchState = 'hidden';
+                onlineManager.sendRematchDecline();
+                return true;
+            }
+            return true;
+        }
+
         // Default: save_log dialog (3 buttons)
         const btnW = 110, btnH = 40;
         const dh = 180;
@@ -2273,6 +2299,7 @@ class Game {
         // Opponent disconnected permanently (grace period expired)
         onlineManager.onOpponentDisconnected = () => {
             this._opponentReconnecting = false;
+            this.rematchState = 'hidden';
             if (this.phase === PHASES.ONLINE_LOBBY || this.phase === PHASES.SKILL_SELECTION) {
                 this.onlineStatusMsg = 'Opponent disconnected';
                 this.onlineLobbyMode = 'error';
@@ -2281,6 +2308,25 @@ class Game {
                 this.showConfirmDialog = 'opponent_disconnected';
             }
             onlineManager.disconnect();
+        };
+
+        // Rematch
+        onlineManager.onRematchRequest = () => {
+            if (this.rematchState === 'waiting') {
+                // Both players pressed Rematch — auto-accept
+                onlineManager.sendRematchAccept();
+            } else {
+                this.showConfirmDialog = 'rematch_request';
+            }
+        };
+        onlineManager.onRematchAccepted = () => {
+            this.rematchState = 'available';
+            this.init();
+            this.gameMode = 'online';
+            this.phase = PHASES.SKILL_SELECTION;
+        };
+        onlineManager.onRematchDeclined = () => {
+            this.rematchState = 'declined';
         };
     }
 
@@ -2582,27 +2628,68 @@ class Game {
     }
 
     handleGameOverClick(x, y) {
-        // Main Menu button
-        if (x >= SCREEN_WIDTH / 2 - 230 && x <= SCREEN_WIDTH / 2 - 10 &&
-            y >= SCREEN_HEIGHT / 2 + 50 && y <= SCREEN_HEIGHT / 2 + 120) {
-            if (this.gameMode === 'online') onlineManager.disconnect();
-            this.phase = PHASES.START_SCREEN;
-            return true;
-        }
-        // Watch Replay button
-        if (x >= SCREEN_WIDTH / 2 + 10 && x <= SCREEN_WIDTH / 2 + 230 &&
-            y >= SCREEN_HEIGHT / 2 + 50 && y <= SCREEN_HEIGHT / 2 + 120) {
-            if (typeof replayEngine !== 'undefined' && replayEngine && typeof gameLog !== 'undefined') {
-                const logData = { setup: gameLog.setupData, log: gameLog.entries };
-                replayEngine.load(logData);
-                replayEngine.first();
-                replayEngine.applyToGame(this);
-                this._replayMode = 'playback';
-                this.phase = PHASES.REPLAY;
+        const btnY = SCREEN_HEIGHT / 2 + 50;
+        const btnH = 70;
+
+        if (this.rematchState === 'hidden') {
+            // 2 buttons: Watch Replay | Main Menu
+            if (x >= SCREEN_WIDTH / 2 - 230 && x <= SCREEN_WIDTH / 2 - 10 &&
+                y >= btnY && y <= btnY + btnH) {
+                this._startReplay();
+                return true;
             }
-            return true;
+            if (x >= SCREEN_WIDTH / 2 + 10 && x <= SCREEN_WIDTH / 2 + 230 &&
+                y >= btnY && y <= btnY + btnH) {
+                if (this.gameMode === 'online') onlineManager.disconnect();
+                this.phase = PHASES.START_SCREEN;
+                return true;
+            }
+        } else {
+            // 3 buttons: Rematch | Replay | Menu
+            const btnW = 170, gap = 15;
+            const startX = SCREEN_WIDTH / 2 - (btnW * 3 + gap * 2) / 2;
+
+            // Rematch
+            if (x >= startX && x <= startX + btnW && y >= btnY && y <= btnY + btnH) {
+                if (this.rematchState === 'available') {
+                    this.requestRematch();
+                }
+                return true;
+            }
+            // Replay
+            if (x >= startX + btnW + gap && x <= startX + (btnW + gap) + btnW && y >= btnY && y <= btnY + btnH) {
+                this._startReplay();
+                return true;
+            }
+            // Menu
+            if (x >= startX + (btnW + gap) * 2 && x <= startX + (btnW + gap) * 2 + btnW && y >= btnY && y <= btnY + btnH) {
+                if (this.gameMode === 'online') onlineManager.disconnect();
+                this.phase = PHASES.START_SCREEN;
+                return true;
+            }
         }
         return false;
+    }
+
+    _startReplay() {
+        if (typeof replayEngine !== 'undefined' && replayEngine && typeof gameLog !== 'undefined') {
+            const logData = { setup: gameLog.setupData, log: gameLog.entries };
+            replayEngine.load(logData);
+            replayEngine.first();
+            replayEngine.applyToGame(this);
+            this._replayMode = 'playback';
+            this.phase = PHASES.REPLAY;
+        }
+    }
+
+    requestRematch() {
+        if (this.gameMode === 'online') {
+            this.rematchState = 'waiting';
+            onlineManager.sendRematchRequest();
+        } else {
+            // PvP / COM: restart with same mode
+            this.startGame(this.gameMode);
+        }
     }
 
     handleReplayClick(x, y) {

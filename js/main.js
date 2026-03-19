@@ -604,7 +604,7 @@ function render(now) {
             renderer.drawPlayer(game.player2, null, now);
 
             // Draw game over overlay
-            renderer.drawGameOver(game.winner, game.winReason, game.gameMode);
+            renderer.drawGameOver(game.winner, game.winReason, game.gameMode, game.rematchState);
             break;
 
         case PHASES.REPLAY:
@@ -790,6 +790,8 @@ function render(now) {
         renderer.drawOnlineDisconnectDialog();
     } else if (game.showConfirmDialog === 'opponent_disconnected') {
         renderer.drawOpponentDisconnectedDialog();
+    } else if (game.showConfirmDialog === 'rematch_request') {
+        renderer.drawRematchRequestDialog();
     }
 
     // Show/hide game log toolbar

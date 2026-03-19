@@ -184,6 +184,26 @@ io.on('connection', (socket) => {
         callback({ success: true, currentTurn: room.currentTurn });
     });
 
+    // Rematch
+    socket.on('rematch_request', () => {
+        const room = roomManager.getRoomBySocket(socket.id);
+        if (!room) return;
+        socket.to(room.id).emit('rematch_request');
+    });
+    socket.on('rematch_accept', () => {
+        const room = roomManager.getRoomBySocket(socket.id);
+        if (!room) return;
+        // Reset room state for new game
+        room.currentTurn = 1;
+        room.lastActionSeq = { 1: 0, 2: 0 };
+        io.to(room.id).emit('rematch_accepted');
+    });
+    socket.on('rematch_decline', () => {
+        const room = roomManager.getRoomBySocket(socket.id);
+        if (!room) return;
+        socket.to(room.id).emit('rematch_declined');
+    });
+
     // Disconnect — grace period before destroying room
     socket.on('disconnect', () => {
         console.log(`[Disconnect] ${socket.id}`);

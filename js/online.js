@@ -156,6 +156,17 @@ class OnlineManager {
             this.state = 'idle';
             if (this.onOpponentDisconnected) this.onOpponentDisconnected();
         });
+
+        // Rematch events
+        this.socket.on('rematch_request', () => {
+            if (this.onRematchRequest) this.onRematchRequest();
+        });
+        this.socket.on('rematch_accepted', () => {
+            if (this.onRematchAccepted) this.onRematchAccepted();
+        });
+        this.socket.on('rematch_declined', () => {
+            if (this.onRematchDeclined) this.onRematchDeclined();
+        });
     }
 
     // Create a new room (host)
@@ -259,5 +270,16 @@ class OnlineManager {
     isMyTurn(currentTurn) {
         if (!this.isOnline()) return true;
         return currentTurn === this.playerNum;
+    }
+
+    // Rematch
+    sendRematchRequest() {
+        if (this.socket && this.connected) this.socket.emit('rematch_request');
+    }
+    sendRematchAccept() {
+        if (this.socket && this.connected) this.socket.emit('rematch_accept');
+    }
+    sendRematchDecline() {
+        if (this.socket && this.connected) this.socket.emit('rematch_decline');
     }
 }

@@ -1740,7 +1740,7 @@ class Renderer {
 
     // --- Game Over ---
 
-    drawGameOver(winner, reason, gameMode) {
+    drawGameOver(winner, reason, gameMode, rematchState) {
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
         this.ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
@@ -1754,9 +1754,31 @@ class Renderer {
         this.ctx.font = '24px Arial';
         this.ctx.fillText(reason, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
 
-        // Two buttons side by side
-        this.drawButton(SCREEN_WIDTH / 2 - 230, SCREEN_HEIGHT / 2 + 50, 220, 70, '#006400', 'Main Menu');
-        this.drawButton(SCREEN_WIDTH / 2 + 10, SCREEN_HEIGHT / 2 + 50, 220, 70, '#333355', 'Watch Replay');
+        const btnY = SCREEN_HEIGHT / 2 + 50;
+        const btnH = 70;
+
+        if (rematchState === 'hidden') {
+            // 2 buttons only (opponent disconnected)
+            this.drawButton(SCREEN_WIDTH / 2 - 230, btnY, 220, btnH, '#333355', 'Watch Replay');
+            this.drawButton(SCREEN_WIDTH / 2 + 10, btnY, 220, btnH, '#006400', 'Main Menu');
+        } else {
+            // 3 buttons
+            const btnW = 170, gap = 15;
+            const startX = SCREEN_WIDTH / 2 - (btnW * 3 + gap * 2) / 2;
+
+            // Rematch button
+            let rematchColor, rematchLabel;
+            if (rematchState === 'waiting') { rematchColor = '#2E5E2E'; rematchLabel = 'Waiting...'; }
+            else if (rematchState === 'declined') { rematchColor = '#444444'; rematchLabel = 'Declined'; }
+            else { rematchColor = '#228B22'; rematchLabel = 'Rematch'; }
+            this.drawButton(startX, btnY, btnW, btnH, rematchColor, rematchLabel);
+
+            // Watch Replay
+            this.drawButton(startX + btnW + gap, btnY, btnW, btnH, '#333355', 'Replay');
+
+            // Main Menu
+            this.drawButton(startX + (btnW + gap) * 2, btnY, btnW, btnH, '#006400', 'Menu');
+        }
     }
 
     // --- Skill Selection ---
@@ -2737,6 +2759,41 @@ class Renderer {
         const btnY = dy + 110;
 
         this.drawButton(btnX, btnY, btnW, btnH, '#333366', 'OK');
+    }
+
+    // Rematch request dialog
+    drawRematchRequestDialog() {
+        const ctx = this.ctx;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+        const dw = 420, dh = 180;
+        const dx = (SCREEN_WIDTH - dw) / 2;
+        const dy = (SCREEN_HEIGHT - dh) / 2;
+
+        ctx.fillStyle = '#1a1a3a';
+        ctx.fillRect(dx, dy, dw, dh);
+        ctx.strokeStyle = '#44aa44';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(dx, dy, dw, dh);
+
+        ctx.fillStyle = '#44ff44';
+        ctx.font = 'bold 22px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Rematch Request', SCREEN_WIDTH / 2, dy + 40);
+
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = '16px Arial';
+        ctx.fillText('Your opponent wants a rematch!', SCREEN_WIDTH / 2, dy + 75);
+
+        const btnW = 140, btnH = 45;
+        const btnY = dy + 110;
+        const gap = 20;
+        const totalW = btnW * 2 + gap;
+        const startX = (SCREEN_WIDTH - totalW) / 2;
+
+        this.drawButton(startX, btnY, btnW, btnH, '#228B22', 'Accept');
+        this.drawButton(startX + btnW + gap, btnY, btnW, btnH, '#661122', 'Decline');
     }
 
     // Reconnecting overlay (semi-transparent banner)

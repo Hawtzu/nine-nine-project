@@ -2425,8 +2425,12 @@ class Game {
         }
         // Skill button (Y: 423-473)
         if (x >= panelX && x <= panelX + 200 && y >= 423 && y <= 473) {
+            const skill = this.getCurrentPlayer().specialSkill;
             this.activateSkill();
-            this._sendOnlineAction({ type: 'activate_skill' });
+            // Instant-execute skills (Sniper/Hitokiri/Domination/Checkpoint) end the turn immediately
+            const instantSkills = [SPECIAL_SKILLS.SNIPER, SPECIAL_SKILLS.HITOKIRI, SPECIAL_SKILLS.DOMINATION, SPECIAL_SKILLS.CHECKPOINT];
+            const endsTurn = instantSkills.includes(skill);
+            this._sendOnlineAction({ type: 'activate_skill', endsTurn });
             return true;
         }
         // Drill button (Y: 481-531)

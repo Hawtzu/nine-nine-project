@@ -1338,6 +1338,10 @@ class Game {
         // Start sniper animation instead of immediate game over
         this.sniperAnimating = true;
         this.sniperAnimStart = performance.now();
+        const pPos = currentPlayer.getPosition();
+        const oPos = this.getOtherPlayer().getPosition();
+        this.sniperAnimFromPos = { row: pPos.row, col: pPos.col };
+        this.sniperAnimToPos = { row: oPos.row, col: oPos.col };
         return true;
     }
 
@@ -1426,8 +1430,11 @@ class Game {
         const currentPlayer = this.getCurrentPlayer();
         currentPlayer.deductPoints(SKILL_COSTS.meteor);
         if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'meteor', target: { row, col } });
-        this.board.setTile(row, col, MARKERS.STONE);
-        this.endTurn();
+        this.meteorAnimating = true;
+        this.meteorAnimStart = performance.now();
+        this.meteorAnimPos = { row, col };
+        this.meteorAnimInitialized = false;
+        this.phase = PHASES.ANIMATING;
     }
 
     findNearestStones() {

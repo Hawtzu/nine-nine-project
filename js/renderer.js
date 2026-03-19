@@ -3633,6 +3633,349 @@ class Renderer {
     }
 
     // ============================================================
+    //  Meteor Shower Effect
+    // ============================================================
+
+    initMeteorEffect(cx, cy) {
+        this.meteorParticles = [];
+        this.meteorDebris = [];
+        // Main meteor trail particles
+        for (let i = 0; i < 30; i++) {
+            this.meteorParticles.push({
+                x: 0, y: 0, vx: 0, vy: 0,
+                life: 0, maxLife: 300 + Math.random() * 500,
+                size: 2 + Math.random() * 4,
+                hue: 20 + Math.random() * 30
+            });
+        }
+        // Small debris fragments that fall around impact
+        for (let i = 0; i < 15; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 2 + Math.random() * 4;
+            this.meteorDebris.push({
+                x: cx, y: cy,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed - Math.random() * 3,
+                life: 0, maxLife: 400 + Math.random() * 400,
+                size: 1.5 + Math.random() * 3,
+                color: `hsl(${15 + Math.random() * 25}, 100%, ${50 + Math.random() * 30}%)`
+            });
+        }
+    }
+
+    drawMeteorEffect(now, elapsed, meteorPos) {
+        const ctx = this.ctx;
+        const tx = meteorPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+        const ty = meteorPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+
+        // Phase 1 (0-800ms): Meteor falling from top
+        if (elapsed < 800) {
+            const fallT = elapsed / 800;
+            const eased = fallT * fallT; // accelerating
+            const startX = tx - 150;
+            const startY = BOARD_OFFSET_Y - 100;
+            const mx = startX + (tx - startX) * eased;
+            const my = startY + (ty - startY) * eased;
+            const meteorSize = 12 + fallT * 8;
+
+            // Meteor glow
+            ctx.save();
+            const glowGrad = ctx.createRadialGradient(mx, my, 0, mx, my, meteorSize * 3);
+            glowGrad.addColorStop(0, 'rgba(255, 150, 0, 0.6)');
+            glowGrad.addColorStop(1, 'rgba(255, 50, 0, 0)');
+            ctx.fillStyle = glowGrad;
+            ctx.beginPath();
+            ctx.arc(mx, my, meteorSize * 3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // Meteor body
+            ctx.save();
+            const bodyGrad = ctx.createRadialGradient(mx, my, 0, mx, my, meteorSize);
+            bodyGrad.addColorStop(0, '#FFFFFF');
+            bodyGrad.addColorStop(0.3, '#FFCC00');
+            bodyGrad.addColorStop(0.7, '#FF6600');
+            bodyGrad.addColorStop(1, '#CC3300');
+            ctx.fillStyle = bodyGrad;
+            ctx.beginPath();
+            ctx.arc(mx, my, meteorSize, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // Fire trail
+            for (let i = 0; i < 5; i++) {
+                const trailT = Math.max(0, fallT - i * 0.04);
+                const trailE = trailT * trailT;
+                const trailX = startX + (tx - startX) * trailE + (Math.random() - 0.5) * 8;
+                const trailY = startY + (ty - startY) * trailE + (Math.random() - 0.5) * 8;
+                const trailSize = (meteorSize - i * 2) * (1 - i * 0.15);
+                if (trailSize <= 0) continue;
+                ctx.save();
+                ctx.globalAlpha = 0.5 - i * 0.1;
+                ctx.fillStyle = i < 2 ? '#FF8800' : '#FF4400';
+                ctx.beginPath();
+                ctx.arc(trailX, trailY, trailSize, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // Small falling fragments
+            for (let i = 0; i < 3; i++) {
+                const fragX = mx + (Math.random() - 0.5) * 120;
+                const fragY = my - 50 + Math.random() * 100;
+                const fragSize = 2 + Math.random() * 3;
+                ctx.save();
+                ctx.globalAlpha = 0.4 + Math.random() * 0.3;
+                ctx.fillStyle = `hsl(${20 + Math.random() * 20}, 100%, ${60 + Math.random() * 30}%)`;
+                ctx.beginPath();
+                ctx.arc(fragX, fragY, fragSize, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // Phase 2 (800ms): Impact flash
+        if (elapsed >= 800 && elapsed < 1000) {
+            const flashT = (elapsed - 800) / 200;
+            ctx.save();
+            ctx.globalAlpha = 0.9 * (1 - flashT);
+            const flashGrad = ctx.createRadialGradient(tx, ty, 0, tx, ty, CELL_SIZE * 3);
+            flashGrad.addColorStop(0, '#FFFFFF');
+            flashGrad.addColorStop(0.3, '#FFAA00');
+            flashGrad.addColorStop(1, 'rgba(255, 68, 0, 0)');
+            ctx.fillStyle = flashGrad;
+            ctx.fillRect(BOARD_OFFSET_X, BOARD_OFFSET_Y, BOARD_SIZE * CELL_SIZE, BOARD_SIZE * CELL_SIZE);
+            ctx.restore();
+        }
+
+        // Phase 3 (800-1200ms): Shockwave + debris
+        if (elapsed >= 800 && elapsed < 1200) {
+            const swT = (elapsed - 800) / 400;
+            const swRadius = swT * CELL_SIZE * 2.5;
+            ctx.save();
+            ctx.globalAlpha = 0.7 * (1 - swT);
+            ctx.strokeStyle = '#FF8800';
+            ctx.lineWidth = 3 * (1 - swT) + 1;
+            ctx.shadowColor = '#FF6600';
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.arc(tx, ty, swRadius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+
+            // Debris particles
+            for (const d of this.meteorDebris) {
+                d.life += 16;
+                if (d.life > d.maxLife) continue;
+                d.x += d.vx;
+                d.y += d.vy;
+                d.vy += 0.1;
+                d.vx *= 0.98;
+                const dt = d.life / d.maxLife;
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, 1 - dt);
+                ctx.fillStyle = d.color;
+                ctx.beginPath();
+                ctx.arc(d.x, d.y, d.size * (1 - dt * 0.5), 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // Phase 4 (1000-1800ms): "METEOR!" text + smoke
+        if (elapsed >= 1000 && elapsed < 1800) {
+            const textT = Math.min(1, (elapsed - 1000) / 300);
+            const fadeT = elapsed > 1500 ? (elapsed - 1500) / 300 : 0;
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 32px Arial';
+            ctx.fillStyle = '#FF6600';
+            ctx.shadowColor = '#FF4400';
+            ctx.shadowBlur = 15;
+            ctx.globalAlpha = textT * (1 - fadeT);
+            ctx.fillText('METEOR!', BOARD_OFFSET_X + BOARD_SIZE * CELL_SIZE / 2, BOARD_OFFSET_Y + BOARD_SIZE * CELL_SIZE / 2);
+            ctx.shadowBlur = 0;
+            ctx.restore();
+
+            // Smoke
+            const smokeT = (elapsed - 1000) / 800;
+            for (let i = 0; i < 2; i++) {
+                const sx = tx + (Math.random() - 0.5) * CELL_SIZE * 0.5;
+                const sy = ty - smokeT * 20 + (Math.random() - 0.5) * 8;
+                ctx.save();
+                ctx.globalAlpha = 0.15 * (1 - smokeT);
+                ctx.fillStyle = '#555';
+                ctx.beginPath();
+                ctx.arc(sx, sy, 4 + smokeT * 12, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // Phase 5 (1800-2000ms): Stone fade-in glow
+        if (elapsed >= 1800 && elapsed < 2500) {
+            const stoneT = Math.min(1, (elapsed - 1800) / 200);
+            ctx.save();
+            ctx.globalAlpha = stoneT * 0.3;
+            const stoneGlow = ctx.createRadialGradient(tx, ty, 0, tx, ty, CELL_SIZE * 0.6);
+            stoneGlow.addColorStop(0, '#AAAAAA');
+            stoneGlow.addColorStop(1, 'rgba(170, 170, 170, 0)');
+            ctx.fillStyle = stoneGlow;
+            ctx.beginPath();
+            ctx.arc(tx, ty, CELL_SIZE * 0.6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    cleanupMeteorEffect() {
+        this.meteorParticles = [];
+        this.meteorDebris = [];
+    }
+
+    // ============================================================
+    //  Sniper Bullet Trail Effect
+    // ============================================================
+
+    drawSniperEffect(elapsed, fromPos, toPos) {
+        const ctx = this.ctx;
+        const fx = fromPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+        const fy = fromPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+        const tx = toPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+        const ty = toPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+
+        // Phase 1 (0-100ms): Muzzle flash
+        if (elapsed < 100) {
+            const flashT = elapsed / 100;
+            ctx.save();
+            ctx.globalAlpha = 0.8 * (1 - flashT);
+            const flashGrad = ctx.createRadialGradient(fx, fy, 0, fx, fy, CELL_SIZE);
+            flashGrad.addColorStop(0, '#FFFFFF');
+            flashGrad.addColorStop(0.5, '#FFFF88');
+            flashGrad.addColorStop(1, 'rgba(255, 255, 0, 0)');
+            ctx.fillStyle = flashGrad;
+            ctx.beginPath();
+            ctx.arc(fx, fy, CELL_SIZE, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // Phase 2 (100-600ms): Bullet traveling + light trail
+        if (elapsed >= 100 && elapsed < 600) {
+            const bulletT = (elapsed - 100) / 500;
+            const eased = 1 - Math.pow(1 - bulletT, 2); // decelerating
+            const bx = fx + (tx - fx) * eased;
+            const by = fy + (ty - fy) * eased;
+
+            // Light trail (line from source to current bullet position)
+            ctx.save();
+            const trailGrad = ctx.createLinearGradient(fx, fy, bx, by);
+            trailGrad.addColorStop(0, 'rgba(255, 255, 100, 0.1)');
+            trailGrad.addColorStop(0.7, 'rgba(255, 255, 100, 0.5)');
+            trailGrad.addColorStop(1, 'rgba(255, 255, 200, 0.8)');
+            ctx.strokeStyle = trailGrad;
+            ctx.lineWidth = 3;
+            ctx.shadowColor = '#FFFF44';
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.moveTo(fx, fy);
+            ctx.lineTo(bx, by);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+
+            // Bullet
+            ctx.save();
+            ctx.fillStyle = '#FFFFFF';
+            ctx.shadowColor = '#FFFF00';
+            ctx.shadowBlur = 12;
+            ctx.beginPath();
+            ctx.arc(bx, by, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
+        // Phase 3 (600ms+): Full trail stays visible + fades
+        if (elapsed >= 600) {
+            const fadeT = elapsed > 1500 ? Math.min(1, (elapsed - 1500) / 500) : 0;
+            ctx.save();
+            ctx.globalAlpha = 0.6 * (1 - fadeT);
+            ctx.strokeStyle = '#FFFF66';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#FFFF44';
+            ctx.shadowBlur = 6;
+            ctx.beginPath();
+            ctx.moveTo(fx, fy);
+            ctx.lineTo(tx, ty);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
+        // Phase 3 (600ms): Impact flash at target
+        if (elapsed >= 600 && elapsed < 800) {
+            const impT = (elapsed - 600) / 200;
+            ctx.save();
+            ctx.globalAlpha = 0.7 * (1 - impT);
+            const impGrad = ctx.createRadialGradient(tx, ty, 0, tx, ty, CELL_SIZE * 1.5);
+            impGrad.addColorStop(0, '#FFFFFF');
+            impGrad.addColorStop(0.4, '#FF4444');
+            impGrad.addColorStop(1, 'rgba(255, 0, 0, 0)');
+            ctx.fillStyle = impGrad;
+            ctx.beginPath();
+            ctx.arc(tx, ty, CELL_SIZE * 1.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // Target crosshair (600ms+)
+        if (elapsed >= 600) {
+            const targetAlpha = elapsed < 800 ? (elapsed - 600) / 200 : 1;
+            const fadeAlpha = elapsed > 1800 ? Math.max(0, 1 - (elapsed - 1800) / 500) : 1;
+            if (this.targetImage && this.targetImage.complete && this.targetImage.naturalWidth > 0) {
+                ctx.save();
+                ctx.globalAlpha = targetAlpha * fadeAlpha;
+                const imgX = toPos.col * CELL_SIZE + BOARD_OFFSET_X;
+                const imgY = toPos.row * CELL_SIZE + BOARD_OFFSET_Y;
+                ctx.drawImage(this.targetImage, imgX, imgY, CELL_SIZE, CELL_SIZE);
+                ctx.restore();
+            }
+        }
+
+        // Phase 4 (600-1200ms): Impact shockwave
+        if (elapsed >= 600 && elapsed < 1200) {
+            const swT = (elapsed - 600) / 600;
+            const swRadius = swT * CELL_SIZE * 2;
+            ctx.save();
+            ctx.globalAlpha = 0.5 * (1 - swT);
+            ctx.strokeStyle = '#FF3333';
+            ctx.lineWidth = 2 * (1 - swT) + 1;
+            ctx.beginPath();
+            ctx.arc(tx, ty, swRadius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Phase 5 (1200-2000ms): "SNIPER!" text
+        if (elapsed >= 1200 && elapsed < 2000) {
+            const textT = Math.min(1, (elapsed - 1200) / 200);
+            const fadeT = elapsed > 1700 ? (elapsed - 1700) / 300 : 0;
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 36px Arial';
+            ctx.fillStyle = '#FF2222';
+            ctx.shadowColor = '#FF0000';
+            ctx.shadowBlur = 15;
+            ctx.globalAlpha = textT * (1 - fadeT);
+            ctx.fillText('SNIPER!', BOARD_OFFSET_X + BOARD_SIZE * CELL_SIZE / 2, BOARD_OFFSET_Y + BOARD_SIZE * CELL_SIZE / 2);
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+    }
+
+    // ============================================================
     //  開始アニメーション (Start Animation — Grid Build B)
     // ============================================================
 

@@ -520,16 +520,40 @@ function render(now) {
             // Hover-reveal menu bar
             renderer.drawHoverMenuBar(game._mouseY);
 
-            // Sniper animation overlay
+            // Sniper bullet trail animation
             if (game.sniperAnimating) {
                 const elapsed = now - game.sniperAnimStart;
-                const otherPlayer = game.getOtherPlayer();
-                renderer.drawSniperTarget(otherPlayer);
+                renderer.drawSniperEffect(elapsed, game.sniperAnimFromPos, game.sniperAnimToPos);
 
-                // After 1.5 seconds, trigger game over
-                if (elapsed >= 1500) {
+                // After 2.5 seconds (2s anim + 0.5s buffer), trigger game over
+                if (elapsed >= 2500) {
                     game.sniperAnimating = false;
                     game.gameOver(game.currentTurn, 'sniped the opponent!');
+                }
+            }
+
+            // Meteor shower animation
+            if (game.meteorAnimating) {
+                const elapsed = now - game.meteorAnimStart;
+                if (!game.meteorAnimInitialized) {
+                    game.meteorAnimInitialized = true;
+                    const cx = game.meteorAnimPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+                    const cy = game.meteorAnimPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+                    renderer.initMeteorEffect(cx, cy);
+                }
+                renderer.drawMeteorEffect(now, elapsed, game.meteorAnimPos);
+
+                // Place stone at 2000ms, end turn at 2500ms
+                if (elapsed >= 2000 && !game.meteorStonePlaced) {
+                    game.meteorStonePlaced = true;
+                    game.board.setTile(game.meteorAnimPos.row, game.meteorAnimPos.col, MARKERS.STONE);
+                }
+                if (elapsed >= 2500) {
+                    game.meteorAnimating = false;
+                    game.meteorAnimInitialized = false;
+                    game.meteorStonePlaced = false;
+                    renderer.cleanupMeteorEffect();
+                    game.endTurn();
                 }
             }
 

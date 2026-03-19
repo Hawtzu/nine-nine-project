@@ -458,6 +458,31 @@ function render(now) {
             const p2AnimPos = animManager.getDisplayPosition(2, game.player2);
             renderer.drawPlayer(game.player1, p1AnimPos, now);
             renderer.drawPlayer(game.player2, p2AnimPos, now);
+
+            // Meteor shower animation
+            if (game.meteorAnimating) {
+                const elapsed = now - game.meteorAnimStart;
+                if (!game.meteorAnimInitialized) {
+                    game.meteorAnimInitialized = true;
+                    const cx = game.meteorAnimPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+                    const cy = game.meteorAnimPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+                    renderer.initMeteorEffect(cx, cy);
+                }
+                renderer.drawMeteorEffect(now, elapsed, game.meteorAnimPos);
+
+                // Place stone at 2000ms, end turn at 2500ms
+                if (elapsed >= 2000 && !game.meteorStonePlaced) {
+                    game.meteorStonePlaced = true;
+                    game.board.setTile(game.meteorAnimPos.row, game.meteorAnimPos.col, MARKERS.STONE);
+                }
+                if (elapsed >= 2500) {
+                    game.meteorAnimating = false;
+                    game.meteorAnimInitialized = false;
+                    game.meteorStonePlaced = false;
+                    renderer.cleanupMeteorEffect();
+                    game.endTurn();
+                }
+            }
             break;
 
         case PHASES.ROLL:
@@ -529,31 +554,6 @@ function render(now) {
                 if (elapsed >= 2500) {
                     game.sniperAnimating = false;
                     game.gameOver(game.currentTurn, 'sniped the opponent!');
-                }
-            }
-
-            // Meteor shower animation
-            if (game.meteorAnimating) {
-                const elapsed = now - game.meteorAnimStart;
-                if (!game.meteorAnimInitialized) {
-                    game.meteorAnimInitialized = true;
-                    const cx = game.meteorAnimPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
-                    const cy = game.meteorAnimPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
-                    renderer.initMeteorEffect(cx, cy);
-                }
-                renderer.drawMeteorEffect(now, elapsed, game.meteorAnimPos);
-
-                // Place stone at 2000ms, end turn at 2500ms
-                if (elapsed >= 2000 && !game.meteorStonePlaced) {
-                    game.meteorStonePlaced = true;
-                    game.board.setTile(game.meteorAnimPos.row, game.meteorAnimPos.col, MARKERS.STONE);
-                }
-                if (elapsed >= 2500) {
-                    game.meteorAnimating = false;
-                    game.meteorAnimInitialized = false;
-                    game.meteorStonePlaced = false;
-                    renderer.cleanupMeteorEffect();
-                    game.endTurn();
                 }
             }
 

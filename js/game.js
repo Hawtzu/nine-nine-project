@@ -1110,7 +1110,7 @@ class Game {
 
             if (this.board.isValidPosition(r, c)) {
                 const t = this.board.getTile(r, c);
-                if (t === MARKERS.STONE || t === MARKERS.ELECTROMAGNET) {
+                if (t === MARKERS.STONE || t === MARKERS.ELECTROMAGNET || t === MARKERS.SNOW) {
                     this.drillTargetTiles.push({ row: r, col: c });
                 }
             }
@@ -1864,7 +1864,7 @@ class Game {
         if (this.phase === PHASES.START_ANIM) return false;
 
         // Hover-menu: skill selection → return to menu (online: disconnect confirm)
-        if (this.phase === PHASES.SKILL_SELECTION && y < 50) {
+        if ((this.phase === PHASES.SKILL_SELECTION || this.phase === PHASES.TURN_ORDER_SELECT) && y < 50) {
             if (x >= 20 && x <= 160 && y >= 8 && y <= 42) {
                 if (this.gameMode === 'online') {
                     this.showConfirmDialog = 'online_disconnect';

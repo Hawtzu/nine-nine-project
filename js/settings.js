@@ -8,7 +8,7 @@ const SETTINGS_CONFIG = [
         min: 0,
         max: 500,
         step: 10,
-        defaultValue: 50
+        defaultValue: 40
     },
     {
         key: 'drill',
@@ -58,7 +58,7 @@ const SETTINGS_CONFIG = [
         min: 0,
         max: 500,
         step: 10,
-        defaultValue: 100
+        defaultValue: 70
     },
     {
         key: 'sniper',
@@ -68,7 +68,7 @@ const SETTINGS_CONFIG = [
         min: 0,
         max: 500,
         step: 10,
-        defaultValue: 100
+        defaultValue: 110
     },
     {
         key: 'suriashi',
@@ -88,7 +88,7 @@ const SETTINGS_CONFIG = [
         min: 0,
         max: 500,
         step: 10,
-        defaultValue: 100
+        defaultValue: 70
     },
     {
         key: 'meteor',
@@ -128,7 +128,7 @@ const SETTINGS_CONFIG = [
         min: 0,
         max: 500,
         step: 10,
-        defaultValue: 100
+        defaultValue: 120
     },
     {
         key: 'kamakura',
@@ -158,7 +158,7 @@ const SETTINGS_CONFIG = [
         min: 0,
         max: 500,
         step: 10,
-        defaultValue: 20
+        defaultValue: 30
     },
     {
         key: 'fountain_pickup',

@@ -942,6 +942,26 @@ class Game {
         }
     }
 
+    canUseSkillAsAction() {
+        const p = this.getCurrentPlayer();
+        if (p.isDominated()) return false;
+        const skill = p.specialSkill;
+        // Placement skills (ice/bomb/swamp/warp/electromagnet) need placeableTiles, so useless when empty
+        // These non-placement skills can act even without placeable tiles:
+        const skillCostMap = {
+            [SPECIAL_SKILLS.DOMINATION]: SKILL_COSTS.domination,
+            [SPECIAL_SKILLS.SNIPER]: SKILL_COSTS.sniper,
+            [SPECIAL_SKILLS.HITOKIRI]: SKILL_COSTS.hitokiri,
+            [SPECIAL_SKILLS.CHECKPOINT]: SKILL_COSTS.checkpoint,
+            [SPECIAL_SKILLS.SURIASHI]: SKILL_COSTS.suriashi,
+            [SPECIAL_SKILLS.MOMONGA]: SKILL_COSTS.momonga,
+            [SPECIAL_SKILLS.METEOR]: SKILL_COSTS.meteor,
+            [SPECIAL_SKILLS.KAMAKURA]: SKILL_COSTS.kamakura,
+        };
+        if (!(skill in skillCostMap)) return false;
+        return p.canAfford(skillCostMap[skill]);
+    }
+
     canUseDrillToSurvive() {
         const currentPlayer = this.getCurrentPlayer();
         if (currentPlayer.isDominated()) return false;
@@ -992,8 +1012,10 @@ class Game {
                 this.drillForSurvival = true;
                 this.phase = PHASES.DRILL_TARGET;
                 this.findDrillTargets();
+            } else if (this.canUseSkillAsAction()) {
+                // No placeable tiles but skill is available as an action — stay in PLACE phase
             } else {
-                this.gameOver(this.currentTurn === 1 ? 2 : 1, 'has no place to put an object!');
+                this.gameOver(this.currentTurn === 1 ? 2 : 1, 'has no actions available!');
             }
         }
     }

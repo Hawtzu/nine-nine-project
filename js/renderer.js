@@ -3637,28 +3637,18 @@ class Renderer {
     // ============================================================
 
     initMeteorEffect(cx, cy) {
-        this.meteorParticles = [];
         this.meteorDebris = [];
-        // Main meteor trail particles
-        for (let i = 0; i < 30; i++) {
-            this.meteorParticles.push({
-                x: 0, y: 0, vx: 0, vy: 0,
-                life: 0, maxLife: 300 + Math.random() * 500,
-                size: 2 + Math.random() * 4,
-                hue: 20 + Math.random() * 30
-            });
-        }
-        // Small debris fragments that fall around impact
-        for (let i = 0; i < 15; i++) {
+        // Impact debris fragments (blue-white tinted)
+        for (let i = 0; i < 20; i++) {
             const angle = Math.random() * Math.PI * 2;
-            const speed = 2 + Math.random() * 4;
+            const speed = 2 + Math.random() * 5;
             this.meteorDebris.push({
                 x: cx, y: cy,
                 vx: Math.cos(angle) * speed,
                 vy: Math.sin(angle) * speed - Math.random() * 3,
-                life: 0, maxLife: 400 + Math.random() * 400,
+                life: 0, maxLife: 400 + Math.random() * 500,
                 size: 1.5 + Math.random() * 3,
-                color: `hsl(${15 + Math.random() * 25}, 100%, ${50 + Math.random() * 30}%)`
+                color: `hsl(${200 + Math.random() * 40}, ${70 + Math.random() * 30}%, ${60 + Math.random() * 30}%)`
             });
         }
     }
@@ -3667,42 +3657,45 @@ class Renderer {
         const ctx = this.ctx;
         const tx = meteorPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
         const ty = meteorPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+        const cellX = meteorPos.col * CELL_SIZE + BOARD_OFFSET_X;
+        const cellY = meteorPos.row * CELL_SIZE + BOARD_OFFSET_Y;
 
-        // Phase 1 (0-800ms): Meteor falling from top
+        // Phase 1 (0-800ms): Blue-white meteor falling from top
         if (elapsed < 800) {
             const fallT = elapsed / 800;
-            const eased = fallT * fallT; // accelerating
+            const eased = fallT * fallT;
             const startX = tx - 150;
             const startY = BOARD_OFFSET_Y - 100;
             const mx = startX + (tx - startX) * eased;
             const my = startY + (ty - startY) * eased;
             const meteorSize = 12 + fallT * 8;
 
-            // Meteor glow
+            // Blue glow (stronger blue)
             ctx.save();
             const glowGrad = ctx.createRadialGradient(mx, my, 0, mx, my, meteorSize * 3);
-            glowGrad.addColorStop(0, 'rgba(255, 150, 0, 0.6)');
-            glowGrad.addColorStop(1, 'rgba(255, 50, 0, 0)');
+            glowGrad.addColorStop(0, 'rgba(120, 180, 255, 0.8)');
+            glowGrad.addColorStop(0.5, 'rgba(60, 120, 255, 0.4)');
+            glowGrad.addColorStop(1, 'rgba(30, 60, 200, 0)');
             ctx.fillStyle = glowGrad;
             ctx.beginPath();
             ctx.arc(mx, my, meteorSize * 3, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
 
-            // Meteor body
+            // Blue meteor body (stronger blue)
             ctx.save();
             const bodyGrad = ctx.createRadialGradient(mx, my, 0, mx, my, meteorSize);
-            bodyGrad.addColorStop(0, '#FFFFFF');
-            bodyGrad.addColorStop(0.3, '#FFCC00');
-            bodyGrad.addColorStop(0.7, '#FF6600');
-            bodyGrad.addColorStop(1, '#CC3300');
+            bodyGrad.addColorStop(0, '#EEEEFF');
+            bodyGrad.addColorStop(0.25, '#99BBFF');
+            bodyGrad.addColorStop(0.55, '#4477FF');
+            bodyGrad.addColorStop(1, '#2244CC');
             ctx.fillStyle = bodyGrad;
             ctx.beginPath();
             ctx.arc(mx, my, meteorSize, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
 
-            // Fire trail
+            // Blue-cyan trail
             for (let i = 0; i < 5; i++) {
                 const trailT = Math.max(0, fallT - i * 0.04);
                 const trailE = trailT * trailT;
@@ -3712,21 +3705,21 @@ class Renderer {
                 if (trailSize <= 0) continue;
                 ctx.save();
                 ctx.globalAlpha = 0.5 - i * 0.1;
-                ctx.fillStyle = i < 2 ? '#FF8800' : '#FF4400';
+                ctx.fillStyle = i < 2 ? '#6699FF' : '#3366DD';
                 ctx.beginPath();
                 ctx.arc(trailX, trailY, trailSize, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.restore();
             }
 
-            // Small falling fragments
+            // Small blue-white falling fragments
             for (let i = 0; i < 3; i++) {
                 const fragX = mx + (Math.random() - 0.5) * 120;
                 const fragY = my - 50 + Math.random() * 100;
                 const fragSize = 2 + Math.random() * 3;
                 ctx.save();
                 ctx.globalAlpha = 0.4 + Math.random() * 0.3;
-                ctx.fillStyle = `hsl(${20 + Math.random() * 20}, 100%, ${60 + Math.random() * 30}%)`;
+                ctx.fillStyle = `hsl(${200 + Math.random() * 30}, 80%, ${65 + Math.random() * 30}%)`;
                 ctx.beginPath();
                 ctx.arc(fragX, fragY, fragSize, 0, Math.PI * 2);
                 ctx.fill();
@@ -3734,15 +3727,15 @@ class Renderer {
             }
         }
 
-        // Phase 2 (800ms): Impact flash
+        // Phase 2 (800ms): Impact flash (white → blue-white)
         if (elapsed >= 800 && elapsed < 1000) {
             const flashT = (elapsed - 800) / 200;
             ctx.save();
             ctx.globalAlpha = 0.9 * (1 - flashT);
             const flashGrad = ctx.createRadialGradient(tx, ty, 0, tx, ty, CELL_SIZE * 3);
             flashGrad.addColorStop(0, '#FFFFFF');
-            flashGrad.addColorStop(0.3, '#FFAA00');
-            flashGrad.addColorStop(1, 'rgba(255, 68, 0, 0)');
+            flashGrad.addColorStop(0.3, '#AADDFF');
+            flashGrad.addColorStop(1, 'rgba(80, 140, 255, 0)');
             ctx.fillStyle = flashGrad;
             ctx.fillRect(BOARD_OFFSET_X, BOARD_OFFSET_Y, BOARD_SIZE * CELL_SIZE, BOARD_SIZE * CELL_SIZE);
             ctx.restore();
@@ -3754,9 +3747,9 @@ class Renderer {
             const swRadius = swT * CELL_SIZE * 2.5;
             ctx.save();
             ctx.globalAlpha = 0.7 * (1 - swT);
-            ctx.strokeStyle = '#FF8800';
+            ctx.strokeStyle = '#88BBFF';
             ctx.lineWidth = 3 * (1 - swT) + 1;
-            ctx.shadowColor = '#FF6600';
+            ctx.shadowColor = '#6699FF';
             ctx.shadowBlur = 10;
             ctx.beginPath();
             ctx.arc(tx, ty, swRadius, 0, Math.PI * 2);
@@ -3783,49 +3776,77 @@ class Renderer {
             }
         }
 
-        // Phase 4 (1000-1800ms): "METEOR!" text + smoke
+        // Phase 4 (800-2000ms): Molten red glow at impact cell → cooling to reveal stone
+        if (elapsed >= 800 && elapsed < 2000) {
+            const glowT = (elapsed - 800) / 1200;
+            // Red-hot → orange → dim: intensity decreases over time
+            const intensity = 1 - glowT;
+            const hue = 0 + glowT * 30; // red → orange-red
+            const lightness = 50 + glowT * 10;
+            const glowRadius = CELL_SIZE * 0.5 * (1 + (1 - glowT) * 0.3);
+
+            ctx.save();
+            ctx.globalAlpha = intensity * 0.95;
+            const moltenGrad = ctx.createRadialGradient(tx, ty, 0, tx, ty, glowRadius);
+            // White-hot center → yellow → orange-red edge
+            moltenGrad.addColorStop(0, `hsl(60, 100%, ${95 - glowT * 25}%)`);   // white-hot center
+            moltenGrad.addColorStop(0.2, `hsl(50, 100%, ${85 - glowT * 20}%)`); // bright yellow
+            moltenGrad.addColorStop(0.45, `hsl(45, 100%, ${70 - glowT * 15}%)`); // yellow
+            moltenGrad.addColorStop(0.65, `hsl(30, 95%, ${55 - glowT * 10}%)`);  // orange
+            moltenGrad.addColorStop(0.85, `hsl(${hue}, 90%, ${40 - glowT * 10}%)`); // red
+            moltenGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = moltenGrad;
+            ctx.beginPath();
+            ctx.arc(tx, ty, glowRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            // Flickering embers on the cell
+            if (glowT < 0.7) {
+                for (let i = 0; i < 2; i++) {
+                    const ex = tx + (Math.random() - 0.5) * CELL_SIZE * 0.6;
+                    const ey = ty + (Math.random() - 0.5) * CELL_SIZE * 0.6;
+                    ctx.save();
+                    ctx.globalAlpha = (1 - glowT) * 0.6 * Math.random();
+                    ctx.fillStyle = `hsl(${40 + Math.random() * 20}, 100%, ${70 + Math.random() * 20}%)`;
+                    ctx.beginPath();
+                    ctx.arc(ex, ey, 1.5 + Math.random() * 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+            }
+        }
+
+        // Phase 5 (1000-1800ms): "METEOR!" text
         if (elapsed >= 1000 && elapsed < 1800) {
             const textT = Math.min(1, (elapsed - 1000) / 300);
             const fadeT = elapsed > 1500 ? (elapsed - 1500) / 300 : 0;
             ctx.save();
             ctx.textAlign = 'center';
             ctx.font = 'bold 32px Arial';
-            ctx.fillStyle = '#FF6600';
-            ctx.shadowColor = '#FF4400';
+            ctx.fillStyle = '#88CCFF';
+            ctx.shadowColor = '#4488FF';
             ctx.shadowBlur = 15;
             ctx.globalAlpha = textT * (1 - fadeT);
             ctx.fillText('METEOR!', BOARD_OFFSET_X + BOARD_SIZE * CELL_SIZE / 2, BOARD_OFFSET_Y + BOARD_SIZE * CELL_SIZE / 2);
             ctx.shadowBlur = 0;
             ctx.restore();
+        }
 
-            // Smoke
-            const smokeT = (elapsed - 1000) / 800;
+        // Phase 6 (1800-2500ms): Smoke wisps as glow fully cools
+        if (elapsed >= 1800 && elapsed < 2500) {
+            const smokeT = (elapsed - 1800) / 700;
             for (let i = 0; i < 2; i++) {
-                const sx = tx + (Math.random() - 0.5) * CELL_SIZE * 0.5;
-                const sy = ty - smokeT * 20 + (Math.random() - 0.5) * 8;
+                const sx = tx + (Math.random() - 0.5) * CELL_SIZE * 0.4;
+                const sy = ty - smokeT * 25 + (Math.random() - 0.5) * 6;
                 ctx.save();
-                ctx.globalAlpha = 0.15 * (1 - smokeT);
-                ctx.fillStyle = '#555';
+                ctx.globalAlpha = 0.12 * (1 - smokeT);
+                ctx.fillStyle = '#666';
                 ctx.beginPath();
-                ctx.arc(sx, sy, 4 + smokeT * 12, 0, Math.PI * 2);
+                ctx.arc(sx, sy, 3 + smokeT * 10, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.restore();
             }
-        }
-
-        // Phase 5 (1800-2000ms): Stone fade-in glow
-        if (elapsed >= 1800 && elapsed < 2500) {
-            const stoneT = Math.min(1, (elapsed - 1800) / 200);
-            ctx.save();
-            ctx.globalAlpha = stoneT * 0.3;
-            const stoneGlow = ctx.createRadialGradient(tx, ty, 0, tx, ty, CELL_SIZE * 0.6);
-            stoneGlow.addColorStop(0, '#AAAAAA');
-            stoneGlow.addColorStop(1, 'rgba(170, 170, 170, 0)');
-            ctx.fillStyle = stoneGlow;
-            ctx.beginPath();
-            ctx.arc(tx, ty, CELL_SIZE * 0.6, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
         }
     }
 

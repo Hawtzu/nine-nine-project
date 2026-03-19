@@ -470,8 +470,8 @@ function render(now) {
                 }
                 renderer.drawMeteorEffect(now, elapsed, game.meteorAnimPos);
 
-                // Place stone at 2000ms, end turn at 2500ms
-                if (elapsed >= 2000 && !game.meteorStonePlaced) {
+                // Place stone at impact (800ms) — hidden under molten glow, revealed as it cools
+                if (elapsed >= 800 && !game.meteorStonePlaced) {
                     game.meteorStonePlaced = true;
                     game.board.setTile(game.meteorAnimPos.row, game.meteorAnimPos.col, MARKERS.STONE);
                 }

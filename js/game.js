@@ -977,7 +977,7 @@ class Game {
             const tile = this.board.getTile(r, c);
 
             if (this.placementType === 'stone') {
-                if (tile !== MARKERS.STONE && tile !== MARKERS.SNOW) {
+                if (tile !== MARKERS.STONE && tile !== MARKERS.SNOW && tile !== MARKERS.ELECTROMAGNET) {
                     this.placeableTiles.push({ row: r, col: c });
                 }
             } else if (['bomb', 'ice', 'swamp', 'warp', 'electromagnet'].includes(this.placementType)) {
@@ -1015,10 +1015,6 @@ class Game {
             // Destroy snow if stone is placed on it
             if (this.board.getTile(row, col) === MARKERS.SNOW) {
                 delete this.board.snowTurnsLeft[`${row},${col}`];
-            }
-            // Destroy electromagnet if stone is placed on it
-            if (this.board.getTile(row, col) === MARKERS.ELECTROMAGNET) {
-                delete this.board.electromagnetOwners[`${row},${col}`];
             }
             this.board.setTile(row, col, MARKERS.STONE);
             this.endTurn();

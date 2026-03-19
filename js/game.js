@@ -2474,8 +2474,10 @@ class Game {
         // Skill button (Y: 423-473)
         if (x >= panelX && x <= panelX + 200 && y >= 423 && y <= 473) {
             this.drillForSurvival = false;
+            const skill = this.getCurrentPlayer().specialSkill;
             this.activateSkill();
-            this._sendOnlineAction({ type: 'activate_skill' });
+            const instantSkills = [SPECIAL_SKILLS.SNIPER, SPECIAL_SKILLS.HITOKIRI, SPECIAL_SKILLS.DOMINATION, SPECIAL_SKILLS.CHECKPOINT];
+            this._sendOnlineAction({ type: 'activate_skill', endsTurn: instantSkills.includes(skill) });
             return true;
         }
         // Drill button (Y: 481-531) — already in drill mode

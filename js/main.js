@@ -8,6 +8,7 @@ let gameLog;
 let replayEngine;
 let tutorial;
 let onlineManager;
+let interactiveTutorial;
 
 function init() {
     const canvas = document.getElementById('game-canvas');
@@ -19,6 +20,7 @@ function init() {
     gameLog = new GameLog();
     replayEngine = new ReplayEngine();
     tutorial = new Tutorial();
+    interactiveTutorial = new InteractiveTutorial();
     onlineManager = new OnlineManager();
 
     // Add event listeners
@@ -421,6 +423,62 @@ function render(now) {
 
         case PHASES.TUTORIAL:
             renderer.drawTutorialScreen(tutorial, now);
+            break;
+
+        case PHASES.INTERACTIVE_TUTORIAL:
+            // Draw the normal game board underneath
+            renderer.drawNeonBorderBackground();
+            renderer.drawPanels(game.player1, game.player2, game.currentTurn, game.phase, game.gameMode);
+            renderer.drawNeonBorderSideGlow();
+            renderer.drawBoard(game.board, now);
+            renderer.drawBorderSparks(now);
+
+            // Draw highlights based on tutorial sub-phase
+            if (interactiveTutorial && interactiveTutorial.active) {
+                const sp = interactiveTutorial.subPhase;
+                if (sp === 'move' || sp === 'move2') {
+                    renderer.drawHighlights(game.movableTiles, COLORS.MOVE_HIGHLIGHT);
+                    renderer.drawHighlights(game.fallTriggerTiles, COLORS.FALL_HIGHLIGHT);
+                } else if (sp === 'place' || sp === 'place2') {
+                    renderer.drawHighlights(game.placeableTiles, COLORS.PLACE_HIGHLIGHT);
+                }
+            }
+
+            // Draw trails and ripples
+            renderer.drawTrails(animManager.trails, now);
+            renderer.drawRipples(animManager.ripples, now);
+
+            // Draw players (with animation positions)
+            {
+                const p1Anim = animManager.getDisplayPosition(1, game.player1);
+                const p2Anim = animManager.getDisplayPosition(2, game.player2);
+                renderer.drawPlayer(game.player1, p1Anim, now);
+                renderer.drawPlayer(game.player2, p2Anim, now);
+            }
+
+            // Draw dice panels for both players
+            if (interactiveTutorial && interactiveTutorial.active) {
+                const sp = interactiveTutorial.subPhase;
+                if (sp !== 'intro' && sp !== 'complete') {
+                    const panelX = game.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
+                    const opPanelX = game.currentTurn === 1 ? SCREEN_WIDTH - PANEL_WIDTH + 40 : 40;
+                    drawPlayerDicePanel(renderer.ctx, panelX, game.getCurrentPlayer());
+                    drawPlayerDicePanel(renderer.ctx, opPanelX, game.getOtherPlayer());
+
+                    // Draw Select button in roll phases
+                    if (sp === 'roll' || sp === 'roll2') {
+                        renderer.drawButton(panelX, 385, 200, 50, '#006400', 'Select');
+                    }
+                }
+            }
+
+            // Hover-reveal menu bar
+            renderer.drawHoverMenuBar(game._mouseY);
+
+            // Draw the tutorial overlay on top
+            if (interactiveTutorial && interactiveTutorial.active) {
+                renderer.drawInteractiveTutorialOverlay(interactiveTutorial.getGuideInfo());
+            }
             break;
 
         case PHASES.ONLINE_LOBBY:

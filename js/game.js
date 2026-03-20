@@ -1937,6 +1937,17 @@ class Game {
             }
         }
 
+        // Hover-menu: interactive tutorial → return to menu
+        if (this.phase === PHASES.INTERACTIVE_TUTORIAL && y < 50) {
+            if (x >= 20 && x <= 160 && y >= 8 && y <= 42) {
+                if (typeof interactiveTutorial !== 'undefined') {
+                    interactiveTutorial.cleanup();
+                }
+                this.phase = PHASES.START_SCREEN;
+                return true;
+            }
+        }
+
         // Hover-menu: gameplay → show confirm dialog
         const gameplayPhases = [PHASES.ROLL, PHASES.MOVE, PHASES.PLACE,
             PHASES.DRILL_TARGET, PHASES.SKILL_TARGET, PHASES.WARP_SELECT];
@@ -2004,6 +2015,11 @@ class Game {
                 return this.handleGameOverClick(x, y);
             case PHASES.REPLAY:
                 return this.handleReplayClick(x, y);
+            case PHASES.INTERACTIVE_TUTORIAL:
+                if (typeof interactiveTutorial !== 'undefined' && interactiveTutorial.active) {
+                    return interactiveTutorial.handleClick(this, x, y);
+                }
+                return false;
         }
     }
 
@@ -2099,15 +2115,23 @@ class Game {
             return true;
         }
 
-        // How to Play button (center at cx-80, y=680, size 145x50)
-        if (x >= cx - 152 && x <= cx - 8 && y >= 655 && y <= 705) {
+        // How to Play button (center at cx-160, y=680, size 140x50)
+        if (x >= cx - 230 && x <= cx - 90 && y >= 655 && y <= 705) {
             this.phase = PHASES.TUTORIAL;
             if (typeof tutorial !== 'undefined') tutorial.reset();
             return true;
         }
 
-        // Replay button (center at cx+80, y=680, size 145x50)
-        if (x >= cx + 8 && x <= cx + 152 && y >= 655 && y <= 705) {
+        // Tutorial button (center at cx, y=680, size 140x50)
+        if (x >= cx - 70 && x <= cx + 70 && y >= 655 && y <= 705) {
+            if (typeof interactiveTutorial !== 'undefined') {
+                interactiveTutorial.start(this);
+            }
+            return true;
+        }
+
+        // Replay button (center at cx+160, y=680, size 140x50)
+        if (x >= cx + 90 && x <= cx + 230 && y >= 655 && y <= 705) {
             this.enterReplaySelect();
             return true;
         }

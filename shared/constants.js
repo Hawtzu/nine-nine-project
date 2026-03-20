@@ -32,7 +32,8 @@ const PHASES = {
     REPLAY: 'replay',
     ANIMATING: 'animating',
     TUTORIAL: 'tutorial',
-    ONLINE_LOBBY: 'online_lobby'
+    ONLINE_LOBBY: 'online_lobby',
+    INTERACTIVE_TUTORIAL: 'interactive_tutorial'
 };
 
 const SPECIAL_SKILLS = {

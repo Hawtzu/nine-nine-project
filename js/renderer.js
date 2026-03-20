@@ -78,7 +78,7 @@ class Renderer {
         this.menuHoverTimer = 0;
 
         // Scanline phases (I)
-        this.menuScanlinePhases = [0, 0.7, 1.4, 2.1, 2.8];
+        this.menuScanlinePhases = [0, 0.7, 1.4, 2.1, 2.8, 3.5];
 
         // Dice state (K) — 7 dice
         this.menuDice = [
@@ -1023,7 +1023,7 @@ class Renderer {
         this.menuHoverTimer += dt;
         if (this.menuHoverTimer > 3) {
             this.menuHoverTimer = 0;
-            this.menuHoveredIndex = (this.menuHoveredIndex + 1) % 5;
+            this.menuHoveredIndex = (this.menuHoveredIndex + 1) % 6;
         }
 
         // Dice (K)
@@ -1072,8 +1072,9 @@ class Renderer {
             { label: 'Player vs Player', x: cx, y: 370, w: 300, h: 70, color: '#006400', glowColor: '#00FF66', fontSize: 24, hasGear: true },
             { label: 'Player vs COM',    x: cx, y: 470, w: 300, h: 70, color: '#00224A', glowColor: '#00AAFF', fontSize: 24, hasGear: false },
             { label: 'Online Match',     x: cx, y: 560, w: 300, h: 60, color: '#2A0A4A', glowColor: '#E040FF', fontSize: 22, hasGear: false },
-            { label: '? How to Play',    x: cx - 80, y: 680, w: 145, h: 50, color: '#1a2a3a', glowColor: '#00E5FF', fontSize: 16, hasGear: false },
-            { label: '\u25B6 Replay',    x: cx + 80, y: 680, w: 145, h: 50, color: '#1a2a3a', glowColor: '#B040FF', fontSize: 16, hasGear: false },
+            { label: '? How to Play',    x: cx - 160, y: 680, w: 140, h: 50, color: '#1a2a3a', glowColor: '#00E5FF', fontSize: 15, hasGear: false },
+            { label: '\u25B6 Tutorial',  x: cx,       y: 680, w: 140, h: 50, color: '#1a3a2a', glowColor: '#00FF88', fontSize: 15, hasGear: false },
+            { label: '\u25B6 Replay',    x: cx + 160, y: 680, w: 140, h: 50, color: '#1a2a3a', glowColor: '#B040FF', fontSize: 15, hasGear: false },
         ];
 
         for (let i = 0; i < menuButtons.length; i++) {
@@ -1661,6 +1662,160 @@ class Renderer {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(text, cx, cy);
+    }
+
+    // --- Interactive Tutorial Overlay ---
+    drawInteractiveTutorialOverlay(guide) {
+        if (!guide || !guide.active) return;
+        const ctx = this.ctx;
+        ctx.save();
+
+        // Dim overlay with spotlight cutouts
+        if (guide.dimOverlay && guide.highlightTargets && guide.highlightTargets.length > 0) {
+            const hasScreen = guide.highlightTargets.some(t => t.type === 'screen');
+            if (!hasScreen) {
+                // Draw dark overlay
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+                // Cut out highlights (draw clear rectangles)
+                ctx.globalCompositeOperation = 'destination-out';
+                for (const target of guide.highlightTargets) {
+                    if (target.type === 'button' || target.type === 'cell') {
+                        const pad = 6;
+                        ctx.fillStyle = 'rgba(255, 255, 255, 1)';
+                        ctx.beginPath();
+                        const rx = target.x - pad;
+                        const ry = target.y - pad;
+                        const rw = target.w + pad * 2;
+                        const rh = target.h + pad * 2;
+                        const r = 8;
+                        ctx.moveTo(rx + r, ry);
+                        ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, r);
+                        ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, r);
+                        ctx.arcTo(rx, ry + rh, rx, ry, r);
+                        ctx.arcTo(rx, ry, rx + rw, ry, r);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+                }
+                ctx.globalCompositeOperation = 'source-over';
+
+                // Draw glow borders around highlights
+                for (const target of guide.highlightTargets) {
+                    if (target.type === 'button' || target.type === 'cell') {
+                        const pad = 6;
+                        ctx.save();
+                        ctx.strokeStyle = '#FFD700';
+                        ctx.lineWidth = 3;
+                        ctx.shadowColor = '#FFD700';
+                        ctx.shadowBlur = 12;
+                        ctx.beginPath();
+                        const rx = target.x - pad;
+                        const ry = target.y - pad;
+                        const rw = target.w + pad * 2;
+                        const rh = target.h + pad * 2;
+                        const r = 8;
+                        ctx.moveTo(rx + r, ry);
+                        ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, r);
+                        ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, r);
+                        ctx.arcTo(rx, ry + rh, rx, ry, r);
+                        ctx.arcTo(rx, ry, rx + rw, ry, r);
+                        ctx.closePath();
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                }
+            }
+        }
+
+        // Guide text panel at top
+        if (guide.text) {
+            const panelW = 600;
+            const panelH = guide.subText ? 90 : 60;
+            const panelX = (SCREEN_WIDTH - panelW) / 2;
+            const panelY = 10;
+
+            // Panel background
+            ctx.fillStyle = 'rgba(10, 10, 30, 0.85)';
+            ctx.strokeStyle = 'rgba(176, 64, 255, 0.6)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            const r = 12;
+            ctx.moveTo(panelX + r, panelY);
+            ctx.arcTo(panelX + panelW, panelY, panelX + panelW, panelY + panelH, r);
+            ctx.arcTo(panelX + panelW, panelY + panelH, panelX, panelY + panelH, r);
+            ctx.arcTo(panelX, panelY + panelH, panelX, panelY, r);
+            ctx.arcTo(panelX, panelY, panelX + panelW, panelY, r);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Main text
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 22px "Segoe UI", Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const textY = guide.subText ? panelY + panelH * 0.38 : panelY + panelH / 2;
+            ctx.fillText(guide.text, SCREEN_WIDTH / 2, textY);
+
+            // Sub text
+            if (guide.subText) {
+                ctx.fillStyle = '#AAAACC';
+                ctx.font = '15px "Segoe UI", Arial, sans-serif';
+                ctx.fillText(guide.subText, SCREEN_WIDTH / 2, panelY + panelH * 0.7);
+            }
+        }
+
+        // Step indicator (dots)
+        if (guide.totalSteps > 0) {
+            const dotSpacing = 20;
+            const dotY = SCREEN_HEIGHT - 20;
+            const dotStartX = SCREEN_WIDTH / 2 - (guide.totalSteps * dotSpacing) / 2;
+            for (let i = 0; i < guide.totalSteps; i++) {
+                const dotX = dotStartX + i * dotSpacing + dotSpacing / 2;
+                ctx.beginPath();
+                ctx.arc(dotX, dotY, i === guide.step ? 5 : 3, 0, Math.PI * 2);
+                ctx.fillStyle = i === guide.step ? '#B040FF' : 'rgba(176, 64, 255, 0.4)';
+                ctx.fill();
+            }
+        }
+
+        // Completion buttons
+        if (guide.completionButtons && guide.completionButtons.length > 0) {
+            for (const btn of guide.completionButtons) {
+                ctx.save();
+                let btnColor = '#333366';
+                if (btn.action === 'pvp') btnColor = '#006400';
+                else if (btn.action === 'com') btnColor = '#00224A';
+
+                ctx.fillStyle = btnColor;
+                ctx.strokeStyle = '#B040FF';
+                ctx.lineWidth = 2;
+                ctx.shadowColor = '#B040FF';
+                ctx.shadowBlur = 8;
+                const br = 10;
+                ctx.beginPath();
+                ctx.moveTo(btn.x + br, btn.y);
+                ctx.arcTo(btn.x + btn.w, btn.y, btn.x + btn.w, btn.y + btn.h, br);
+                ctx.arcTo(btn.x + btn.w, btn.y + btn.h, btn.x, btn.y + btn.h, br);
+                ctx.arcTo(btn.x, btn.y + btn.h, btn.x, btn.y, br);
+                ctx.arcTo(btn.x, btn.y, btn.x + btn.w, btn.y, br);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = 'bold 18px "Segoe UI", Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(btn.label, btn.x + btn.w / 2, btn.y + btn.h / 2);
+                ctx.restore();
+            }
+        }
+
+        ctx.restore();
     }
 
     drawTutorialScreen(tutorial, now) {

@@ -3,6 +3,7 @@ const { BOARD_SIZE, MARKERS, PHASES, SPECIAL_SKILLS, SKILL_COSTS, GAME_SETTINGS,
         DIRECTION_TYPE, CROSS_DIRECTIONS, DIAGONAL_DIRECTIONS, KAMAKURA_PATTERNS } = require('../shared/constants');
 const { Board } = require('../shared/board');
 const { Player } = require('../shared/player');
+const { GameLogic } = require('../shared/game-logic');
 
 function generateRoomId() {
     // 6-character alphanumeric room code (easy to share)
@@ -32,6 +33,10 @@ class Room {
         p1.setSpecialSkill(p1Skill);
         p2.setSpecialSkill(p2Skill);
 
+        this.gameLogic = new GameLogic(board, p1, p2);
+        this.gameLogic.currentTurn = this.currentTurn;
+
+        // Keep gameState as a reference for backward compatibility
         this.gameState = {
             board,
             players: { 1: p1, 2: p2 },

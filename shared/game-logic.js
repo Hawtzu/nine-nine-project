@@ -2,14 +2,16 @@
 // Pure game logic only — no animation, no gameLog, no comPlayer, no onlineManager, no UI.
 // Requires: shared/constants.js, shared/board.js, shared/player.js
 
-if (typeof require !== 'undefined' && typeof BOARD_SIZE === 'undefined') {
-    const c = require('./constants');
-    Object.keys(c).forEach(k => { if (typeof globalThis[k] === 'undefined') globalThis[k] = c[k]; });
-    if (typeof Board === 'undefined') {
+if (typeof require !== 'undefined') {
+    if (typeof BOARD_SIZE === 'undefined') {
+        const c = require('./constants');
+        Object.keys(c).forEach(k => { if (typeof globalThis[k] === 'undefined') globalThis[k] = c[k]; });
+    }
+    if (typeof globalThis.Board === 'undefined') {
         const b = require('./board');
         globalThis.Board = b.Board;
     }
-    if (typeof Player === 'undefined') {
+    if (typeof globalThis.Player === 'undefined') {
         const p = require('./player');
         globalThis.Player = p.Player;
     }

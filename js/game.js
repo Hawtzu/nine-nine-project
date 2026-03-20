@@ -99,6 +99,29 @@ class Game {
         onlineManager.sendAction(action);
     }
 
+    // Apply server-authoritative state sync (Phase 7)
+    // Called after animations complete to reconcile client state with server truth
+    _applyStateSync(sync) {
+        if (!sync) return;
+        this.board.deserialize(sync.board);
+        this.player1.deserialize(sync.p1);
+        this.player2.deserialize(sync.p2);
+        this.currentTurn = sync.currentTurn;
+        if (sync.winner) {
+            this.winner = sync.winner;
+            this.winReason = sync.winReason;
+        }
+        this.diceRoll = sync.diceRoll;
+    }
+
+    // Consume pending state sync if one exists
+    _consumePendingStateSync() {
+        if (this._pendingStateSync) {
+            this._applyStateSync(this._pendingStateSync);
+            this._pendingStateSync = null;
+        }
+    }
+
     // Apply an action received from the opponent
     applyOnlineAction(data) {
         // Detect duplicate/out-of-order actions
@@ -967,6 +990,9 @@ class Game {
         this.clearHighlights();
         this.findPlaceableTiles();
 
+        // Apply pending server state sync (Phase 7)
+        this._consumePendingStateSync();
+
         // Trigger COM place decision
         if (this.gameMode === 'com' && this.currentTurn === 2 && !this.winner) {
             comPlayer.executeAfterDelay(() => comPlayer.decidePlacePhase(), 'PLACE');
@@ -1579,6 +1605,8 @@ class Game {
             comPlayer.startTurn();
         }
 
+        // Apply pending server state sync (Phase 7)
+        this._consumePendingStateSync();
     }
 
     getOtherWarpHoles(currentRow, currentCol) {
@@ -1609,6 +1637,7 @@ class Game {
             this.placementType = 'stone';
             this.clearHighlights();
             this.findPlaceableTiles();
+            this._consumePendingStateSync();
         };
     }
 
@@ -2312,6 +2341,16 @@ class Game {
         // Opponent game action
         onlineManager.onOpponentAction = (data) => {
             this.applyOnlineAction(data);
+        };
+
+        // Server-authoritative state sync (Phase 7)
+        onlineManager.onStateSync = (data) => {
+            // Queue the sync — apply after current animation completes
+            this._pendingStateSync = data;
+            // If not animating, apply immediately
+            if (this.phase !== PHASES.ANIMATING) {
+                this._consumePendingStateSync();
+            }
         };
 
         // Opponent's connection was lost (grace period started, may rejoin)

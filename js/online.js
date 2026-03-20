@@ -133,6 +133,11 @@ class OnlineManager {
             if (this.onDiceResult) this.onDiceResult(data);
         });
 
+        // Server-authoritative state sync (Phase 7)
+        this.socket.on('state_sync', (data) => {
+            if (this.onStateSync) this.onStateSync(data);
+        });
+
         // Action was rejected by server
         this.socket.on('action_rejected', (data) => {
             console.warn('[Online] Action rejected:', data.reason);

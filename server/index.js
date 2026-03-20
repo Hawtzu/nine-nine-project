@@ -198,6 +198,20 @@ io.on('connection', (socket) => {
             room.currentTurn = room.currentTurn === 1 ? 2 : 1;
             if (room.gameLogic) room.gameLogic.currentTurn = room.currentTurn;
         }
+
+        // Send authoritative state sync to both clients (Phase 7)
+        if (room.gameLogic) {
+            const sync = {
+                board: room.gameLogic.board.serialize(),
+                p1: room.gameLogic.player1.serialize(),
+                p2: room.gameLogic.player2.serialize(),
+                currentTurn: room.gameLogic.currentTurn,
+                winner: room.gameLogic.winner,
+                winReason: room.gameLogic.winReason,
+                diceRoll: room.gameLogic.diceRoll,
+            };
+            io.to(room.id).emit('state_sync', sync);
+        }
     });
 
     // Dice roll (server-authoritative: server executes rollDice on its GameLogic)

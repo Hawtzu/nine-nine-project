@@ -51,6 +51,7 @@ class Game {
         this.hoveredKamakuraIndex = null; // index of hovered pattern
         this.pendingMoveRow = -1;
         this.pendingMoveCol = -1;
+        this.activeTooltip = null; // {type:'board', row, col, marker, direction} or {type:'skill', skillKey}
 
         // Online lobby state
         this.onlineLobbyMode = 'menu'; // 'menu', 'connecting', 'create', 'join', 'waiting', 'error'
@@ -1854,6 +1855,9 @@ class Game {
     }
 
     handleClick(x, y) {
+        // Dismiss tooltip on any click
+        this.dismissTooltip();
+
         // Confirm dialog takes priority over everything (even during animation)
         if (this.showConfirmDialog) {
             return this.handleConfirmDialogClick(x, y);
@@ -2897,5 +2901,46 @@ class Game {
             return { row, col };
         }
         return null;
+    }
+
+    showBoardTooltip(x, y) {
+        // Check board cells
+        const cell = this.getCellFromCoords(x, y);
+        if (cell) {
+            const tile = this.board.tiles[cell.row][cell.col];
+            if (TOOLTIP_DESCRIPTIONS[tile]) {
+                const direction = cell.row <= 1 ? 'below' : 'above';
+                this.activeTooltip = { type: 'board', row: cell.row, col: cell.col, marker: tile, direction };
+                return;
+            }
+        }
+
+        // Check skill panel icons (point bar下のスキル表示)
+        const gameplayPhases = [PHASES.ROLL, PHASES.MOVE, PHASES.PLACE, PHASES.DRILL_TARGET, PHASES.SKILL_TARGET, PHASES.ANIMATING];
+        if (gameplayPhases.includes(this.phase)) {
+            // P1 skill area (left panel: x=20 to 20+240=260)
+            if (x >= 20 && x <= 260 && y >= 159 && y <= 187 && this.player1) {
+                const info = SKILL_INFO[this.player1.specialSkill];
+                if (info) {
+                    this.activeTooltip = { type: 'skill', skillKey: this.player1.specialSkill, panelX: 20 };
+                    return;
+                }
+            }
+            // P2 skill area (right panel: x=1020 to 1020+240=1260)
+            if (x >= SCREEN_WIDTH - PANEL_WIDTH + 20 && x <= SCREEN_WIDTH - 20 && y >= 159 && y <= 187 && this.player2) {
+                const info = SKILL_INFO[this.player2.specialSkill];
+                if (info) {
+                    this.activeTooltip = { type: 'skill', skillKey: this.player2.specialSkill, panelX: SCREEN_WIDTH - PANEL_WIDTH + 20 };
+                    return;
+                }
+            }
+        }
+
+        // Toggle off if same spot clicked again, or dismiss
+        this.activeTooltip = null;
+    }
+
+    dismissTooltip() {
+        this.activeTooltip = null;
     }
 }

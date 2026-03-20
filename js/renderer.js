@@ -957,12 +957,13 @@ class Renderer {
                 this.ctx.textBaseline = 'middle';
                 this.ctx.fillText(info.name, iconX + iconSize + 4, skillY + badgeH / 2);
 
-                // Show skill cost in replay mode
-                if (skillCosts && info.costKey && skillCosts[info.costKey] !== undefined) {
+                // Show skill cost
+                const costSource = skillCosts || SKILL_COSTS;
+                if (info.costKey && costSource[info.costKey] !== undefined) {
                     this.ctx.fillStyle = '#FFD700';
                     this.ctx.font = '12px Arial';
                     this.ctx.textAlign = 'right';
-                    this.ctx.fillText(`${skillCosts[info.costKey]}pt`, badgeX + badgeW - 4, skillY + badgeH / 2);
+                    this.ctx.fillText(`${costSource[info.costKey]}pt`, badgeX + badgeW - 4, skillY + badgeH / 2);
                     this.ctx.textAlign = 'left';
                 }
                 this.ctx.textBaseline = 'alphabetic';
@@ -2273,6 +2274,246 @@ class Renderer {
         ctx.fillText(text, tooltipX + padding, tooltipY + 50);
 
         ctx.textBaseline = 'alphabetic';
+        ctx.restore();
+    }
+
+    // --- Board Tooltip (right-click / long-press) ---
+    drawBoardTooltip(tooltip) {
+        const ctx = this.ctx;
+        ctx.save();
+
+        // Skill-to-marker mapping for sub-descriptions
+        const SKILL_MARKER_MAP = {
+            [SPECIAL_SKILLS.ICE]: MARKERS.ICE,
+            [SPECIAL_SKILLS.BOMB]: MARKERS.BOMB,
+            [SPECIAL_SKILLS.SWAMP]: MARKERS.SWAMP,
+            [SPECIAL_SKILLS.WARP]: MARKERS.WARP,
+            [SPECIAL_SKILLS.CHECKPOINT]: MARKERS.CHECKPOINT,
+            [SPECIAL_SKILLS.ELECTROMAGNET]: MARKERS.ELECTROMAGNET,
+            [SPECIAL_SKILLS.KAMAKURA]: MARKERS.SNOW,
+        };
+
+        let info, nameText, descText, iconText, tagText, subDesc;
+        if (tooltip.type === 'board') {
+            const td = TOOLTIP_DESCRIPTIONS[tooltip.marker];
+            if (!td) { ctx.restore(); return; }
+            nameText = td.name;
+            descText = td.desc;
+            iconText = td.icon;
+            tagText = td.tag || '';
+            subDesc = null;
+        } else if (tooltip.type === 'skill') {
+            info = SKILL_INFO[tooltip.skillKey];
+            if (!info) { ctx.restore(); return; }
+            nameText = info.name;
+            descText = info.jaDesc || info.desc;
+            iconText = '';
+            tagText = '';
+            // Add sub-description for placement skills
+            const marker = SKILL_MARKER_MAP[tooltip.skillKey];
+            subDesc = marker ? TOOLTIP_DESCRIPTIONS[marker] : null;
+        }
+
+        // Measure text for sizing
+        ctx.font = 'bold 14px Arial';
+        const nameW = ctx.measureText(iconText + ' ' + nameText).width;
+        ctx.font = '12px Arial';
+
+        // Word wrap description
+        const maxLineW = 200;
+        const words = descText.split('');
+        const lines = [];
+        let currentLine = '';
+        for (const ch of words) {
+            const testLine = currentLine + ch;
+            if (ctx.measureText(testLine).width > maxLineW && currentLine.length > 0) {
+                lines.push(currentLine);
+                currentLine = ch;
+            } else {
+                currentLine = testLine;
+            }
+        }
+        if (currentLine) lines.push(currentLine);
+
+        // Word wrap sub-description if present
+        let subLines = [];
+        let subHeaderText = '';
+        if (subDesc) {
+            subHeaderText = (subDesc.tag ? '[' + subDesc.tag + '] ' : '') + subDesc.icon + ' ' + subDesc.name;
+            const subWords = subDesc.desc.split('');
+            let subCurrent = '';
+            for (const ch of subWords) {
+                const testLine = subCurrent + ch;
+                if (ctx.measureText(testLine).width > maxLineW && subCurrent.length > 0) {
+                    subLines.push(subCurrent);
+                    subCurrent = ch;
+                } else {
+                    subCurrent = testLine;
+                }
+            }
+            if (subCurrent) subLines.push(subCurrent);
+        }
+
+        const padding = 12;
+        const lineHeight = 17;
+        const subHeight = subDesc ? (16 + 20 + subLines.length * lineHeight) : 0; // separator + header + lines
+        const tooltipW = Math.max(nameW, maxLineW) + padding * 2;
+        const tooltipH = 28 + lines.length * lineHeight + padding + subHeight;
+        const arrowSize = 8;
+
+        // Calculate position
+        let tx, ty;
+        if (tooltip.type === 'board') {
+            const cellCX = tooltip.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+            const cellTY = tooltip.row * CELL_SIZE + BOARD_OFFSET_Y;
+            const cellBY = cellTY + CELL_SIZE;
+
+            tx = cellCX - tooltipW / 2;
+            if (tooltip.direction === 'below') {
+                ty = cellBY + arrowSize + 4;
+            } else {
+                ty = cellTY - tooltipH - arrowSize - 4;
+            }
+
+            // Clamp horizontal
+            if (tx < 10) tx = 10;
+            if (tx + tooltipW > SCREEN_WIDTH - 10) tx = SCREEN_WIDTH - tooltipW - 10;
+        } else {
+            // Skill panel tooltip — show above the skill bar
+            tx = tooltip.panelX;
+            ty = 90;
+            if (tx + tooltipW > SCREEN_WIDTH - 10) tx = SCREEN_WIDTH - tooltipW - 10;
+        }
+
+        // Background
+        ctx.fillStyle = 'rgba(10, 10, 30, 0.95)';
+        ctx.beginPath();
+        ctx.moveTo(tx + 6, ty);
+        ctx.lineTo(tx + tooltipW - 6, ty);
+        ctx.quadraticCurveTo(tx + tooltipW, ty, tx + tooltipW, ty + 6);
+        ctx.lineTo(tx + tooltipW, ty + tooltipH - 6);
+        ctx.quadraticCurveTo(tx + tooltipW, ty + tooltipH, tx + tooltipW - 6, ty + tooltipH);
+        ctx.lineTo(tx + 6, ty + tooltipH);
+        ctx.quadraticCurveTo(tx, ty + tooltipH, tx, ty + tooltipH - 6);
+        ctx.lineTo(tx, ty + 6);
+        ctx.quadraticCurveTo(tx, ty, tx + 6, ty);
+        ctx.closePath();
+        ctx.fill();
+
+        // Border
+        ctx.strokeStyle = '#ffcc00';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Arrow
+        if (tooltip.type === 'board') {
+            const cellCX = tooltip.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+            const arrowX = Math.max(tx + 15, Math.min(cellCX, tx + tooltipW - 15));
+            ctx.fillStyle = 'rgba(10, 10, 30, 0.95)';
+            ctx.strokeStyle = '#ffcc00';
+            ctx.lineWidth = 2;
+
+            if (tooltip.direction === 'below') {
+                // Arrow pointing up
+                ctx.beginPath();
+                ctx.moveTo(arrowX - arrowSize, ty);
+                ctx.lineTo(arrowX, ty - arrowSize);
+                ctx.lineTo(arrowX + arrowSize, ty);
+                ctx.closePath();
+                ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(arrowX - arrowSize, ty);
+                ctx.lineTo(arrowX, ty - arrowSize);
+                ctx.lineTo(arrowX + arrowSize, ty);
+                ctx.stroke();
+            } else {
+                // Arrow pointing down
+                ctx.beginPath();
+                ctx.moveTo(arrowX - arrowSize, ty + tooltipH);
+                ctx.lineTo(arrowX, ty + tooltipH + arrowSize);
+                ctx.lineTo(arrowX + arrowSize, ty + tooltipH);
+                ctx.closePath();
+                ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(arrowX - arrowSize, ty + tooltipH);
+                ctx.lineTo(arrowX, ty + tooltipH + arrowSize);
+                ctx.lineTo(arrowX + arrowSize, ty + tooltipH);
+                ctx.stroke();
+            }
+        }
+
+        // Tag + Icon + Name
+        let headerX = tx + padding;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        if (tagText) {
+            const tagColor = tagText === 'Stone' ? '#88aaff' : '#88ffaa';
+            ctx.font = '10px Arial';
+            const tagW = ctx.measureText('[' + tagText + ']').width + 6;
+            ctx.fillStyle = tagColor;
+            ctx.globalAlpha = 0.25;
+            ctx.fillRect(headerX - 2, ty + padding - 2, tagW, 16);
+            ctx.globalAlpha = 1.0;
+            ctx.fillStyle = tagColor;
+            ctx.font = 'bold 10px Arial';
+            ctx.fillText('[' + tagText + ']', headerX, ty + padding);
+            headerX += tagW + 4;
+        }
+        ctx.fillStyle = '#ffcc00';
+        ctx.font = 'bold 14px Arial';
+        const headerText = iconText ? iconText + ' ' + nameText : nameText;
+        ctx.fillText(headerText, headerX, ty + padding - 2);
+
+        // Description lines
+        ctx.fillStyle = '#ddd';
+        ctx.font = '12px Arial';
+        for (let i = 0; i < lines.length; i++) {
+            ctx.fillText(lines[i], tx + padding, ty + 28 + i * lineHeight);
+        }
+
+        // Sub-description (for placement skills)
+        if (subDesc && subLines.length > 0) {
+            const subStartY = ty + 28 + lines.length * lineHeight + 4;
+
+            // Separator line
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(tx + padding, subStartY);
+            ctx.lineTo(tx + tooltipW - padding, subStartY);
+            ctx.stroke();
+
+            // Sub header with tag
+            const subTagText = subDesc.tag || '';
+            let subHX = tx + padding;
+            const subHeaderY = subStartY + 10;
+
+            if (subTagText) {
+                const subTagColor = subTagText === 'Stone' ? '#88aaff' : '#88ffaa';
+                ctx.font = '10px Arial';
+                const subTagW = ctx.measureText('[' + subTagText + ']').width + 6;
+                ctx.fillStyle = subTagColor;
+                ctx.globalAlpha = 0.25;
+                ctx.fillRect(subHX - 2, subHeaderY - 2, subTagW, 14);
+                ctx.globalAlpha = 1.0;
+                ctx.fillStyle = subTagColor;
+                ctx.font = 'bold 10px Arial';
+                ctx.fillText('[' + subTagText + ']', subHX, subHeaderY);
+                subHX += subTagW + 4;
+            }
+
+            ctx.fillStyle = '#ffcc00';
+            ctx.font = 'bold 12px Arial';
+            ctx.fillText(subDesc.icon + ' ' + subDesc.name, subHX, subHeaderY);
+
+            // Sub description lines
+            ctx.fillStyle = '#aaa';
+            ctx.font = '11px Arial';
+            for (let i = 0; i < subLines.length; i++) {
+                ctx.fillText(subLines[i], tx + padding, subHeaderY + 18 + i * lineHeight);
+            }
+        }
+
         ctx.restore();
     }
 

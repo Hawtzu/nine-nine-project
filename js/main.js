@@ -29,6 +29,25 @@ function init() {
     document.addEventListener('keydown', handleKeyDown);
     canvas.addEventListener('wheel', handleWheel, { passive: false });
 
+    // Right-click tooltip (PC)
+    canvas.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const { x, y } = getCanvasCoords(e);
+        game.showBoardTooltip(x, y);
+    });
+
+    // Long-press tooltip (mobile)
+    let tooltipTouchTimer = null;
+    canvas.addEventListener('touchstart', (e) => {
+        const touch = e.touches[0];
+        const { x, y } = getCanvasCoords({ clientX: touch.clientX, clientY: touch.clientY, target: e.target });
+        tooltipTouchTimer = setTimeout(() => {
+            game.showBoardTooltip(x, y);
+        }, 500);
+    });
+    canvas.addEventListener('touchend', () => { if (tooltipTouchTimer) { clearTimeout(tooltipTouchTimer); tooltipTouchTimer = null; } });
+    canvas.addEventListener('touchmove', () => { if (tooltipTouchTimer) { clearTimeout(tooltipTouchTimer); tooltipTouchTimer = null; } });
+
     // Game log copy button
     const copyBtn = document.getElementById('copy-log-btn');
     const copyFeedback = document.getElementById('copy-feedback');
@@ -805,6 +824,11 @@ function render(now) {
         } else if (onlineManager.reconnecting) {
             renderer.drawReconnectingOverlay('Reconnecting...');
         }
+    }
+
+    // Draw board tooltip (right-click / long-press)
+    if (game.activeTooltip) {
+        renderer.drawBoardTooltip(game.activeTooltip);
     }
 
     // Draw confirm dialog overlay (on top of everything)

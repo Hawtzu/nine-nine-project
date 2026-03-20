@@ -135,12 +135,68 @@ io.on('connection', (socket) => {
             room.lastActionSeq[playerNum] = data.seq;
         }
 
+        // Server-side validation and state tracking via GameLogic
+        if (room.gameLogic) {
+            const gl = room.gameLogic;
+            try {
+                switch (data.type) {
+                    case 'move': {
+                        gl.findMovableTiles();
+                        const valid = gl.movableTiles.find(t => t.row === data.row && t.col === data.col)
+                                   || gl.fallTriggerTiles.find(t => t.row === data.row && t.col === data.col);
+                        if (!valid) {
+                            console.warn(`[Room ${room.id}] Invalid move (${data.row},${data.col}) rejected`);
+                            socket.emit('action_rejected', { reason: 'Invalid move' });
+                            return;
+                        }
+                        gl.movePlayerLogic(data.row, data.col);
+                        break;
+                    }
+                    case 'toggle_mode':
+                        gl.toggleMoveMode();
+                        break;
+                    case 'place': {
+                        if (data.placementType) gl.placementType = data.placementType;
+                        gl.findPlaceableTiles();
+                        gl.placeObject(data.row, data.col);
+                        break;
+                    }
+                    case 'set_placement_type':
+                        gl.setPlacementType(data.placementType);
+                        break;
+                    case 'drill':
+                        gl.findDrillTargets();
+                        gl.useDrill(data.row, data.col);
+                        break;
+                    case 'activate_skill':
+                        gl.activateSkill();
+                        break;
+                    case 'skill_target':
+                        if (data.skillType) gl.activeSkillType = data.skillType;
+                        gl.executeSkillTarget(data.row, data.col);
+                        break;
+                    case 'stock_dice':
+                        gl.stockCurrentDice();
+                        break;
+                    case 'use_stock':
+                        gl.useStockedDice();
+                        break;
+                    case 'warp_select':
+                        gl.completeWarpLogic(data.row, data.col);
+                        break;
+                }
+            } catch (e) {
+                console.error(`[Room ${room.id}] GameLogic error on ${data.type}:`, e.message);
+            }
+        }
+
         // Forward to opponent
         socket.to(room.id).emit('opponent_action', data);
 
         // Update turn if the action ends the turn
         if (data.endsTurn) {
             room.currentTurn = room.currentTurn === 1 ? 2 : 1;
+            if (room.gameLogic) room.gameLogic.currentTurn = room.currentTurn;
         }
     });
 

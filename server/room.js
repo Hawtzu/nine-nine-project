@@ -1,4 +1,8 @@
 // Room & RoomManager — manages online game rooms
+const { BOARD_SIZE, MARKERS, PHASES, SPECIAL_SKILLS, SKILL_COSTS, GAME_SETTINGS,
+        DIRECTION_TYPE, CROSS_DIRECTIONS, DIAGONAL_DIRECTIONS, KAMAKURA_PATTERNS } = require('../shared/constants');
+const { Board } = require('../shared/board');
+const { Player } = require('../shared/player');
 
 function generateRoomId() {
     // 6-character alphanumeric room code (easy to share)
@@ -18,6 +22,30 @@ class Room {
         this.lastActionSeq = { 1: 0, 2: 0 }; // per-player action seq tracking
         this.roomSecret = Math.random().toString(36).substr(2, 12); // for rejoin auth
         this.disconnectTimers = {}; // playerNum -> setTimeout handle
+        this.gameState = null; // initialized when game starts
+    }
+
+    initGameState(p1Skill, p2Skill) {
+        const board = new Board();
+        const p1 = new Player(1, Math.floor(BOARD_SIZE / 2), 0);
+        const p2 = new Player(2, Math.floor(BOARD_SIZE / 2), BOARD_SIZE - 1);
+        p1.setSpecialSkill(p1Skill);
+        p2.setSpecialSkill(p2Skill);
+
+        this.gameState = {
+            board,
+            players: { 1: p1, 2: p2 },
+            currentTurn: this.currentTurn,
+            phase: PHASES.ROLL,
+            diceRoll: 0,
+            placementType: 'stone',
+            winner: null,
+            winReason: null
+        };
+    }
+
+    getGameState() {
+        return this.gameState;
     }
 
     isFull() {

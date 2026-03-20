@@ -97,6 +97,17 @@ io.on('connection', (socket) => {
         const playerNum = room.getPlayerNum(socket.id);
         if (playerNum !== 1) return; // only host can send board setup
         room.currentTurn = data.currentTurn || 1;
+
+        // Initialize server-side game state
+        if (data.p1Skill && data.p2Skill) {
+            room.initGameState(data.p1Skill, data.p2Skill);
+            if (data.board) room.gameState.board.deserialize(data.board);
+            if (data.p1) room.gameState.players[1].deserialize(data.p1);
+            if (data.p2) room.gameState.players[2].deserialize(data.p2);
+            room.gameState.currentTurn = room.currentTurn;
+            console.log(`[Room ${room.id}] Server game state initialized`);
+        }
+
         socket.to(room.id).emit('board_setup', data);
         console.log(`[Room ${room.id}] Board setup sent, first turn: P${room.currentTurn}`);
     });

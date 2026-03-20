@@ -302,7 +302,11 @@ class Game {
             p1Skill: this.player1.specialSkill,
             p2Skill: this.player2.specialSkill,
             p1Queue: [...this.player1.diceQueue],
-            p2Queue: [...this.player2.diceQueue]
+            p2Queue: [...this.player2.diceQueue],
+            // Server game state init data
+            board: this.board.serialize(),
+            p1: this.player1.serialize(),
+            p2: this.player2.serialize()
         };
         onlineManager.sendBoardSetup(data);
     }

@@ -333,6 +333,8 @@ class Game {
         this.board.reset();
         this.player1 = new Player(1, Math.floor(BOARD_SIZE / 2), 0);
         this.player2 = new Player(2, Math.floor(BOARD_SIZE / 2), BOARD_SIZE - 1);
+        this.player1.color = COLORS.P1;
+        this.player2.color = COLORS.P2;
         this.currentTurn = 1;
         this.diceRoll = 0;
         this.winner = null;
@@ -2763,6 +2765,8 @@ class Game {
                         if (!this.player1) {
                             this.player1 = new Player(1, 4, 0);
                             this.player2 = new Player(2, 4, BOARD_SIZE - 1);
+                            this.player1.color = COLORS.P1;
+                            this.player2.color = COLORS.P2;
                         }
                         this.gameMode = replay.mode || null;
                         replayEngine.applyToGame(this);

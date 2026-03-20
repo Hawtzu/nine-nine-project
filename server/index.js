@@ -101,11 +101,13 @@ io.on('connection', (socket) => {
         // Initialize server-side game state
         if (data.p1Skill && data.p2Skill) {
             room.initGameState(data.p1Skill, data.p2Skill);
-            if (data.board) room.gameState.board.deserialize(data.board);
-            if (data.p1) room.gameState.players[1].deserialize(data.p1);
-            if (data.p2) room.gameState.players[2].deserialize(data.p2);
+            if (data.board) room.gameLogic.board.deserialize(data.board);
+            if (data.p1) room.gameLogic.player1.deserialize(data.p1);
+            if (data.p2) room.gameLogic.player2.deserialize(data.p2);
+            room.gameLogic.currentTurn = room.currentTurn;
+            // Keep gameState in sync
             room.gameState.currentTurn = room.currentTurn;
-            console.log(`[Room ${room.id}] Server game state initialized`);
+            console.log(`[Room ${room.id}] Server game state initialized (GameLogic)`);
         }
 
         socket.to(room.id).emit('board_setup', data);
@@ -142,7 +144,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Dice roll (server generates nextValue, uses client queue[0] as roll value)
+    // Dice roll (server-authoritative: server executes rollDice on its GameLogic)
     socket.on('request_dice', (data) => {
         const room = roomManager.getRoomBySocket(socket.id);
         if (!room) {
@@ -156,11 +158,26 @@ io.on('connection', (socket) => {
             return;
         }
 
-        const queue = data && data.queue ? data.queue : [1, 1, 1];
         const nonce = data && data.nonce ? data.nonce : null;
-        const value = queue[0]; // Use client's current dice (what they see as CURRENT)
-        const nextValue = Math.floor(Math.random() * 3) + 1;
-        io.to(room.id).emit('dice_result', { playerNum, value, nextValue, queue, nonce });
+
+        if (room.gameLogic) {
+            // Server-authoritative: execute rollDice on server's GameLogic
+            const result = room.gameLogic.rollDice();
+            const player = room.gameLogic.getCurrentPlayer();
+            io.to(room.id).emit('dice_result', {
+                playerNum,
+                value: result.diceValue,
+                queue: [...player.diceQueue],
+                nonce,
+                serverAuthoritative: true
+            });
+        } else {
+            // Fallback: legacy behavior
+            const queue = data && data.queue ? data.queue : [1, 1, 1];
+            const value = queue[0];
+            const nextValue = Math.floor(Math.random() * 3) + 1;
+            io.to(room.id).emit('dice_result', { playerNum, value, nextValue, queue, nonce });
+        }
     });
 
     // Rejoin a room after reconnection

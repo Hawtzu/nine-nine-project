@@ -278,13 +278,36 @@ class Game {
         }
         this._pendingDiceNonce = null;
         const currentPlayer = this.getCurrentPlayer();
-        // Sync queue from the rolling player's state to prevent desync
-        if (data.queue && data.queue.length === 3) {
-            currentPlayer.diceQueue = [...data.queue];
+
+        if (data.serverAuthoritative) {
+            // Server-authoritative mode: server already rolled, just apply the result
+            const oldQueue = [...currentPlayer.diceQueue];
+            this.diceRoll = data.value;
+            if (data.queue && data.queue.length === 3) {
+                currentPlayer.diceQueue = [...data.queue];
+            }
+            if (typeof animManager !== 'undefined' && animManager) {
+                animManager.startDiceTransition(currentPlayer.playerNum, 'roll', {
+                    oldQueue: oldQueue,
+                    newQueue: [...currentPlayer.diceQueue]
+                });
+                animManager.startDiceReveal(currentPlayer.playerNum, currentPlayer.diceQueue[2]);
+            }
+            if (typeof gameLog !== 'undefined') gameLog.log('roll', { player: this.currentTurn, dice: this.diceRoll, queue: [...currentPlayer.diceQueue] });
+            if (!this.hasAnyMovableTile()) {
+                this.gameOver(this.currentTurn === 1 ? 2 : 1, 'is blocked and cannot move!');
+            } else {
+                this.phase = PHASES.MOVE;
+            }
+        } else {
+            // Legacy mode: client-side roll with server-provided nextValue
+            if (data.queue && data.queue.length === 3) {
+                currentPlayer.diceQueue = [...data.queue];
+            }
+            this._onlineNextValue = data.nextValue;
+            this.rollDice();
+            this._onlineNextValue = null;
         }
-        this._onlineNextValue = data.nextValue;
-        this.rollDice();
-        this._onlineNextValue = null;
     }
 
     // Send board setup to opponent (host only)

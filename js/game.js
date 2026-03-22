@@ -117,7 +117,7 @@ class Game {
 
     // Consume pending state sync if one exists
     _consumePendingStateSync() {
-        if (this._pendingStateSync) {
+        if (this._pendingStateSync && !this.bombAnimating) {
             this._applyStateSync(this._pendingStateSync);
             this._pendingStateSync = null;
         }
@@ -2382,8 +2382,8 @@ class Game {
         onlineManager.onStateSync = (data) => {
             // Queue the sync — apply after current animation completes
             this._pendingStateSync = data;
-            // If not animating, apply immediately
-            if (this.phase !== PHASES.ANIMATING) {
+            // If not animating and not in bomb animation, apply immediately
+            if (this.phase !== PHASES.ANIMATING && !this.bombAnimating) {
                 this._consumePendingStateSync();
             }
         };

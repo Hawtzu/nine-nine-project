@@ -151,12 +151,8 @@ io.on('connection', (socket) => {
                             return;
                         }
                         const moveResult = gl.movePlayerLogic(data.row, data.col);
-                        if (moveResult.bombHit) {
-                            // Bomb hit: set winner on server
-                            const loser = gl.currentTurn;
-                            gl.winner = loser === 1 ? 2 : 1;
-                            gl.winReason = `Player ${loser} stepped on a bomb!`;
-                        } else {
+                        // Bomb hit: don't set winner on server — let client animation handle gameOver
+                        if (!moveResult.bombHit) {
                             // Complete move logic (fountain pickup, warp detection, etc.)
                             gl.completeMoveLogic(data.row, data.col);
                         }

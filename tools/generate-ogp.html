@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>OGP Image Generator</title>
+    <style>
+        body { background: #222; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
+        canvas { border: 1px solid #555; margin: 20px auto; display: block; }
+        button { padding: 10px 30px; font-size: 16px; cursor: pointer; margin: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Nine Nine OGP Image Generator</h1>
+    <p>1200 x 630px</p>
+    <canvas id="ogp" width="1200" height="630"></canvas>
+    <br>
+    <button onclick="download()">Download PNG</button>
+
+    <script>
+    const canvas = document.getElementById('ogp');
+    const ctx = canvas.getContext('2d');
+    const W = 1200, H = 630;
+
+    function draw() {
+        // Background - dark gradient
+        const bg = ctx.createLinearGradient(0, 0, W, H);
+        bg.addColorStop(0, '#0a0a1a');
+        bg.addColorStop(0.5, '#0f1028');
+        bg.addColorStop(1, '#0a0a1a');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, W, H);
+
+        // Grid lines (subtle)
+        ctx.strokeStyle = 'rgba(100, 100, 200, 0.08)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < W; x += 40) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+        }
+        for (let y = 0; y < H; y += 40) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+        }
+
+        // Mini board (5x5) on left side
+        const boardX = 80, boardY = 180, cellSize = 50;
+        ctx.strokeStyle = 'rgba(150, 100, 255, 0.3)';
+        ctx.lineWidth = 1;
+        for (let r = 0; r < 5; r++) {
+            for (let c = 0; c < 5; c++) {
+                ctx.strokeRect(boardX + c * cellSize, boardY + r * cellSize, cellSize, cellSize);
+            }
+        }
+
+        // Stones on mini board
+        const stones = [[0,2], [1,3], [2,1], [3,4], [4,0]];
+        stones.forEach(([r, c]) => {
+            const cx = boardX + c * cellSize + cellSize / 2;
+            const cy = boardY + r * cellSize + cellSize / 2;
+            ctx.beginPath();
+            ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(180, 100, 255, 0.6)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(180, 100, 255, 0.15)';
+            ctx.fill();
+        });
+
+        // Player 1 (blue)
+        const p1x = boardX + 1 * cellSize + cellSize / 2;
+        const p1y = boardY + 2 * cellSize + cellSize / 2;
+        ctx.beginPath();
+        ctx.arc(p1x, p1y, 18, 0, Math.PI * 2);
+        const p1g = ctx.createRadialGradient(p1x, p1y, 0, p1x, p1y, 18);
+        p1g.addColorStop(0, '#66ddff');
+        p1g.addColorStop(1, '#0088cc');
+        ctx.fillStyle = p1g;
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('1', p1x, p1y);
+
+        // Player 2 (red)
+        const p2x = boardX + 3 * cellSize + cellSize / 2;
+        const p2y = boardY + 2 * cellSize + cellSize / 2;
+        ctx.beginPath();
+        ctx.arc(p2x, p2y, 18, 0, Math.PI * 2);
+        const p2g = ctx.createRadialGradient(p2x, p2y, 0, p2x, p2y, 18);
+        p2g.addColorStop(0, '#ff6666');
+        p2g.addColorStop(1, '#cc0000');
+        ctx.fillStyle = p2g;
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.fillText('2', p2x, p2y);
+
+        // Mini board on right side
+        const boardX2 = W - 80 - 5 * cellSize, boardY2 = 180;
+        ctx.strokeStyle = 'rgba(150, 100, 255, 0.3)';
+        ctx.lineWidth = 1;
+        for (let r = 0; r < 5; r++) {
+            for (let c = 0; c < 5; c++) {
+                ctx.strokeRect(boardX2 + c * cellSize, boardY2 + r * cellSize, cellSize, cellSize);
+            }
+        }
+        const stones2 = [[0,1], [1,0], [2,3], [3,2], [4,4]];
+        stones2.forEach(([r, c]) => {
+            const cx = boardX2 + c * cellSize + cellSize / 2;
+            const cy = boardY2 + r * cellSize + cellSize / 2;
+            ctx.beginPath();
+            ctx.arc(cx, cy, 14, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(180, 100, 255, 0.6)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(180, 100, 255, 0.15)';
+            ctx.fill();
+        });
+
+        // Neon border glow
+        ctx.strokeStyle = '#00ffcc';
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#00ffcc';
+        ctx.shadowBlur = 15;
+        ctx.strokeRect(3, 3, W - 6, H - 6);
+        ctx.shadowBlur = 0;
+
+        // Title - "Nine Nine"
+        ctx.save();
+        ctx.shadowColor = '#00ccff';
+        ctx.shadowBlur = 30;
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'italic bold 90px Georgia, serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Nine Nine', W / 2, 180);
+        ctx.shadowBlur = 0;
+        ctx.restore();
+
+        // Subtitle
+        ctx.fillStyle = '#88aacc';
+        ctx.font = '28px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Turn-Based Strategy Game', W / 2, 240);
+
+        // Feature tags
+        const tags = ['Online PvP', 'VS COM', '13 Skills', '9×9 Board'];
+        const tagY = 340;
+        const tagW = 160, tagH = 45, tagGap = 20;
+        const totalW = tags.length * tagW + (tags.length - 1) * tagGap;
+        const startX = (W - totalW) / 2;
+
+        tags.forEach((tag, i) => {
+            const x = startX + i * (tagW + tagGap);
+            // Tag background
+            ctx.fillStyle = 'rgba(0, 200, 255, 0.1)';
+            ctx.strokeStyle = 'rgba(0, 200, 255, 0.5)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.roundRect(x, tagY, tagW, tagH, 8);
+            ctx.fill();
+            ctx.stroke();
+            // Tag text
+            ctx.fillStyle = '#00ddff';
+            ctx.font = 'bold 18px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(tag, x + tagW / 2, tagY + tagH / 2);
+        });
+
+        // Dice icons
+        drawDice(W / 2 - 120, 430, 2);
+        drawDice(W / 2 - 40, 430, 3);
+        drawDice(W / 2 + 40, 430, 1);
+
+        // Bottom text
+        ctx.fillStyle = 'rgba(150, 180, 200, 0.5)';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('nine-nine-project.onrender.com', W / 2, H - 30);
+    }
+
+    function drawDice(x, y, value) {
+        const size = 55;
+        ctx.fillStyle = 'rgba(30, 30, 60, 0.8)';
+        ctx.strokeStyle = 'rgba(150, 150, 200, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(x, y, size, size, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#ccccdd';
+        const dotR = 5;
+        const cx = x + size / 2, cy = y + size / 2;
+        const off = 14;
+
+        if (value === 1) {
+            drawDot(cx, cy, dotR);
+        } else if (value === 2) {
+            drawDot(cx - off, cy - off, dotR);
+            drawDot(cx + off, cy + off, dotR);
+        } else if (value === 3) {
+            drawDot(cx - off, cy - off, dotR);
+            drawDot(cx, cy, dotR);
+            drawDot(cx + off, cy + off, dotR);
+        }
+    }
+
+    function drawDot(x, y, r) {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    function download() {
+        const link = document.createElement('a');
+        link.download = 'ogp.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    }
+
+    draw();
+    </script>
+</body>
+</html>

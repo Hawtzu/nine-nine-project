@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { Server } = require('socket.io');
 const { RoomManager } = require('./room');
+const { DIRECTION_TYPE } = require('../shared/constants');
 
 const PORT = process.env.PORT || 3000;
 const ROOT = path.join(__dirname, '..');
@@ -149,7 +150,13 @@ io.on('connection', (socket) => {
                             socket.emit('action_rejected', { reason: 'Invalid move' });
                             return;
                         }
-                        gl.movePlayerLogic(data.row, data.col);
+                        const moveResult = gl.movePlayerLogic(data.row, data.col);
+                        // Complete move logic (fountain pickup, warp detection, etc.)
+                        if (!moveResult.bombHit) {
+                            gl.completeMoveLogic(data.row, data.col);
+                        }
+                        // Reset moveMode after move
+                        gl.moveMode = DIRECTION_TYPE.CROSS;
                         break;
                     }
                     case 'toggle_mode':
@@ -209,6 +216,7 @@ io.on('connection', (socket) => {
                 winner: room.gameLogic.winner,
                 winReason: room.gameLogic.winReason,
                 diceRoll: room.gameLogic.diceRoll,
+                moveMode: room.gameLogic.moveMode,
             };
             io.to(room.id).emit('state_sync', sync);
         }

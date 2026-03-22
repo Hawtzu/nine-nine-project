@@ -112,6 +112,7 @@ class Game {
             this.winReason = sync.winReason;
         }
         this.diceRoll = sync.diceRoll;
+        if (sync.moveMode !== undefined) this.moveMode = sync.moveMode;
     }
 
     // Consume pending state sync if one exists
@@ -944,7 +945,9 @@ class Game {
         currentPlayer.moveTo(row, col);
         if (typeof gameLog !== 'undefined') gameLog.log('move', { player: this.currentTurn, from: { row: fromRow, col: fromCol }, to: { row, col }, mode: this.moveMode });
 
-        if (this.moveMode === DIRECTION_TYPE.DIAGONAL) {
+        // Diagonal move cost: only deduct locally for non-online modes
+        // In online mode, server handles cost deduction via state_sync
+        if (this.moveMode === DIRECTION_TYPE.DIAGONAL && this.gameMode !== 'online') {
             currentPlayer.deductPoints(SKILL_COSTS.diagonal_move);
         }
 

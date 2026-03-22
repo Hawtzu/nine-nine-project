@@ -264,6 +264,8 @@ class Game {
                 }
                 break;
         }
+        // Apply any pending state sync from server immediately after action
+        this._consumePendingStateSync();
     }
 
     // Execute a skill target action (used by both local and online)
@@ -2082,26 +2084,28 @@ class Game {
             return true;
         }
 
-        // COM button (center y=470, h=70)
+        // COM button (center y=470, h=70) — toggle difficulty selector
         if (x >= cx - 150 && x <= cx + 150 && y >= 435 && y <= 505) {
-            this.showDifficultySelect = true;
+            this.showDifficultySelect = !this.showDifficultySelect;
             return true;
         }
 
         // Difficulty buttons (shown when showDifficultySelect is true)
         if (this.showDifficultySelect) {
-            const btnW = 90, btnH = 50, gap = 10;
+            const btnW = 90, btnH = 40, gap = 10;
             const startX = cx - (btnW * 3 + gap * 2) / 2;
-            const btnY = 515;
+            const btnY = 518;
 
             if (y >= btnY && y <= btnY + btnH) {
                 if (x >= startX && x <= startX + btnW) {
                     this.comDifficulty = COM_DIFFICULTY.EASY;
+                    this.showDifficultySelect = false;
                     this.startGame('com');
                     return true;
                 }
                 if (x >= startX + btnW + gap && x <= startX + 2 * btnW + gap) {
                     this.comDifficulty = COM_DIFFICULTY.NORMAL;
+                    this.showDifficultySelect = false;
                     this.startGame('com');
                     return true;
                 }
@@ -2111,12 +2115,14 @@ class Game {
 
         // Online Match button (center y=560, h=60)
         if (x >= cx - 150 && x <= cx + 150 && y >= 530 && y <= 590) {
+            this.showDifficultySelect = false;
             this.phase = PHASES.ONLINE_LOBBY;
             return true;
         }
 
         // How to Play button (center at cx-160, y=680, size 140x50)
         if (x >= cx - 230 && x <= cx - 90 && y >= 655 && y <= 705) {
+            this.showDifficultySelect = false;
             this.phase = PHASES.TUTORIAL;
             if (typeof tutorial !== 'undefined') tutorial.reset();
             return true;
@@ -2124,6 +2130,7 @@ class Game {
 
         // Tutorial button (center at cx, y=680, size 140x50)
         if (x >= cx - 70 && x <= cx + 70 && y >= 655 && y <= 705) {
+            this.showDifficultySelect = false;
             if (typeof interactiveTutorial !== 'undefined') {
                 interactiveTutorial.start(this);
             }
@@ -2132,6 +2139,7 @@ class Game {
 
         // Replay button (center at cx+160, y=680, size 140x50)
         if (x >= cx + 90 && x <= cx + 230 && y >= 655 && y <= 705) {
+            this.showDifficultySelect = false;
             this.enterReplaySelect();
             return true;
         }

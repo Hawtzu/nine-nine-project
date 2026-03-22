@@ -231,9 +231,23 @@ io.on('connection', (socket) => {
 
         // Update turn if the action ends the turn
         if (data.endsTurn) {
+            // Run turn-end side effects without switching turn twice
             if (room.gameLogic) {
-                room.gameLogic.endTurn();
-                room.currentTurn = room.gameLogic.currentTurn;
+                const gl = room.gameLogic;
+                const oldPlayer = gl.getCurrentPlayer();
+                // Decrease domination timer
+                if (oldPlayer.dominationTurnsLeft > 0) {
+                    oldPlayer.dominationTurnsLeft--;
+                }
+                // Tick snow timers
+                gl.board.tickSnow();
+                // Switch turn
+                gl.currentTurn = gl.currentTurn === 1 ? 2 : 1;
+                // Award turn bonus
+                const newPlayer = gl.getCurrentPlayer();
+                newPlayer.addPoints(10);
+                // Sync room turn
+                room.currentTurn = gl.currentTurn;
             } else {
                 room.currentTurn = room.currentTurn === 1 ? 2 : 1;
             }

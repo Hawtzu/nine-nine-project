@@ -3,9 +3,15 @@ const fs = require('fs');
 const path = require('path');
 const { Server } = require('socket.io');
 const { RoomManager } = require('./room');
-const { DIRECTION_TYPE } = require('../shared/constants');
+const { DIRECTION_TYPE, setTestMode } = require('../shared/constants');
 
 const PORT = process.env.PORT || 3000;
+
+// Test mode: set all skill costs to 0 for automated testing
+if (process.env.TEST_ZERO_COST === 'true') {
+    setTestMode();
+    console.log('[TEST] All skill costs set to 0');
+}
 const ROOT = path.join(__dirname, '..');
 
 // Static file server (serves the game files)

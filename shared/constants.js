@@ -115,11 +115,16 @@ const KAMAKURA_PATTERNS = [
     }
 ];
 
+// Test mode: set all skill costs to 0
+function setTestMode() {
+    Object.keys(SKILL_COSTS).forEach(k => SKILL_COSTS[k] = 0);
+}
+
 // Export for Node.js, no-op in browser (constants are global via <script>)
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         BOARD_SIZE, MARKERS, PHASES, SPECIAL_SKILLS, SKILL_COSTS,
         GAME_SETTINGS, DIRECTION_TYPE, CROSS_DIRECTIONS, DIAGONAL_DIRECTIONS,
-        KAMAKURA_PATTERNS
+        KAMAKURA_PATTERNS, setTestMode
     };
 }

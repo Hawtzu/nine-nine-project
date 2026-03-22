@@ -11,6 +11,7 @@ class OnlineManager {
         this.state = 'idle'; // idle, connecting, in_lobby, waiting, in_game
         this.error = null;
         this.serverUrl = null;
+        this._keepAliveInterval = null;
     }
 
     // Connect to the server
@@ -42,6 +43,9 @@ class OnlineManager {
                 console.log('[Online] Connected:', this.socket.id);
                 this.connected = true;
                 this.error = null;
+
+                // Start keep-alive to prevent Render from sleeping
+                this._startKeepAlive();
 
                 // Auto-rejoin if we were in a game
                 if (this.state === 'in_game' && this.roomId && this.roomSecret) {
@@ -253,6 +257,7 @@ class OnlineManager {
 
     // Disconnect from server
     disconnect() {
+        this._stopKeepAlive();
         if (this.socket) {
             this.socket.disconnect();
             this.socket = null;
@@ -264,6 +269,22 @@ class OnlineManager {
         this.playerNum = null;
         this.roomSecret = null;
         this.error = null;
+    }
+
+    // Keep-alive: send HTTP request every 5 minutes to prevent Render sleep
+    _startKeepAlive() {
+        this._stopKeepAlive();
+        const baseUrl = this.serverUrl || '';
+        this._keepAliveInterval = setInterval(() => {
+            fetch(baseUrl + '/health').catch(() => {});
+        }, 5 * 60 * 1000);
+    }
+
+    _stopKeepAlive() {
+        if (this._keepAliveInterval) {
+            clearInterval(this._keepAliveInterval);
+            this._keepAliveInterval = null;
+        }
     }
 
     // Check if currently in an online game

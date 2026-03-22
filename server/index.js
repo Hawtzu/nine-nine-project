@@ -29,6 +29,14 @@ const MIME_TYPES = {
 
 const httpServer = http.createServer((req, res) => {
     const url = decodeURIComponent(req.url.split('?')[0]);
+
+    // Health check endpoint for keep-alive
+    if (url === '/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', uptime: process.uptime(), memory: process.memoryUsage().rss }));
+        return;
+    }
+
     const filePath = path.join(ROOT, url === '/' ? 'index.html' : url);
     const ext = path.extname(filePath);
 
@@ -42,6 +50,20 @@ const httpServer = http.createServer((req, res) => {
         }
     });
 });
+
+// Error handling to prevent crashes
+process.on('uncaughtException', (err) => {
+    console.error('[FATAL] Uncaught Exception:', err.message, err.stack);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('[FATAL] Unhandled Rejection:', reason);
+});
+
+// Memory usage log every 5 minutes
+setInterval(() => {
+    const mem = process.memoryUsage();
+    console.log(`[Memory] RSS: ${Math.round(mem.rss / 1024 / 1024)}MB, Heap: ${Math.round(mem.heapUsed / 1024 / 1024)}/${Math.round(mem.heapTotal / 1024 / 1024)}MB, Rooms: ${roomManager.rooms ? roomManager.rooms.size : 0}`);
+}, 5 * 60 * 1000);
 
 // Socket.io server
 const io = new Server(httpServer, {

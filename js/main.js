@@ -436,10 +436,13 @@ function render(now) {
             // Draw highlights based on tutorial sub-phase
             if (interactiveTutorial && interactiveTutorial.active) {
                 const sp = interactiveTutorial.subPhase;
-                if (sp === 'move' || sp === 'move2') {
-                    renderer.drawHighlights(game.movableTiles, COLORS.MOVE_HIGHLIGHT);
-                    renderer.drawHighlights(game.fallTriggerTiles, COLORS.FALL_HIGHLIGHT);
-                } else if (sp === 'place' || sp === 'place2') {
+                if (sp === 'move' || sp === 'move2' || sp === 'diagonal_move' || sp === 'skill_move') {
+                    // Exclude player's own position from move highlights (that's for diagonal toggle, not actual move)
+                    const p1 = game.player1;
+                    const filteredMovable = game.movableTiles.filter(t => !(t.row === p1.row && t.col === p1.col));
+                    renderer.drawHighlights(filteredMovable, COLORS.MOVE_HIGHLIGHT);
+                    if (game.fallTriggerTiles) renderer.drawHighlights(game.fallTriggerTiles, COLORS.FALL_HIGHLIGHT);
+                } else if (sp === 'place' || sp === 'place2' || sp === 'skill_place') {
                     renderer.drawHighlights(game.placeableTiles, COLORS.PLACE_HIGHLIGHT);
                 }
             }
@@ -465,10 +468,8 @@ function render(now) {
                     drawPlayerDicePanel(renderer.ctx, panelX, game.getCurrentPlayer());
                     drawPlayerDicePanel(renderer.ctx, opPanelX, game.getOtherPlayer());
 
-                    // Draw Select button in roll phases
-                    if (sp === 'roll' || sp === 'roll2') {
-                        renderer.drawButton(panelX, 385, 200, 50, '#006400', 'Select');
-                    }
+                    // Draw buttons using actual game UI functions
+                    drawTutorialPhaseButtons(renderer.ctx, panelX, sp);
                 }
             }
 
@@ -478,6 +479,28 @@ function render(now) {
             // Draw the tutorial overlay on top
             if (interactiveTutorial && interactiveTutorial.active) {
                 renderer.drawInteractiveTutorialOverlay(interactiveTutorial.getGuideInfo());
+
+                // Re-draw players ON TOP of the overlay so they're visible in spotlights
+                // Skip during complete/waiting_complete to avoid covering buttons
+                if (interactiveTutorial.subPhase !== 'complete' && interactiveTutorial.subPhase !== 'waiting_complete') {
+                    const p1Anim2 = animManager.getDisplayPosition(1, game.player1);
+                    const p2Anim2 = animManager.getDisplayPosition(2, game.player2);
+                    renderer.drawPlayer(game.player1, p1Anim2, now);
+                    renderer.drawPlayer(game.player2, p2Anim2, now);
+                }
+
+                // Re-draw highlighted buttons ON TOP of the overlay so they're visible
+                const sp2 = interactiveTutorial.subPhase;
+
+                // For points_info step, redraw the P1 panel on top so it's visible
+                if (sp2 === 'points_info') {
+                    renderer.drawPlayerInfo(game.player1, 20, true, PHASES.ROLL, game.gameMode);
+                }
+
+                if (sp2 !== 'intro' && sp2 !== 'complete' && sp2 !== 'diagonal_info' && sp2 !== 'points_info') {
+                    const panelX2 = game.currentTurn === 1 ? 40 : SCREEN_WIDTH - PANEL_WIDTH + 40;
+                    drawTutorialPhaseButtons(renderer.ctx, panelX2, sp2);
+                }
             }
             break;
 
@@ -649,7 +672,13 @@ function render(now) {
                     game.controlAnimating = false;
                     game.controlAnimInitialized = false;
                     renderer.cleanupControlEffect();
-                    game.endTurn();
+                    if (game.gameMode === 'online') {
+                        // Online: apply pending state sync (server already switched turn)
+                        game._consumePendingStateSync();
+                        game.phase = PHASES.ROLL;
+                    } else {
+                        game.endTurn();
+                    }
                 }
             }
 
@@ -1286,6 +1315,80 @@ function drawDiceHoverPreview(ctx, panelX, hoverType) {
     } else if (hoverType === 'useStock') {
         // Vertical: STOCK → CURRENT (upward, replaces CURRENT)
         drawVerticalConveyor(ctx, panelX + c.dx, c.dy + dh, s.dy - dh, '#FF8C00', false);
+    }
+}
+
+function drawTutorialPhaseButtons(ctx, panelX, sp) {
+    const currentPlayer = game.getCurrentPlayer();
+    const points = currentPlayer ? currentPlayer.points : 0;
+
+    if (sp === 'roll' || sp === 'roll2' || sp === 'roll_diagonal' || sp === 'stock' || sp === 'post_stock_select') {
+        // Select button (same as real game)
+        renderer.drawButton(panelX, 385, 200, 50, '#006400', 'Select');
+        // Stock button
+        const canStock = currentPlayer && currentPlayer.canAfford(GAME_SETTINGS.stockCost || 20);
+        if (canStock) {
+            renderer.drawButton(panelX, 443, 200, 50, '#665500', `Stock (-${GAME_SETTINGS.stockCost || 20}pt)`);
+        } else {
+            ctx.globalAlpha = 0.35;
+            renderer.drawButton(panelX, 443, 200, 50, '#333344', `Stock (-${GAME_SETTINGS.stockCost || 20}pt)`);
+            ctx.globalAlpha = 1.0;
+        }
+    } else if (sp === 'move' || sp === 'move2' || sp === 'diagonal_move' || sp === 'click_piece' || sp === 'post_stock_move') {
+        // Move mode indicator (same as real game)
+        ctx.textAlign = 'center';
+        if (game.moveMode === DIRECTION_TYPE.DIAGONAL) {
+            ctx.fillStyle = COLORS.DIAGONAL_MOVE_HIGHLIGHT;
+            ctx.font = 'bold 16px Arial';
+            ctx.fillText('Diagonal Mode (-10pt)', panelX + 100, 405);
+        } else {
+            ctx.fillStyle = '#888899';
+            ctx.font = '12px Arial';
+            ctx.fillText('Click piece for diagonal (-10pt)', panelX + 100, 405);
+        }
+        ctx.textAlign = 'left';
+    } else if (sp === 'place' || sp === 'place2' || sp === 'skill_bomb' || sp === 'skill_bomb_place') {
+        // ACTIONS label
+        ctx.fillStyle = '#888899';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('ACTIONS', panelX, 355);
+
+        // Stone button (same as real game)
+        drawSkillButton(ctx, panelX, 365, 200, 50, {
+            name: 'Stone',
+            color: COLORS.STONE,
+            textColor: COLORS.WHITE,
+            cost: 0,
+            isSelected: game.placementType === 'stone',
+            isAffordable: true
+        });
+
+        // Skill button (same as real game)
+        if (currentPlayer && currentPlayer.specialSkill) {
+            const skillInfo = SKILL_INFO[currentPlayer.specialSkill];
+            if (skillInfo) {
+                const skillCost = SKILL_COSTS[skillInfo.costKey];
+                drawSkillButton(ctx, panelX, 423, 200, 50, {
+                    name: skillInfo.name,
+                    color: skillInfo.color,
+                    textColor: skillInfo.textColor,
+                    cost: skillCost,
+                    isSelected: game.placementType === 'bomb' || sp === 'skill_place',
+                    isAffordable: points >= skillCost
+                });
+            }
+        }
+
+        // Drill button (same as real game)
+        drawSkillButton(ctx, panelX, 481, 200, 50, {
+            name: 'Drill',
+            color: COLORS.DRILL,
+            textColor: COLORS.WHITE,
+            cost: SKILL_COSTS.drill,
+            isSelected: false,
+            isAffordable: points >= SKILL_COSTS.drill
+        });
     }
 }
 

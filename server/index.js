@@ -231,8 +231,12 @@ io.on('connection', (socket) => {
 
         // Update turn if the action ends the turn
         if (data.endsTurn) {
-            room.currentTurn = room.currentTurn === 1 ? 2 : 1;
-            if (room.gameLogic) room.gameLogic.currentTurn = room.currentTurn;
+            if (room.gameLogic) {
+                room.gameLogic.endTurn();
+                room.currentTurn = room.gameLogic.currentTurn;
+            } else {
+                room.currentTurn = room.currentTurn === 1 ? 2 : 1;
+            }
         }
 
         // Send authoritative state sync to both clients (Phase 7)

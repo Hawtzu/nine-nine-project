@@ -672,13 +672,7 @@ function render(now) {
                     game.controlAnimating = false;
                     game.controlAnimInitialized = false;
                     renderer.cleanupControlEffect();
-                    if (game.gameMode === 'online') {
-                        // Online: apply pending state sync (server already switched turn)
-                        game._consumePendingStateSync();
-                        game.phase = PHASES.ROLL;
-                    } else {
-                        game.endTurn();
-                    }
+                    game.endTurn();
                 }
             }
 

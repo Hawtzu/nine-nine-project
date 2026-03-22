@@ -106,7 +106,8 @@ class Game {
         this.board.deserialize(sync.board);
         this.player1.deserialize(sync.p1);
         this.player2.deserialize(sync.p2);
-        this.currentTurn = sync.currentTurn;
+        // Don't overwrite currentTurn - client endTurn() handles it correctly
+        // this.currentTurn = sync.currentTurn;
         if (sync.winner) {
             this.winner = sync.winner;
             this.winReason = sync.winReason;

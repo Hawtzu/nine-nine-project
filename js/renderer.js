@@ -3163,6 +3163,44 @@ class Renderer {
         this.drawButton(btnX, btnY, btnW, btnH, '#333366', 'OK');
     }
 
+    // Self disconnected notification dialog (you lost connection)
+    drawSelfDisconnectedDialog() {
+        const ctx = this.ctx;
+
+        // Overlay
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+        // Dialog box
+        const dw = 420, dh = 180;
+        const dx = (SCREEN_WIDTH - dw) / 2;
+        const dy = (SCREEN_HEIGHT - dh) / 2;
+
+        ctx.fillStyle = '#1a1a3a';
+        ctx.fillRect(dx, dy, dw, dh);
+        ctx.strokeStyle = '#ffaa33';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(dx, dy, dw, dh);
+
+        // Title
+        ctx.fillStyle = '#ffaa33';
+        ctx.font = 'bold 22px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Connection Lost', SCREEN_WIDTH / 2, dy + 40);
+
+        // Message
+        ctx.fillStyle = COLORS.WHITE;
+        ctx.font = '16px Arial';
+        ctx.fillText('接続が切断されました', SCREEN_WIDTH / 2, dy + 75);
+
+        // Single OK button
+        const btnW = 140, btnH = 45;
+        const btnX = (SCREEN_WIDTH - btnW) / 2;
+        const btnY = dy + 110;
+
+        this.drawButton(btnX, btnY, btnW, btnH, '#333366', 'OK');
+    }
+
     // Rematch request dialog
     drawRematchRequestDialog() {
         const ctx = this.ctx;

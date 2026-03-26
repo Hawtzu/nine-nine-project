@@ -919,6 +919,8 @@ function render(now) {
         renderer.drawOnlineDisconnectDialog();
     } else if (game.showConfirmDialog === 'opponent_disconnected') {
         renderer.drawOpponentDisconnectedDialog();
+    } else if (game.showConfirmDialog === 'self_disconnected') {
+        renderer.drawSelfDisconnectedDialog();
     } else if (game.showConfirmDialog === 'rematch_request') {
         renderer.drawRematchRequestDialog();
     }

@@ -34,10 +34,13 @@ class OnlineManager {
                 transports: ['websocket', 'polling'],
                 timeout: 10000,
                 reconnection: true,
-                reconnectionAttempts: 5,
+                reconnectionAttempts: Infinity,
                 reconnectionDelay: 1000,
                 reconnectionDelayMax: 5000
             });
+
+            // If in_game and disconnected, start a 60s timeout to give up reconnection
+            this._reconnectGiveUpTimer = null;
 
             this.socket.on('connect', () => {
                 console.log('[Online] Connected:', this.socket.id);
@@ -72,6 +75,17 @@ class OnlineManager {
                 if (this.state === 'in_game') {
                     this.reconnecting = true;
                     this.error = 'Reconnecting...';
+                    // Start 60s give-up timer
+                    if (this._reconnectGiveUpTimer) clearTimeout(this._reconnectGiveUpTimer);
+                    this._reconnectGiveUpTimer = setTimeout(() => {
+                        if (this.reconnecting) {
+                            console.log('[Online] Reconnection timed out after 60s');
+                            this.reconnecting = false;
+                            this.error = null;
+                            this.state = 'idle';
+                            if (this.onSelfDisconnected) this.onSelfDisconnected();
+                        }
+                    }, 60000);
                 }
             });
 
@@ -89,11 +103,17 @@ class OnlineManager {
             roomSecret: this.roomSecret
         }, (response) => {
             this.reconnecting = false;
+            // Clear give-up timer
+            if (this._reconnectGiveUpTimer) {
+                clearTimeout(this._reconnectGiveUpTimer);
+                this._reconnectGiveUpTimer = null;
+            }
             if (response.error) {
                 console.error('[Online] Rejoin failed:', response.error);
-                this.error = 'Could not rejoin game';
+                this.error = null;
                 this.state = 'idle';
-                if (this.onOpponentDisconnected) this.onOpponentDisconnected();
+                // Room gone = we were disconnected too long
+                if (this.onSelfDisconnected) this.onSelfDisconnected();
             } else {
                 console.log('[Online] Rejoined successfully');
                 this.error = null;
@@ -258,6 +278,10 @@ class OnlineManager {
     // Disconnect from server
     disconnect() {
         this._stopKeepAlive();
+        if (this._reconnectGiveUpTimer) {
+            clearTimeout(this._reconnectGiveUpTimer);
+            this._reconnectGiveUpTimer = null;
+        }
         if (this.socket) {
             this.socket.disconnect();
             this.socket = null;

@@ -1818,6 +1818,20 @@ class Game {
     // --- Click Handlers ---
 
     handleConfirmDialogClick(x, y) {
+        // Self disconnected dialog — single "OK" button
+        if (this.showConfirmDialog === 'self_disconnected') {
+            const btnW = 140, btnH = 45;
+            const dy = (SCREEN_HEIGHT - 180) / 2;
+            const btnX = (SCREEN_WIDTH - btnW) / 2;
+            const btnY = dy + 110;
+            if (x >= btnX && x <= btnX + btnW && y >= btnY && y <= btnY + btnH) {
+                this.showConfirmDialog = null;
+                this.gameMode = null;
+                this.phase = PHASES.START_SCREEN;
+            }
+            return true;
+        }
+
         // Opponent disconnected dialog — single "OK" button
         if (this.showConfirmDialog === 'opponent_disconnected') {
             const btnW = 140, btnH = 45;
@@ -2421,6 +2435,21 @@ class Game {
                 this.phase = PHASES.ONLINE_LOBBY;
             } else {
                 this.showConfirmDialog = 'opponent_disconnected';
+            }
+            onlineManager.disconnect();
+        };
+
+        // Self disconnected (rejoin failed — room was destroyed while we were offline)
+        onlineManager.onSelfDisconnected = () => {
+            this._selfReconnecting = false;
+            this._opponentReconnecting = false;
+            this.rematchState = 'hidden';
+            if (this.phase === PHASES.ONLINE_LOBBY || this.phase === PHASES.SKILL_SELECTION) {
+                this.onlineStatusMsg = 'Connection lost';
+                this.onlineLobbyMode = 'error';
+                this.phase = PHASES.ONLINE_LOBBY;
+            } else {
+                this.showConfirmDialog = 'self_disconnected';
             }
             onlineManager.disconnect();
         };

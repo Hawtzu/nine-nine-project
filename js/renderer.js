@@ -1405,9 +1405,9 @@ class Renderer {
     drawDifficultySelector() {
         const ctx = this.ctx;
         const cx = SCREEN_WIDTH / 2;
-        const btnW = 90, btnH = 50, gap = 10;
+        const btnW = 90, btnH = 40, gap = 10;
         const startX = cx - (btnW * 3 + gap * 2) / 2;
-        const y = 515;
+        const y = 518;
         const t = this.menuTime;
 
         // Difficulty buttons with neon style
@@ -1681,7 +1681,7 @@ class Renderer {
                 // Cut out highlights (draw clear rectangles)
                 ctx.globalCompositeOperation = 'destination-out';
                 for (const target of guide.highlightTargets) {
-                    if (target.type === 'button' || target.type === 'cell') {
+                    if (target.type === 'button' || target.type === 'cell' || target.type === 'area' || target.type === 'cutout') {
                         const pad = 6;
                         ctx.fillStyle = 'rgba(255, 255, 255, 1)';
                         ctx.beginPath();
@@ -1703,7 +1703,7 @@ class Renderer {
 
                 // Draw glow borders around highlights
                 for (const target of guide.highlightTargets) {
-                    if (target.type === 'button' || target.type === 'cell') {
+                    if (target.type === 'button' || target.type === 'cell' || target.type === 'area') {
                         const pad = 6;
                         ctx.save();
                         ctx.strokeStyle = '#FFD700';
@@ -1732,7 +1732,8 @@ class Renderer {
         // Guide text panel at top
         if (guide.text) {
             const panelW = 600;
-            const panelH = guide.subText ? 90 : 60;
+            const subLines = guide.subText ? guide.subText.split('\n').length : 0;
+            const panelH = guide.subText ? 80 + (subLines - 1) * 18 : 60;
             const panelX = (SCREEN_WIDTH - panelW) / 2;
             const panelY = 10;
 
@@ -1759,11 +1760,16 @@ class Renderer {
             const textY = guide.subText ? panelY + panelH * 0.38 : panelY + panelH / 2;
             ctx.fillText(guide.text, SCREEN_WIDTH / 2, textY);
 
-            // Sub text
+            // Sub text (supports \n for multiline)
             if (guide.subText) {
                 ctx.fillStyle = '#AAAACC';
                 ctx.font = '15px "Segoe UI", Arial, sans-serif';
-                ctx.fillText(guide.subText, SCREEN_WIDTH / 2, panelY + panelH * 0.7);
+                const lines = guide.subText.split('\n');
+                const lineH = 18;
+                const baseY = panelY + panelH * 0.65 - (lines.length - 1) * lineH / 2;
+                for (let i = 0; i < lines.length; i++) {
+                    ctx.fillText(lines[i], SCREEN_WIDTH / 2, baseY + i * lineH);
+                }
             }
         }
 

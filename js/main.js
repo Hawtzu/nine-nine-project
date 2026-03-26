@@ -436,13 +436,13 @@ function render(now) {
             // Draw highlights based on tutorial sub-phase
             if (interactiveTutorial && interactiveTutorial.active) {
                 const sp = interactiveTutorial.subPhase;
-                if (sp === 'move' || sp === 'move2' || sp === 'diagonal_move' || sp === 'skill_move') {
+                if (sp === 'move' || sp === 'move2' || sp === 'diagonal_move' || sp === 'skill_move' || sp === 'post_stock_move') {
                     // Exclude player's own position from move highlights (that's for diagonal toggle, not actual move)
                     const p1 = game.player1;
                     const filteredMovable = game.movableTiles.filter(t => !(t.row === p1.row && t.col === p1.col));
                     renderer.drawHighlights(filteredMovable, COLORS.MOVE_HIGHLIGHT);
                     if (game.fallTriggerTiles) renderer.drawHighlights(game.fallTriggerTiles, COLORS.FALL_HIGHLIGHT);
-                } else if (sp === 'place' || sp === 'place2' || sp === 'skill_place') {
+                } else if (sp === 'place' || sp === 'place2' || sp === 'skill_place' || sp === 'skill_bomb_place') {
                     renderer.drawHighlights(game.placeableTiles, COLORS.PLACE_HIGHLIGHT);
                 }
             }

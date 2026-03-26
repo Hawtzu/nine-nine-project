@@ -1,0 +1,13 @@
+{
+  "name": "nine-nine-server",
+  "version": "1.0.0",
+  "description": "Online multiplayer server for nine-nine-project",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "socket.io": "^4.7.4"
+  }
+}

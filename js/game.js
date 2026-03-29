@@ -2141,6 +2141,9 @@ class Game {
             this.onlineLobbyMode = 'menu';
             this.onlineStatusMsg = '';
             this.onlineRoomInput = '';
+            this._opponentReconnecting = false;
+            this._selfReconnecting = false;
+            this.showConfirmDialog = null;
             this.phase = PHASES.ONLINE_LOBBY;
             return true;
         }

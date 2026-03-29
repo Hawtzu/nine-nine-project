@@ -654,6 +654,7 @@ function render(now) {
                 if (elapsed >= 2500) {
                     game.sniperAnimating = false;
                     game.gameOver(game.currentTurn, 'sniped the opponent!');
+                    game._consumePendingStateSync();
                 }
             }
 
@@ -692,6 +693,7 @@ function render(now) {
                     game.bombAnimInitialized = false;
                     renderer.cleanupBombEffect();
                     game.gameOver(game.bombAnimPlayerNum === 1 ? 2 : 1, 'stepped on a bomb!');
+                    game._consumePendingStateSync();
                 }
             }
 
@@ -712,6 +714,7 @@ function render(now) {
                     renderer.cleanupFallEffect();
                     const fallMsg = 'was electrocuted!';
                     game.gameOver(game.fallAnimPlayerNum === 1 ? 2 : 1, fallMsg);
+                    game._consumePendingStateSync();
                 }
             }
             break;

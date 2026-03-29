@@ -2329,10 +2329,11 @@ class Game {
                 return true;
             }
         } else if (this.onlineLobbyMode === 'error') {
-            // Back button
+            // Back button — return to main menu
             if (x >= cx - 60 && x <= cx + 60 && y >= py + 320 && y <= py + 360) {
                 if (typeof onlineManager !== 'undefined') onlineManager.disconnect();
                 this.onlineLobbyMode = 'menu';
+                this.phase = PHASES.START_SCREEN;
                 return true;
             }
         }
@@ -2415,7 +2416,7 @@ class Game {
 
         // Opponent's connection was lost (grace period started, may rejoin)
         onlineManager.onOpponentConnectionLost = () => {
-            if (this.phase === PHASES.ONLINE_LOBBY || this.phase === PHASES.SKILL_SELECTION) {
+            if (this.phase === PHASES.ONLINE_LOBBY) {
                 this.onlineStatusMsg = 'Opponent connection lost...';
             } else {
                 this._opponentReconnecting = true;
@@ -2439,7 +2440,7 @@ class Game {
         onlineManager.onOpponentDisconnected = () => {
             this._opponentReconnecting = false;
             this.rematchState = 'hidden';
-            if (this.phase === PHASES.ONLINE_LOBBY || this.phase === PHASES.SKILL_SELECTION) {
+            if (this.phase === PHASES.ONLINE_LOBBY) {
                 this.onlineStatusMsg = 'Opponent disconnected';
                 this.onlineLobbyMode = 'error';
                 this.phase = PHASES.ONLINE_LOBBY;
@@ -2454,7 +2455,7 @@ class Game {
             this._selfReconnecting = false;
             this._opponentReconnecting = false;
             this.rematchState = 'hidden';
-            if (this.phase === PHASES.ONLINE_LOBBY || this.phase === PHASES.SKILL_SELECTION) {
+            if (this.phase === PHASES.ONLINE_LOBBY) {
                 this.onlineStatusMsg = 'Connection lost';
                 this.onlineLobbyMode = 'error';
                 this.phase = PHASES.ONLINE_LOBBY;

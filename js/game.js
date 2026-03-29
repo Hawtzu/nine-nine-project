@@ -2134,6 +2134,13 @@ class Game {
         // Online Match button (center y=560, h=60)
         if (x >= cx - 150 && x <= cx + 150 && y >= 530 && y <= 590) {
             this.showDifficultySelect = false;
+            // Ensure clean state when entering online lobby
+            if (typeof onlineManager !== 'undefined') {
+                onlineManager.disconnect();
+            }
+            this.onlineLobbyMode = 'menu';
+            this.onlineStatusMsg = '';
+            this.onlineRoomInput = '';
             this.phase = PHASES.ONLINE_LOBBY;
             return true;
         }

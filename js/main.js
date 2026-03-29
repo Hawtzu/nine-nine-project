@@ -920,8 +920,6 @@ function render(now) {
         renderer.drawConfirmDialog('Return to Menu', 'Save the game log?');
     } else if (game.showConfirmDialog === 'online_disconnect') {
         renderer.drawOnlineDisconnectDialog();
-    } else if (game.showConfirmDialog === 'opponent_disconnected') {
-        renderer.drawOpponentDisconnectedDialog();
     } else if (game.showConfirmDialog === 'self_disconnected') {
         renderer.drawSelfDisconnectedDialog();
     } else if (game.showConfirmDialog === 'rematch_request') {

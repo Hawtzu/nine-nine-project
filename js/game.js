@@ -1842,20 +1842,6 @@ class Game {
             return true;
         }
 
-        // Opponent disconnected dialog — single "OK" button
-        if (this.showConfirmDialog === 'opponent_disconnected') {
-            const btnW = 140, btnH = 45;
-            const dy = (SCREEN_HEIGHT - 180) / 2;
-            const btnX = (SCREEN_WIDTH - btnW) / 2;
-            const btnY = dy + 110;
-            if (x >= btnX && x <= btnX + btnW && y >= btnY && y <= btnY + btnH) {
-                this.showConfirmDialog = null;
-                this.gameMode = null;
-                this.phase = PHASES.START_SCREEN;
-            }
-            return true;
-        }
-
         // Online disconnect confirm — "Disconnect" / "Cancel"
         if (this.showConfirmDialog === 'online_disconnect') {
             const btnW = 140, btnH = 45;
@@ -2463,7 +2449,9 @@ class Game {
                 this.onlineLobbyMode = 'error';
                 this.phase = PHASES.ONLINE_LOBBY;
             } else {
-                this.showConfirmDialog = 'opponent_disconnected';
+                // Treat as a win for the remaining player
+                const myPlayerNum = onlineManager.playerNum;
+                this.gameOver(myPlayerNum, 'opponent disconnected!');
             }
             onlineManager.disconnect();
         };

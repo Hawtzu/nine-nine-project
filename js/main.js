@@ -930,6 +930,7 @@ function render(now) {
     if (logToolbar) {
         const gameActive = game.phase !== PHASES.START_SCREEN &&
             game.phase !== PHASES.SKILL_SELECTION &&
+            game.phase !== PHASES.TURN_ORDER_SELECT &&
             game.phase !== PHASES.SETTINGS &&
             game.phase !== PHASES.REPLAY;
         logToolbar.style.display = gameActive ? 'flex' : 'none';

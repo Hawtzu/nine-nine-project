@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { Server } = require('socket.io');
 const { RoomManager } = require('./room');
-const { DIRECTION_TYPE, setTestMode } = require('../shared/constants');
+const { DIRECTION_TYPE, MARKERS, SKILL_COSTS, BOARD_SIZE, setTestMode } = require('../shared/constants');
 
 const PORT = process.env.PORT || 3000;
 
@@ -139,6 +139,42 @@ io.on('connection', (socket) => {
             console.log(`[Room ${room.id}] Server game state initialized (GameLogic)`);
         }
 
+        // Record replay setup data
+        if (room.gameLogic) {
+            const gl = room.gameLogic;
+            const findMarkers = (board, marker) => {
+                const result = [];
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        if (board.getTile(r, c) === marker) {
+                            result.push({ row: r, col: c });
+                        }
+                    }
+                }
+                return result;
+            };
+            room.replaySetup = {
+                timestamp: new Date().toISOString(),
+                gameMode: 'online',
+                comDifficulty: null,
+                firstTurn: room.currentTurn,
+                skillCosts: { ...SKILL_COSTS },
+                player1: {
+                    position: { row: gl.player1.row, col: gl.player1.col },
+                    skill: gl.player1.specialSkill,
+                    diceQueue: [...gl.player1.diceQueue]
+                },
+                player2: {
+                    position: { row: gl.player2.row, col: gl.player2.col },
+                    skill: gl.player2.specialSkill,
+                    diceQueue: [...gl.player2.diceQueue]
+                },
+                board: gl.board.tiles.map(row => [...row]),
+                fountains: findMarkers(gl.board, MARKERS.FOUNTAIN),
+                stones: findMarkers(gl.board, MARKERS.STONE)
+            };
+        }
+
         socket.to(room.id).emit('board_setup', data);
         console.log(`[Room ${room.id}] Board setup sent, first turn: P${room.currentTurn}`);
     });
@@ -167,6 +203,7 @@ io.on('connection', (socket) => {
         // Server-side validation and state tracking via GameLogic
         if (room.gameLogic) {
             const gl = room.gameLogic;
+            const player = gl.getCurrentPlayer();
             try {
                 switch (data.type) {
                     case 'move': {
@@ -178,23 +215,36 @@ io.on('connection', (socket) => {
                             socket.emit('action_rejected', { reason: 'Invalid move' });
                             return;
                         }
+                        const fromRow = player.row, fromCol = player.col;
+                        // Check for fountain before move
+                        const destTile = gl.board.getTile(data.row, data.col);
                         const moveResult = gl.movePlayerLogic(data.row, data.col);
-                        // Bomb hit: don't set winner on server — let client animation handle gameOver
+
+                        room.logReplayEntry('move', { player: playerNum, from: { row: fromRow, col: fromCol }, to: { row: data.row, col: data.col }, mode: gl.moveMode });
+
                         if (!moveResult.bombHit) {
-                            // Complete move logic (fountain pickup, warp detection, etc.)
+                            // Check fountain before completeMoveLogic clears it
+                            if (destTile === MARKERS.FOUNTAIN) {
+                                room.logReplayEntry('fountain', { player: playerNum, pos: { row: data.row, col: data.col }, pts: 10 });
+                            }
                             gl.completeMoveLogic(data.row, data.col);
+                            // Check for warp (player position changed after completeMoveLogic)
+                            if (player.row !== data.row || player.col !== data.col) {
+                                room.logReplayEntry('warp', { player: playerNum, from: { row: data.row, col: data.col }, to: { row: player.row, col: player.col } });
+                            }
                         }
-                        // Reset moveMode after move
                         gl.moveMode = DIRECTION_TYPE.CROSS;
                         break;
                     }
                     case 'toggle_mode':
                         gl.toggleMoveMode();
+                        room.logReplayEntry('toggle_mode', { player: playerNum, mode: gl.moveMode });
                         break;
                     case 'place': {
                         if (data.placementType) gl.placementType = data.placementType;
                         gl.findPlaceableTiles();
                         gl.placeObject(data.row, data.col);
+                        room.logReplayEntry('place', { player: playerNum, pos: { row: data.row, col: data.col }, type: data.placementType || gl.placementType });
                         break;
                     }
                     case 'set_placement_type':
@@ -203,6 +253,7 @@ io.on('connection', (socket) => {
                     case 'drill':
                         gl.findDrillTargets();
                         gl.useDrill(data.row, data.col);
+                        room.logReplayEntry('drill', { player: playerNum, pos: { row: data.row, col: data.col } });
                         break;
                     case 'activate_skill':
                         gl.activateSkill();
@@ -210,15 +261,23 @@ io.on('connection', (socket) => {
                     case 'skill_target':
                         if (data.skillType) gl.activeSkillType = data.skillType;
                         gl.executeSkillTarget(data.row, data.col);
+                        room.logReplayEntry('skill', { player: playerNum, skill: data.skillType || gl.activeSkillType, target: { row: data.row, col: data.col }, pos: { row: data.row, col: data.col } });
                         break;
-                    case 'stock_dice':
+                    case 'stock_dice': {
+                        const stockedVal = player.diceQueue[0];
                         gl.stockCurrentDice();
+                        room.logReplayEntry('stock', { player: playerNum, storedDice: stockedVal });
                         break;
-                    case 'use_stock':
+                    }
+                    case 'use_stock': {
+                        const stockVal = player.stockedDice;
                         gl.useStockedDice();
+                        room.logReplayEntry('use_stock', { player: playerNum, stockVal, queue: [...player.diceQueue] });
                         break;
+                    }
                     case 'warp_select':
                         gl.completeWarpLogic(data.row, data.col);
+                        room.logReplayEntry('warp', { player: playerNum, from: { row: player.row, col: player.col }, to: { row: data.row, col: data.col } });
                         break;
                 }
             } catch (e) {
@@ -228,6 +287,21 @@ io.on('connection', (socket) => {
 
         // Forward to opponent
         socket.to(room.id).emit('opponent_action', data);
+
+        // Log end_turn before switching turn
+        if (data.endsTurn && room.gameLogic) {
+            const gl = room.gameLogic;
+            room.logReplayEntry('end_turn', {
+                player: room.currentTurn,
+                p1pts: gl.player1.points,
+                p2pts: gl.player2.points,
+                p1Queue: [...gl.player1.diceQueue],
+                p2Queue: [...gl.player2.diceQueue],
+                p1Stock: gl.player1.stockedDice,
+                p2Stock: gl.player2.stockedDice
+            });
+            room.replayTurnCounter++;
+        }
 
         // Update turn if the action ends the turn
         if (data.endsTurn) {
@@ -239,17 +313,35 @@ io.on('connection', (socket) => {
 
         // Send authoritative state sync to both clients (Phase 7)
         if (room.gameLogic) {
+            const gl = room.gameLogic;
             const sync = {
-                board: room.gameLogic.board.serialize(),
-                p1: room.gameLogic.player1.serialize(),
-                p2: room.gameLogic.player2.serialize(),
-                currentTurn: room.gameLogic.currentTurn,
-                winner: room.gameLogic.winner,
-                winReason: room.gameLogic.winReason,
-                diceRoll: room.gameLogic.diceRoll,
-                moveMode: room.gameLogic.moveMode,
+                board: gl.board.serialize(),
+                p1: gl.player1.serialize(),
+                p2: gl.player2.serialize(),
+                currentTurn: gl.currentTurn,
+                winner: gl.winner,
+                winReason: gl.winReason,
+                diceRoll: gl.diceRoll,
+                moveMode: gl.moveMode,
             };
             io.to(room.id).emit('state_sync', sync);
+
+            // Check for game over — send replay data
+            if (gl.winner && !room._replaySent) {
+                room._replaySent = true;
+                room.logReplayEntry('game_over', {
+                    winner: gl.winner,
+                    reason: gl.winReason || '',
+                    p1pts: gl.player1.points,
+                    p2pts: gl.player2.points,
+                    p1Queue: [...gl.player1.diceQueue],
+                    p2Queue: [...gl.player2.diceQueue],
+                    p1Stock: gl.player1.stockedDice,
+                    p2Stock: gl.player2.stockedDice
+                });
+                io.to(room.id).emit('game_replay', room.getReplayData());
+                console.log(`[Room ${room.id}] Game over — replay data sent (${room.replayLog.length} entries)`);
+            }
         }
     });
 
@@ -273,6 +365,14 @@ io.on('connection', (socket) => {
             // Server-authoritative: execute rollDice on server's GameLogic
             const result = room.gameLogic.rollDice();
             const player = room.gameLogic.getCurrentPlayer();
+
+            // Record replay log
+            room.logReplayEntry('roll', {
+                player: playerNum,
+                dice: result.diceValue,
+                queue: [...player.diceQueue]
+            });
+
             io.to(room.id).emit('dice_result', {
                 playerNum,
                 value: result.diceValue,
@@ -333,6 +433,7 @@ io.on('connection', (socket) => {
         // Reset room state for new game
         room.currentTurn = 1;
         room.lastActionSeq = { 1: 0, 2: 0 };
+        room.clearReplayLog();
         io.to(room.id).emit('rematch_accepted');
     });
     socket.on('rematch_decline', () => {
@@ -352,10 +453,14 @@ io.on('connection', (socket) => {
             // Start 30-second grace period
             room.disconnectTimers[playerNum] = setTimeout(() => {
                 console.log(`[Timeout] P${playerNum} did not rejoin room ${room.id}, destroying`);
-                // Notify remaining player
                 const remainingSocketIdx = playerNum === 1 ? 1 : 0;
                 const remainingSocketId = room.players[remainingSocketIdx];
                 if (remainingSocketId) {
+                    // Send partial replay data to remaining player before destroying room
+                    if (room.replaySetup && !room._replaySent) {
+                        io.to(remainingSocketId).emit('game_replay', room.getReplayData());
+                        console.log(`[Room ${room.id}] Partial replay sent to remaining player (${room.replayLog.length} entries)`);
+                    }
                     io.to(remainingSocketId).emit('opponent_disconnected');
                 }
                 roomManager.removeRoom(room.id);

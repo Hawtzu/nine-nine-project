@@ -186,6 +186,12 @@ class OnlineManager {
             if (this.onOpponentDisconnected) this.onOpponentDisconnected();
         });
 
+        // Server replay data (sent at game end or disconnect)
+        this.socket.on('game_replay', (data) => {
+            console.log('[Online] Received game replay data:', data.log ? data.log.length : 0, 'entries');
+            if (this.onGameReplay) this.onGameReplay(data);
+        });
+
         // Rematch events
         this.socket.on('rematch_request', () => {
             if (this.onRematchRequest) this.onRematchRequest();

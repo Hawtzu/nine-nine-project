@@ -393,6 +393,7 @@ class Game {
         this.diceRoll = 0;
         this.winner = null;
         if (typeof gameLog !== 'undefined') gameLog.reset();
+        this._serverReplayData = null;
         this.winReason = '';
         this.lastMoveDirectionType = DIRECTION_TYPE.CROSS;
         this.moveMode = DIRECTION_TYPE.CROSS;
@@ -1800,9 +1801,13 @@ class Game {
             if (typeof comPlayer !== 'undefined' && comPlayer) {
                 comPlayer.cancelPending();
             }
-            // Auto-save replay to localStorage
-            if (typeof replayEngine !== 'undefined' && replayEngine && typeof gameLog !== 'undefined') {
-                replayEngine.saveToStorage(gameLog);
+            // Auto-save replay to localStorage (prefer server data for online games)
+            if (typeof replayEngine !== 'undefined' && replayEngine) {
+                if (this._serverReplayData && this._serverReplayData.setup) {
+                    replayEngine.saveToStorage(this._serverReplayData);
+                } else if (typeof gameLog !== 'undefined') {
+                    replayEngine.saveToStorage(gameLog);
+                }
             }
         }
     }
@@ -2466,6 +2471,12 @@ class Game {
             onlineManager.disconnect();
         };
 
+        // Server replay data
+        onlineManager.onGameReplay = (data) => {
+            this._serverReplayData = data;
+            console.log('[Game] Received server replay data');
+        };
+
         // Rematch
         onlineManager.onRematchRequest = () => {
             if (this.rematchState === 'waiting') {
@@ -2829,14 +2840,21 @@ class Game {
     }
 
     _startReplay() {
-        if (typeof replayEngine !== 'undefined' && replayEngine && typeof gameLog !== 'undefined') {
-            const logData = { setup: gameLog.setupData, log: gameLog.entries };
-            replayEngine.load(logData);
-            replayEngine.first();
-            replayEngine.applyToGame(this);
-            this._replayMode = 'playback';
-            this.phase = PHASES.REPLAY;
+        if (typeof replayEngine === 'undefined' || !replayEngine) return;
+
+        let logData;
+        if (this._serverReplayData && this._serverReplayData.setup) {
+            logData = this._serverReplayData;
+        } else if (typeof gameLog !== 'undefined' && gameLog.setupData) {
+            logData = { setup: gameLog.setupData, log: gameLog.entries };
         }
+        if (!logData || !logData.setup) return;
+
+        replayEngine.load(logData);
+        replayEngine.first();
+        replayEngine.applyToGame(this);
+        this._replayMode = 'playback';
+        this.phase = PHASES.REPLAY;
     }
 
     requestRematch() {

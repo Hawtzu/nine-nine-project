@@ -24,6 +24,36 @@ class Room {
         this.roomSecret = Math.random().toString(36).substr(2, 12); // for rejoin auth
         this.disconnectTimers = {}; // playerNum -> setTimeout handle
         this.gameState = null; // initialized when game starts
+
+        // Replay log
+        this.replayLog = [];
+        this.replaySetup = null;
+        this.replayTurnCounter = 0;
+        this.replaySeq = 0;
+        this._replaySent = false;
+    }
+
+    logReplayEntry(action, data) {
+        this.replayLog.push({
+            seq: this.replaySeq++,
+            turn: this.replayTurnCounter,
+            player: data.player || null,
+            action: action,
+            data: data,
+            t: Date.now()
+        });
+    }
+
+    clearReplayLog() {
+        this.replayLog = [];
+        this.replaySetup = null;
+        this.replayTurnCounter = 0;
+        this.replaySeq = 0;
+        this._replaySent = false;
+    }
+
+    getReplayData() {
+        return { setup: this.replaySetup, log: this.replayLog };
     }
 
     initGameState(p1Skill, p2Skill) {

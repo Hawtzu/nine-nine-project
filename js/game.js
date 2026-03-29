@@ -2422,6 +2422,8 @@ class Game {
 
         // Opponent's connection was lost (grace period started, may rejoin)
         onlineManager.onOpponentConnectionLost = () => {
+            // Ignore during replay or game over — player is just reviewing
+            if (this.phase === PHASES.REPLAY || this.phase === PHASES.GAME_OVER) return;
             if (this.phase === PHASES.ONLINE_LOBBY) {
                 this.onlineStatusMsg = 'Opponent connection lost...';
             } else {
@@ -2446,6 +2448,11 @@ class Game {
         onlineManager.onOpponentDisconnected = () => {
             this._opponentReconnecting = false;
             this.rematchState = 'hidden';
+            if (this.phase === PHASES.REPLAY || this.phase === PHASES.GAME_OVER) {
+                // Just silently disconnect — don't interrupt replay or game over screen
+                onlineManager.disconnect();
+                return;
+            }
             if (this.phase === PHASES.ONLINE_LOBBY) {
                 this.onlineStatusMsg = 'Opponent disconnected';
                 this.onlineLobbyMode = 'error';
@@ -2474,6 +2481,10 @@ class Game {
         // Server replay data
         onlineManager.onGameReplay = (data) => {
             this._serverReplayData = data;
+            // Also save to localStorage immediately (in case gameOver already fired)
+            if (typeof replayEngine !== 'undefined' && replayEngine && data && data.setup) {
+                replayEngine.saveToStorage(data);
+            }
             console.log('[Game] Received server replay data');
         };
 

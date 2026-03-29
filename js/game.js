@@ -2002,7 +2002,8 @@ class Game {
             this.phase !== PHASES.GAME_OVER &&
             this.phase !== PHASES.SKILL_SELECTION &&
             this.phase !== PHASES.TURN_ORDER_SELECT &&
-            this.phase !== PHASES.ONLINE_LOBBY) {
+            this.phase !== PHASES.ONLINE_LOBBY &&
+            this.phase !== PHASES.REPLAY) {
             return false;
         }
 
@@ -2493,6 +2494,7 @@ class Game {
         }
         this.replaySelectScrollOffset = 0;
         this.phase = PHASES.REPLAY;
+        this.gameMode = null;
         this.winner = null;
         this._replayMode = 'select'; // 'select' or 'playback'
     }

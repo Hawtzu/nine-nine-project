@@ -109,8 +109,8 @@ class Game {
         // Don't overwrite currentTurn - client endTurn() handles it correctly
         // this.currentTurn = sync.currentTurn;
         if (sync.winner) {
-            this.winner = sync.winner;
-            this.winReason = sync.winReason;
+            // Use gameOver() to properly transition phase to GAME_OVER
+            this.gameOver(sync.winner, sync.winReason || 'game over');
         }
         this.diceRoll = sync.diceRoll;
         if (sync.moveMode !== undefined) this.moveMode = sync.moveMode;
@@ -1811,6 +1811,9 @@ class Game {
                     replayEngine.saveToStorage(gameLog);
                 }
             }
+        } else if (this.phase !== PHASES.GAME_OVER) {
+            // Winner was already set (e.g. by state_sync) but phase not transitioned
+            this.phase = PHASES.GAME_OVER;
         }
     }
 

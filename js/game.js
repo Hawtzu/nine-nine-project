@@ -373,6 +373,8 @@ class Game {
         // Sync dice queues
         this.player1.diceQueue = data.p1Queue;
         this.player2.diceQueue = data.p2Queue;
+        // Record setup for local replay fallback (P2 doesn't call setupInitialBoard)
+        if (typeof gameLog !== 'undefined') gameLog.recordSetup(this);
         // Start animation
         this.startAnimTileRevealOrder = this._buildTileRevealOrder();
         this.phase = PHASES.START_ANIM;

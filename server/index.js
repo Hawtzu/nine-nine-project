@@ -380,6 +380,24 @@ io.on('connection', (socket) => {
                 nonce,
                 serverAuthoritative: true
             });
+
+            // Check for game over after dice roll (e.g. blocked and cannot move)
+            const gl = room.gameLogic;
+            if (gl.winner && !room._replaySent) {
+                room._replaySent = true;
+                room.logReplayEntry('game_over', {
+                    winner: gl.winner,
+                    reason: gl.winReason || '',
+                    p1pts: gl.player1.points,
+                    p2pts: gl.player2.points,
+                    p1Queue: [...gl.player1.diceQueue],
+                    p2Queue: [...gl.player2.diceQueue],
+                    p1Stock: gl.player1.stockedDice,
+                    p2Stock: gl.player2.stockedDice
+                });
+                io.to(room.id).emit('game_replay', room.getReplayData());
+                console.log(`[Room ${room.id}] Game over (after dice) — replay data sent (${room.replayLog.length} entries)`);
+            }
         } else {
             // Fallback: legacy behavior
             const queue = data && data.queue ? data.queue : [1, 1, 1];

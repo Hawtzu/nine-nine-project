@@ -307,8 +307,8 @@ class ReplayEngine {
                     state.board[r][c] = MARKERS.CHECKPOINT;
                     state.checkpointOwners[`${r},${c}`] = data.player;
                     p.checkpointPos = { row: r, col: c };
-                    // Destroy surrounding stones (8-direction)
-                    const allDirs = [...CROSS_DIRECTIONS, ...DIAGONAL_DIRECTIONS];
+                    // Destroy surrounding stones (cross 4-direction only, matching game.js)
+                    const allDirs = CROSS_DIRECTIONS;
                     for (const dir of allDirs) {
                         const nr = r + dir.dr;
                         const nc = c + dir.dc;

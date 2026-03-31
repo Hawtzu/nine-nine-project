@@ -49,8 +49,44 @@ class ComPlayer {
 
     decideRollPhase() {
         if (this.game.winner) return;
-        // Simple: just roll the dice
-        this.game.rollDice();
+        const game = this.game;
+        const comPlayer = game.player2;
+
+        // Roll the dice
+        game.rollDice();
+
+        // Consider using stocked dice if available
+        if (comPlayer.stockedDice !== null && !game.stockedThisTurn) {
+            const currentDice = game.diceRoll;
+            const currentResult = this.search();
+            const currentScore = currentResult.score;
+
+            // Temporarily swap dice to stocked value and evaluate
+            const stockedVal = comPlayer.stockedDice;
+            game.diceRoll = stockedVal;
+            const stockResult = this.search();
+            const stockScore = stockResult.score;
+
+            // Restore original dice
+            game.diceRoll = currentDice;
+
+            // Use stock if it's clearly better (threshold: +5 to avoid noise)
+            if (stockScore > currentScore + 5) {
+                game.useStockedDice();
+            }
+        }
+
+        // Consider stocking current dice (save for later)
+        // Heuristic: stock if current dice gives very bad moves and we can afford 20pt
+        if (!game.stockedThisTurn && comPlayer.stockedDice === null &&
+            comPlayer.canAfford(SKILL_COSTS.stock)) {
+            const currentResult = this.search();
+            if (currentResult.score < -10) {
+                // Current dice is bad — stock it and get a new one
+                game.stockCurrentDice();
+            }
+        }
+
         this.executeAfterDelay(() => this.decideMovePhase(), 'MOVE');
     }
 
@@ -65,15 +101,33 @@ class ComPlayer {
 
         if (result.bestMove) {
             this.plannedPlace = result.bestPlace;
+            // Switch to diagonal mode if search chose a diagonal move
+            if (result.bestMove.isDiagonal) {
+                game.moveMode = DIRECTION_TYPE.DIAGONAL;
+                game.findMovableTiles();
+            }
             game.movePlayer(result.bestMove.row, result.bestMove.col);
         } else {
-            // No valid moves — check fall triggers
+            // No valid moves from search — try game's own movable tiles
+            this.plannedPlace = null;
+
             if (game.fallTriggerTiles.length > 0) {
-                const tile = game.fallTriggerTiles[0];
-                this.plannedPlace = null;
-                game.movePlayer(tile.row, tile.col);
+                game.movePlayer(game.fallTriggerTiles[0].row, game.fallTriggerTiles[0].col);
+            } else if (game.movableTiles.length > 0) {
+                game.movePlayer(game.movableTiles[0].row, game.movableTiles[0].col);
+            } else {
+                // Cross movement blocked — try diagonal via game engine
+                game.moveMode = DIRECTION_TYPE.DIAGONAL;
+                game.findMovableTiles();
+                if (game.movableTiles.length > 0) {
+                    game.movePlayer(game.movableTiles[0].row, game.movableTiles[0].col);
+                } else if (game.fallTriggerTiles.length > 0) {
+                    game.movePlayer(game.fallTriggerTiles[0].row, game.fallTriggerTiles[0].col);
+                } else {
+                    // Truly blocked — game should have ended at rollDice
+                    game.endTurn();
+                }
             }
-            // If truly no moves, game.js handles blocked player via rollDice
         }
     }
 
@@ -82,6 +136,13 @@ class ComPlayer {
     decidePlacePhase() {
         if (this.game.winner) return;
         const game = this.game;
+
+        // If game entered DRILL_TARGET phase (no placeable tiles, drill available)
+        if (game.phase === PHASES.DRILL_TARGET) {
+            this.decideDrillPhase();
+            return;
+        }
+
         const placeableTiles = game.placeableTiles;
 
         if (placeableTiles.length === 0) return;
@@ -122,6 +183,37 @@ class ComPlayer {
         this.plannedPlace = null;
     }
 
+    // ===== Drill Phase =====
+
+    decideDrillPhase() {
+        if (this.game.winner) return;
+        const game = this.game;
+        const targets = game.drillTargetTiles;
+
+        if (targets.length === 0) return;
+
+        // Evaluate each drill target by territory score after removing the stone
+        const comPos = game.player2.getPosition();
+        const oppPos = game.player1.getPosition();
+        const board = game.board.tiles;
+        let bestScore = -Infinity;
+        let bestTarget = targets[0];
+
+        for (const target of targets) {
+            const oldTile = board[target.row][target.col];
+            board[target.row][target.col] = MARKERS.EMPTY;
+            const score = this.evaluate(board, comPos, oppPos);
+            board[target.row][target.col] = oldTile;
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestTarget = target;
+            }
+        }
+
+        game.useDrill(bestTarget.row, bestTarget.col);
+    }
+
     // ===== Warp Selection =====
 
     decideWarpSelect() {
@@ -155,13 +247,18 @@ class ComPlayer {
         const comPos = game.player2.getPosition();
         const oppPos = game.player1.getPosition();
         const comDice = game.diceRoll; // Already rolled
+        const comPts = game.player2.points;
+        const oppPts = game.player1.points;
+        const diagCost = SKILL_COSTS.diagonal_move; // 10pt
+        const drillCost = SKILL_COSTS.drill; // 100pt
 
         let bestScore = -Infinity;
         let bestMove = null;
         let bestPlace = null;
 
-        // Get COM's movable tiles
-        const comMoves = this._getMovableTiles(board, comPos, comDice, oppPos);
+        // Get COM's movable tiles (cross + diagonal if affordable)
+        const moveMode = comPts >= diagCost ? 'both' : 'cross';
+        const comMoves = this._getMovableTiles(board, comPos, comDice, oppPos, moveMode);
 
         // If no moves available, return null (handled by decideMovePhase fallback)
         if (comMoves.length === 0) {
@@ -169,11 +266,33 @@ class ComPlayer {
         }
 
         for (const comMove of comMoves) {
+            const comDiagPenalty = comMove.isDiagonal ? diagCost : 0;
+            const comPtsAfterMove = comPts - comDiagPenalty;
+
             // Get COM's placeable tiles after moving
             const comPlaces = this._getPlaceableTiles(board, comMove, oppPos);
 
             if (comPlaces.length === 0) {
-                // Moving here means COM can't place → likely loses
+                // No placeable tiles — check if COM can drill to survive
+                if (comPtsAfterMove >= drillCost) {
+                    const drillTargets = this._getDrillTargets(board, comMove);
+                    for (const dt of drillTargets) {
+                        const oldDrill = board[dt.row][dt.col];
+                        board[dt.row][dt.col] = MARKERS.EMPTY;
+                        // After drilling, COM ends turn (no stone placed)
+                        const score = this._evaluateOpponentTurn(
+                            board, comMove, oppPos, oppPts,
+                            comPtsAfterMove - drillCost, diagCost, drillCost
+                        ) - comDiagPenalty;
+                        board[dt.row][dt.col] = oldDrill;
+
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestMove = comMove;
+                            bestPlace = null; // Will trigger drill in decidePlacePhase
+                        }
+                    }
+                }
                 continue;
             }
 
@@ -182,55 +301,23 @@ class ComPlayer {
                 const oldTile = board[comPlace.row][comPlace.col];
                 board[comPlace.row][comPlace.col] = MARKERS.STONE;
 
-                // Opponent's turn: try all dice values (1-3), take worst case (minimax)
-                let worstScore = Infinity;
-
-                for (let oppDice = 1; oppDice <= 3; oppDice++) {
-                    const oppMoves = this._getMovableTiles(board, oppPos, oppDice, comMove);
-
-                    if (oppMoves.length === 0) {
-                        // Opponent blocked with this dice → great for COM
-                        const score = this.evaluate(board, comMove, oppPos) + 50;
-                        worstScore = Math.min(worstScore, score);
-                        continue;
-                    }
-
-                    for (const oppMove of oppMoves) {
-                        const oppPlaces = this._getPlaceableTiles(board, oppMove, comMove);
-
-                        if (oppPlaces.length === 0) {
-                            // Opponent can move but can't place → good for COM
-                            const score = this.evaluate(board, comMove, oppMove) + 30;
-                            worstScore = Math.min(worstScore, score);
-                            continue;
-                        }
-
-                        for (const oppPlace of oppPlaces) {
-                            // Simulate opponent place
-                            const oldOppTile = board[oppPlace.row][oppPlace.col];
-                            board[oppPlace.row][oppPlace.col] = MARKERS.STONE;
-
-                            const score = this.evaluate(board, comMove, oppMove);
-                            worstScore = Math.min(worstScore, score);
-
-                            // Undo opponent place
-                            board[oppPlace.row][oppPlace.col] = oldOppTile;
-                        }
-                    }
-                }
+                const score = this._evaluateOpponentTurn(
+                    board, comMove, oppPos, oppPts,
+                    comPtsAfterMove, diagCost, drillCost
+                ) - comDiagPenalty;
 
                 // Undo COM place
                 board[comPlace.row][comPlace.col] = oldTile;
 
-                if (worstScore > bestScore) {
-                    bestScore = worstScore;
+                if (score > bestScore) {
+                    bestScore = score;
                     bestMove = comMove;
                     bestPlace = comPlace;
                 }
             }
         }
 
-        // If all moves were skipped (all had 0 placeable), fallback to first move
+        // If all moves were skipped (all had 0 placeable and no drill), fallback
         if (!bestMove && comMoves.length > 0) {
             bestMove = comMoves[0];
             const fallbackPlaces = this._getPlaceableTiles(board, bestMove, oppPos);
@@ -238,6 +325,63 @@ class ComPlayer {
         }
 
         return { bestMove, bestPlace, score: bestScore };
+    }
+
+    // Evaluate opponent's best response (minimizing layer of minimax)
+    _evaluateOpponentTurn(board, comPos, oppPos, oppPts, comPtsRemaining, diagCost, drillCost) {
+        let worstScore = Infinity;
+
+        for (let oppDice = 1; oppDice <= 3; oppDice++) {
+            const oppMode = oppPts >= diagCost ? 'both' : 'cross';
+            const oppMoves = this._getMovableTiles(board, oppPos, oppDice, comPos, oppMode);
+
+            if (oppMoves.length === 0) {
+                // Opponent blocked with this dice → great for COM
+                const score = this.evaluate(board, comPos, oppPos) + 50;
+                worstScore = Math.min(worstScore, score);
+                continue;
+            }
+
+            for (const oppMove of oppMoves) {
+                const oppDiagCost = oppMove.isDiagonal ? diagCost : 0;
+                const oppPtsAfterMove = oppPts - oppDiagCost;
+                const oppPlaces = this._getPlaceableTiles(board, oppMove, comPos);
+
+                if (oppPlaces.length === 0) {
+                    // Opponent has no placeable tiles — check drill
+                    if (oppPtsAfterMove >= drillCost) {
+                        // Opponent can drill to survive — evaluate after drill
+                        const drillTargets = this._getDrillTargets(board, oppMove);
+                        for (const dt of drillTargets) {
+                            const oldDrill = board[dt.row][dt.col];
+                            board[dt.row][dt.col] = MARKERS.EMPTY;
+                            const score = this.evaluate(board, comPos, oppMove) + oppDiagCost;
+                            board[dt.row][dt.col] = oldDrill;
+                            worstScore = Math.min(worstScore, score);
+                        }
+                    } else {
+                        // Opponent stuck and can't drill → very good for COM
+                        const score = this.evaluate(board, comPos, oppMove) + 80 + oppDiagCost;
+                        worstScore = Math.min(worstScore, score);
+                    }
+                    continue;
+                }
+
+                for (const oppPlace of oppPlaces) {
+                    // Simulate opponent place
+                    const oldOppTile = board[oppPlace.row][oppPlace.col];
+                    board[oppPlace.row][oppPlace.col] = MARKERS.STONE;
+
+                    const score = this.evaluate(board, comPos, oppMove) + oppDiagCost;
+                    worstScore = Math.min(worstScore, score);
+
+                    // Undo opponent place
+                    board[oppPlace.row][oppPlace.col] = oldOppTile;
+                }
+            }
+        }
+
+        return worstScore;
     }
 
     // ===== Territory Evaluation =====
@@ -291,12 +435,18 @@ class ComPlayer {
 
     // ===== Movement Simulation =====
 
-    _getMovableTiles(board, pos, diceValue, otherPos) {
-        // Simulate movement in all 4 cross directions for the given dice value
+    _getMovableTiles(board, pos, diceValue, otherPos, mode = 'cross') {
+        // Simulate movement in cross/diagonal/both directions for the given dice value
+        const dirs = mode === 'diagonal'
+            ? DIAGONAL_DIRECTIONS.map(d => ({ ...d, isDiag: true }))
+            : mode === 'both'
+            ? [...CROSS_DIRECTIONS.map(d => ({ ...d, isDiag: false })),
+               ...DIAGONAL_DIRECTIONS.map(d => ({ ...d, isDiag: true }))]
+            : CROSS_DIRECTIONS.map(d => ({ ...d, isDiag: false }));
         const results = [];
         const bombOwners = this.game.board.bombOwners || {};
 
-        for (const dir of CROSS_DIRECTIONS) {
+        for (const dir of dirs) {
             let steps = diceValue;
             let cur = { row: pos.row, col: pos.col };
             let finalDest = null;
@@ -341,7 +491,7 @@ class ComPlayer {
                     visited.add(key);
                 }
                 if (tile === MARKERS.SWAMP && !visited.has(key)) {
-                    steps = Math.max(step, steps - 1);
+                    steps = Math.max(step, steps - 2);
                     visited.add(key);
                 }
                 step++;
@@ -354,6 +504,7 @@ class ComPlayer {
                     bombOwners[destKey] !== 2) {
                     continue; // Skip — stepping on opponent's bomb = death
                 }
+                finalDest.isDiagonal = dir.isDiag;
                 results.push(finalDest);
             }
         }
@@ -369,8 +520,8 @@ class ComPlayer {
     }
 
     _getReachableTiles(board, pos, diceValue, otherPos) {
-        // Get all tiles reachable from pos with given dice (cross only for territory seeds)
-        return this._getMovableTiles(board, pos, diceValue, otherPos);
+        // Get all tiles reachable from pos with given dice (cross + diagonal for territory seeds)
+        return this._getMovableTiles(board, pos, diceValue, otherPos, 'both');
     }
 
     _getPlaceableTiles(board, pos, otherPos) {
@@ -386,6 +537,23 @@ class ComPlayer {
                 tile === MARKERS.ICE || tile === MARKERS.SWAMP ||
                 tile === MARKERS.WARP || tile === MARKERS.CHECKPOINT ||
                 tile === MARKERS.BOMB || tile === MARKERS.ELECTROMAGNET) {
+                results.push({ row: nr, col: nc });
+            }
+        }
+        return results;
+    }
+
+    // ===== Drill Helpers =====
+
+    _getDrillTargets(board, pos) {
+        // Adjacent cross-direction tiles that are drillable (stone, snow, electromagnet)
+        const results = [];
+        for (const dir of CROSS_DIRECTIONS) {
+            const nr = pos.row + dir.dr;
+            const nc = pos.col + dir.dc;
+            if (nr < 0 || nr >= BOARD_SIZE || nc < 0 || nc >= BOARD_SIZE) continue;
+            const tile = board[nr][nc];
+            if (tile === MARKERS.STONE || tile === MARKERS.SNOW || tile === MARKERS.ELECTROMAGNET) {
                 results.push({ row: nr, col: nc });
             }
         }

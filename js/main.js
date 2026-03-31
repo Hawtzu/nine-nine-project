@@ -631,13 +631,15 @@ function render(now) {
             renderer.drawTrails(animManager.trails, now);
             renderer.drawRipples(animManager.ripples, now);
 
-            // Draw players with pulse animation (skip during fall/sneak animation)
+            // Draw players with pulse animation (skip during fall/sneak/momonga animation)
             if (!(game.fallAnimating && game.fallAnimPlayerNum === 1) &&
-                !(game.sneakAnimating && game.sneakAnimPlayerNum === 1)) {
+                !(game.sneakAnimating && game.sneakAnimPlayerNum === 1) &&
+                !(game.momongaAnimating && game.momongaAnimPlayerNum === 1)) {
                 renderer.drawPlayer(game.player1, null, now);
             }
             if (!(game.fallAnimating && game.fallAnimPlayerNum === 2) &&
-                !(game.sneakAnimating && game.sneakAnimPlayerNum === 2)) {
+                !(game.sneakAnimating && game.sneakAnimPlayerNum === 2) &&
+                !(game.momongaAnimating && game.momongaAnimPlayerNum === 2)) {
                 renderer.drawPlayer(game.player2, null, now);
             }
 
@@ -699,6 +701,18 @@ function render(now) {
 
                 if (elapsed >= 1800) {
                     game.sneakAnimating = false;
+                    game.endTurn();
+                    game._consumePendingStateSync();
+                }
+            }
+
+            // Momonga leaf scatter animation
+            if (game.momongaAnimating) {
+                const elapsed = now - game.momongaAnimStart;
+                renderer.drawMomongaEffect(elapsed, game.momongaAnimFrom, game.momongaAnimTo, game.momongaAnimPlayerNum);
+
+                if (elapsed >= 1800) {
+                    game.momongaAnimating = false;
                     game.endTurn();
                     game._consumePendingStateSync();
                 }

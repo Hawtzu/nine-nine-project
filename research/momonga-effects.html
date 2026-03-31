@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Momonga Effect Comparison</title>
+<style>
+  body { margin: 0; background: #1a1a2e; color: #fff; font-family: 'Segoe UI', sans-serif; display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; padding: 20px; }
+  h1 { width: 100%; text-align: center; color: #90EE90; margin-bottom: 0; }
+  p.subtitle { width: 100%; text-align: center; color: #aaa; margin-top: 5px; }
+  .card { background: #16213e; border: 2px solid #90EE90; border-radius: 12px; padding: 10px; width: 380px; }
+  .card h2 { text-align: center; color: #90EE90; margin: 5px 0; font-size: 16px; }
+  .card p { text-align: center; color: #aaa; font-size: 12px; margin: 2px 0 8px; }
+  canvas { display: block; margin: 0 auto; border-radius: 8px; cursor: pointer; }
+  .hint { text-align: center; color: #666; font-size: 11px; margin-top: 5px; }
+</style>
+</head>
+<body>
+<h1>Momonga Effect Comparison</h1>
+<p class="subtitle">最も近い石の十字方向に飛行するスキル（60pt）— クリックで再生</p>
+
+<!-- Effect 1: Glide Trail -->
+<div class="card">
+  <h2>1. Glide Trail（滑空軌跡）</h2>
+  <p>弧を描く光の軌跡で滑空を表現</p>
+  <canvas id="c1" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<!-- Effect 2: Wind Spiral -->
+<div class="card">
+  <h2>2. Wind Spiral（風の渦巻き）</h2>
+  <p>風の渦で消えて到着地に再出現</p>
+  <canvas id="c2" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<!-- Effect 3: Leaf Scatter -->
+<div class="card">
+  <h2>3. Leaf Scatter（木の葉散らし）</h2>
+  <p>木の葉が散って軌道に沿って流れる</p>
+  <canvas id="c3" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<!-- Effect 4: Shadow Dash -->
+<div class="card">
+  <h2>4. Shadow Dash（影の疾走）</h2>
+  <p>残像が高速で移動して到着地で実体化</p>
+  <canvas id="c4" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<!-- Effect 5: Star Jump -->
+<div class="card">
+  <h2>5. Star Jump（星跳び）</h2>
+  <p>上空に跳んでキラキラ降下</p>
+  <canvas id="c5" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<script>
+const CELL = 38;
+const BOARD_X = 10, BOARD_Y = 10;
+const COLS = 9, ROWS = 7;
+const P_COLOR = '#4fc3f7';
+const STONE_COLOR = '#9C27B0';
+const GREEN = '#90EE90';
+
+// Board layout: player at (1,1), stone at (1,6), target at (1,7) — long horizontal glide
+const FROM = { row: 1, col: 1 };
+const STONE = { row: 1, col: 6 };
+const TO = { row: 1, col: 7 };
+
+function drawBoard(ctx, w, h) {
+  ctx.fillStyle = '#0f0f23';
+  ctx.fillRect(0, 0, w, h);
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const x = BOARD_X + c * CELL;
+      const y = BOARD_Y + r * CELL;
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.strokeRect(x, y, CELL, CELL);
+    }
+  }
+  // Draw stone
+  const sx = BOARD_X + STONE.col * CELL + CELL / 2;
+  const sy = BOARD_Y + STONE.row * CELL + CELL / 2;
+  ctx.beginPath();
+  ctx.arc(sx, sy, CELL * 0.35, 0, Math.PI * 2);
+  ctx.fillStyle = STONE_COLOR;
+  ctx.fill();
+  ctx.strokeStyle = '#CE93D8';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function drawPlayer(ctx, row, col, alpha = 1) {
+  const x = BOARD_X + col * CELL + CELL / 2;
+  const y = BOARD_Y + row * CELL + CELL / 2;
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.arc(x, y, CELL * 0.35, 0, Math.PI * 2);
+  ctx.fillStyle = P_COLOR;
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  // Number
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('1', x, y);
+}
+
+function getPos(row, col) {
+  return { x: BOARD_X + col * CELL + CELL / 2, y: BOARD_Y + row * CELL + CELL / 2 };
+}
+
+const DUR = 1800;
+
+// ============ Effect 1: Glide Trail ============
+function effect1(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+  const from = getPos(FROM.row, FROM.col);
+  const to = getPos(TO.row, TO.col);
+  // Arc control point (above the line)
+  const cpX = (from.x + to.x) / 2;
+  const cpY = Math.min(from.y, to.y) - 80;
+
+  function bezier(t) {
+    const u = 1 - t;
+    return {
+      x: u * u * from.x + 2 * u * t * cpX + t * t * to.x,
+      y: u * u * from.y + 2 * u * t * cpY + t * t * to.y
+    };
+  }
+
+  function draw(now) {
+    if (!start) start = now;
+    const elapsed = now - start;
+    const p = Math.min(1, elapsed / DUR);
+    drawBoard(ctx, canvas.width, canvas.height);
+
+    // Draw trail
+    const trailLen = 0.3;
+    const headP = Math.min(1, p / 0.7);
+    if (headP > 0) {
+      ctx.beginPath();
+      const startP = Math.max(0, headP - trailLen);
+      const pt0 = bezier(startP);
+      ctx.moveTo(pt0.x, pt0.y);
+      for (let t = startP; t <= headP; t += 0.02) {
+        const pt = bezier(t);
+        ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.strokeStyle = GREEN;
+      ctx.lineWidth = 4;
+      ctx.globalAlpha = 0.7;
+      ctx.shadowColor = GREEN;
+      ctx.shadowBlur = 15;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Glow particles along trail
+      for (let i = 0; i < 8; i++) {
+        const t = startP + (headP - startP) * (i / 8);
+        const pt = bezier(t);
+        const age = (headP - t) / trailLen;
+        ctx.globalAlpha = Math.max(0, 0.6 - age * 0.6);
+        ctx.beginPath();
+        ctx.arc(pt.x + (Math.random() - 0.5) * 10, pt.y + (Math.random() - 0.5) * 10, 2 + Math.random() * 3, 0, Math.PI * 2);
+        ctx.fillStyle = GREEN;
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Ghost at origin
+    if (p < 0.5) {
+      drawPlayer(ctx, FROM.row, FROM.col, Math.max(0, 1 - p / 0.3));
+    }
+
+    // Player at moving position / destination
+    if (p < 0.7) {
+      const pos = bezier(headP);
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, CELL * 0.3, 0, Math.PI * 2);
+      ctx.fillStyle = P_COLOR;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    } else {
+      const fadeIn = Math.min(1, (p - 0.7) / 0.15);
+      drawPlayer(ctx, TO.row, TO.col, fadeIn);
+    }
+
+    // Landing flash
+    if (p >= 0.65 && p < 0.9) {
+      const lp = (p - 0.65) / 0.25;
+      ctx.globalAlpha = Math.max(0, 0.6 - lp * 0.6);
+      ctx.beginPath();
+      ctx.arc(to.x, to.y, 10 + lp * 25, 0, Math.PI * 2);
+      const g = ctx.createRadialGradient(to.x, to.y, 0, to.x, to.y, 10 + lp * 25);
+      g.addColorStop(0, GREEN);
+      g.addColorStop(1, 'rgba(144,238,144,0)');
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    if (p >= 1) { drawPlayer(ctx, TO.row, TO.col, 1); return; }
+    requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+// ============ Effect 2: Wind Spiral ============
+function effect2(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+  const from = getPos(FROM.row, FROM.col);
+  const to = getPos(TO.row, TO.col);
+  const particles = [];
+  for (let i = 0; i < 20; i++) {
+    particles.push({
+      angle: Math.random() * Math.PI * 2,
+      speed: 1.5 + Math.random() * 2,
+      radius: 5 + Math.random() * 15,
+      size: 2 + Math.random() * 3,
+      phase: Math.random() // 0=departure, 1=arrival
+    });
+  }
+
+  function draw(now) {
+    if (!start) start = now;
+    const elapsed = now - start;
+    const p = Math.min(1, elapsed / DUR);
+    drawBoard(ctx, canvas.width, canvas.height);
+
+    // Departure spiral (0 - 0.4)
+    if (p < 0.5) {
+      const sp = Math.min(1, p / 0.4);
+      for (const pt of particles) {
+        if (pt.phase > 0.5) continue;
+        const a = pt.angle + sp * Math.PI * 4;
+        const r = pt.radius * (1 - sp * 0.3) * (1 + sp);
+        const px = from.x + Math.cos(a) * r;
+        const py = from.y + Math.sin(a) * r;
+        ctx.globalAlpha = Math.max(0, 0.7 - sp * 0.7);
+        ctx.beginPath();
+        ctx.arc(px, py, pt.size, 0, Math.PI * 2);
+        ctx.fillStyle = GREEN;
+        ctx.shadowColor = GREEN;
+        ctx.shadowBlur = 8;
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+      drawPlayer(ctx, FROM.row, FROM.col, Math.max(0, 1 - sp));
+    }
+
+    // Arrival spiral (0.5 - 0.9)
+    if (p > 0.45 && p < 1) {
+      const sp = Math.min(1, (p - 0.45) / 0.4);
+      for (const pt of particles) {
+        if (pt.phase <= 0.5) continue;
+        const a = pt.angle - sp * Math.PI * 4;
+        const r = pt.radius * (1.5 - sp * 1.2);
+        const px = to.x + Math.cos(a) * r;
+        const py = to.y + Math.sin(a) * r;
+        ctx.globalAlpha = sp < 0.5 ? sp * 2 * 0.7 : Math.max(0, 0.7 - (sp - 0.5) * 2 * 0.7);
+        ctx.beginPath();
+        ctx.arc(px, py, pt.size, 0, Math.PI * 2);
+        ctx.fillStyle = GREEN;
+        ctx.shadowColor = GREEN;
+        ctx.shadowBlur = 8;
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+      // Player fades in
+      if (p > 0.6) {
+        drawPlayer(ctx, TO.row, TO.col, Math.min(1, (p - 0.6) / 0.2));
+      }
+    }
+
+    if (p >= 1) { drawPlayer(ctx, TO.row, TO.col, 1); return; }
+    requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+// ============ Effect 3: Leaf Scatter ============
+function effect3(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+  const from = getPos(FROM.row, FROM.col);
+  const to = getPos(TO.row, TO.col);
+  const leaves = [];
+  for (let i = 0; i < 15; i++) {
+    leaves.push({
+      delay: Math.random() * 0.3,
+      offsetX: (Math.random() - 0.5) * 30,
+      offsetY: (Math.random() - 0.5) * 30,
+      rot: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 8,
+      size: 4 + Math.random() * 4,
+      color: ['#4CAF50', '#8BC34A', '#CDDC39', '#66BB6A', '#90EE90'][Math.floor(Math.random() * 5)]
+    });
+  }
+
+  function drawLeaf(cx, cy, size, rotation, color, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, cy);
+    ctx.rotate(rotation);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, size, size * 0.4, 0, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function draw(now) {
+    if (!start) start = now;
+    const elapsed = now - start;
+    const p = Math.min(1, elapsed / DUR);
+    drawBoard(ctx, canvas.width, canvas.height);
+
+    // Ghost fades out
+    if (p < 0.4) {
+      drawPlayer(ctx, FROM.row, FROM.col, Math.max(0, 1 - p / 0.25));
+    }
+
+    // Leaves fly from origin to destination
+    for (const leaf of leaves) {
+      const lp = Math.max(0, Math.min(1, (p - leaf.delay) / 0.6));
+      if (lp <= 0) continue;
+
+      // Ease-in-out
+      const ease = lp < 0.5 ? 2 * lp * lp : 1 - Math.pow(-2 * lp + 2, 2) / 2;
+      const lx = from.x + (to.x - from.x) * ease + leaf.offsetX * Math.sin(lp * Math.PI);
+      const ly = from.y + (to.y - from.y) * ease + leaf.offsetY * Math.sin(lp * Math.PI * 1.5) - Math.sin(lp * Math.PI) * 40;
+      const alpha = lp < 0.8 ? Math.min(1, lp * 3) : Math.max(0, (1 - lp) * 5);
+      const rot = leaf.rot + lp * leaf.rotSpeed;
+
+      drawLeaf(lx, ly, leaf.size, rot, leaf.color, alpha * 0.8);
+    }
+
+    // Player fades in at destination
+    if (p > 0.5) {
+      const fadeIn = Math.min(1, (p - 0.5) / 0.25);
+      drawPlayer(ctx, TO.row, TO.col, fadeIn);
+
+      // Leaf burst at landing
+      if (p > 0.55 && p < 0.85) {
+        const bp = (p - 0.55) / 0.3;
+        for (let i = 0; i < 6; i++) {
+          const a = (Math.PI * 2 / 6) * i + bp * 0.5;
+          const r = 10 + bp * 25;
+          const lx = to.x + Math.cos(a) * r;
+          const ly = to.y + Math.sin(a) * r;
+          drawLeaf(lx, ly, 4, a + bp * 3, '#90EE90', Math.max(0, 0.7 - bp));
+        }
+      }
+    }
+
+    if (p >= 1) { drawPlayer(ctx, TO.row, TO.col, 1); return; }
+    requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+// ============ Effect 4: Shadow Dash ============
+function effect4(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+  const from = getPos(FROM.row, FROM.col);
+  const to = getPos(TO.row, TO.col);
+
+  function draw(now) {
+    if (!start) start = now;
+    const elapsed = now - start;
+    const p = Math.min(1, elapsed / DUR);
+    drawBoard(ctx, canvas.width, canvas.height);
+
+    const moveP = Math.min(1, p / 0.5); // Movement completes at 50%
+    const ease = 1 - Math.pow(1 - moveP, 3); // Ease-out cubic
+
+    // Afterimages (8 trailing shadows)
+    if (p < 0.7) {
+      const numGhosts = 8;
+      for (let i = 0; i < numGhosts; i++) {
+        const delay = i * 0.04;
+        const gp = Math.max(0, Math.min(1, (moveP - delay) / (1 - delay * numGhosts)));
+        const ge = 1 - Math.pow(1 - gp, 3);
+        const gx = from.x + (to.x - from.x) * ge;
+        const gy = from.y + (to.y - from.y) * ge;
+        const alpha = Math.max(0, (0.4 - i * 0.05)) * (p < 0.5 ? 1 : Math.max(0, 1 - (p - 0.5) / 0.2));
+
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.arc(gx, gy, CELL * 0.32, 0, Math.PI * 2);
+        ctx.fillStyle = P_COLOR;
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Main player position
+    const px = from.x + (to.x - from.x) * ease;
+    const py = from.y + (to.y - from.y) * ease;
+
+    if (p < 0.5) {
+      // Moving player with speed lines
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.arc(px, py, CELL * 0.33, 0, Math.PI * 2);
+      ctx.fillStyle = P_COLOR;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // Speed lines
+      for (let i = 0; i < 5; i++) {
+        const ly = py - 8 + i * 4;
+        const lx = px - 15 - Math.random() * 20;
+        ctx.globalAlpha = 0.3 + Math.random() * 0.3;
+        ctx.beginPath();
+        ctx.moveTo(lx, ly);
+        ctx.lineTo(lx - 15 - Math.random() * 15, ly);
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Arrival materialization
+    if (p >= 0.45) {
+      const ap = Math.min(1, (p - 0.45) / 0.25);
+      // Flash
+      if (ap < 0.5) {
+        ctx.globalAlpha = (0.5 - ap) * 0.8;
+        ctx.beginPath();
+        ctx.arc(to.x, to.y, 20 + ap * 20, 0, Math.PI * 2);
+        const g = ctx.createRadialGradient(to.x, to.y, 0, to.x, to.y, 20 + ap * 20);
+        g.addColorStop(0, 'rgba(255,255,255,0.8)');
+        g.addColorStop(1, 'rgba(79,195,247,0)');
+        ctx.fillStyle = g;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      drawPlayer(ctx, TO.row, TO.col, ap);
+    }
+
+    if (p >= 1) { drawPlayer(ctx, TO.row, TO.col, 1); return; }
+    requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+// ============ Effect 5: Star Jump ============
+function effect5(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+  const from = getPos(FROM.row, FROM.col);
+  const to = getPos(TO.row, TO.col);
+  const midX = (from.x + to.x) / 2;
+  const midY = -20; // Above screen
+  const sparkles = [];
+  for (let i = 0; i < 12; i++) {
+    sparkles.push({
+      angle: Math.random() * Math.PI * 2,
+      dist: 10 + Math.random() * 25,
+      size: 1.5 + Math.random() * 2.5,
+      twinkle: Math.random() * Math.PI * 2
+    });
+  }
+
+  function drawStar(cx, cy, r, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const a = (Math.PI / 2) * i;
+      ctx.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+      ctx.lineTo(cx + Math.cos(a + Math.PI / 4) * r * 0.3, cy + Math.sin(a + Math.PI / 4) * r * 0.3);
+      ctx.lineTo(cx + Math.cos(a + Math.PI / 2) * r, cy + Math.sin(a + Math.PI / 2) * r);
+    }
+    ctx.fillStyle = '#FFD700';
+    ctx.shadowColor = '#FFD700';
+    ctx.shadowBlur = 10;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  function draw(now) {
+    if (!start) start = now;
+    const elapsed = now - start;
+    const p = Math.min(1, elapsed / DUR);
+    drawBoard(ctx, canvas.width, canvas.height);
+
+    // Phase 1: Jump up (0 - 0.35)
+    if (p < 0.4) {
+      const jp = Math.min(1, p / 0.35);
+      const ease = 1 - (1 - jp) * (1 - jp); // Ease-out
+      const px = from.x + (midX - from.x) * ease;
+      const py = from.y + (midY - from.y) * ease;
+      const scale = 1 - ease * 0.6;
+      const alpha = Math.max(0, 1 - jp);
+
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(px, py, CELL * 0.35 * scale, 0, Math.PI * 2);
+      ctx.fillStyle = P_COLOR;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // Upward trail
+      for (let i = 0; i < 5; i++) {
+        const tp = Math.max(0, jp - i * 0.08);
+        const tx = from.x + (midX - from.x) * (1 - (1 - tp) * (1 - tp));
+        const ty = from.y + (midY - from.y) * (1 - (1 - tp) * (1 - tp));
+        ctx.globalAlpha = Math.max(0, 0.3 - i * 0.06);
+        drawStar(tx, ty, 4 - i * 0.5, Math.max(0, 0.3 - i * 0.06));
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Phase 2: Descend with sparkles (0.4 - 0.8)
+    if (p >= 0.35 && p < 0.85) {
+      const dp = Math.min(1, (p - 0.35) / 0.45);
+      const ease = dp * dp; // Ease-in (accelerating fall)
+      const px = midX + (to.x - midX) * ease;
+      const py = midY + (to.y - midY) * ease;
+      const scale = 0.4 + dp * 0.6;
+      const alpha = Math.min(1, dp * 2);
+
+      // Sparkle trail
+      for (const sp of sparkles) {
+        const sa = sp.angle + dp * 3;
+        const sd = sp.dist * (1 - dp * 0.5);
+        const sx = px + Math.cos(sa) * sd;
+        const sy = py + Math.sin(sa) * sd;
+        const twinkle = Math.sin(dp * 10 + sp.twinkle) * 0.5 + 0.5;
+        ctx.globalAlpha = alpha * twinkle * 0.7;
+        ctx.beginPath();
+        ctx.arc(sx, sy, sp.size, 0, Math.PI * 2);
+        ctx.fillStyle = '#FFD700';
+        ctx.shadowColor = '#FFD700';
+        ctx.shadowBlur = 5;
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+
+      // Descending player
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(px, py, CELL * 0.35 * scale, 0, Math.PI * 2);
+      ctx.fillStyle = P_COLOR;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // Phase 3: Landing impact (0.75 - 1.0)
+    if (p >= 0.75) {
+      const lp = Math.min(1, (p - 0.75) / 0.25);
+      drawPlayer(ctx, TO.row, TO.col, Math.min(1, lp * 2));
+
+      // Landing star burst
+      if (lp < 0.7) {
+        for (let i = 0; i < 8; i++) {
+          const a = (Math.PI * 2 / 8) * i;
+          const r = 5 + lp * 35;
+          const sx = to.x + Math.cos(a) * r;
+          const sy = to.y + Math.sin(a) * r;
+          drawStar(sx, sy, 3 + (1 - lp) * 3, Math.max(0, 0.8 - lp * 1.2));
+        }
+      }
+    }
+
+    if (p >= 1) { drawPlayer(ctx, TO.row, TO.col, 1); return; }
+    requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+// Initialize all
+const effects = [effect1, effect2, effect3, effect4, effect5];
+effects.forEach((fn, i) => {
+  const canvas = document.getElementById('c' + (i + 1));
+  fn(canvas);
+  canvas.addEventListener('click', () => fn(canvas));
+});
+</script>
+</body>
+</html>

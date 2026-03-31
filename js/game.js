@@ -32,6 +32,11 @@ class Game {
         this.sneakAnimPlayerNum = 0;
         this.sneakAnimFrom = { row: 0, col: 0 };
         this.sneakAnimTo = { row: 0, col: 0 };
+        this.momongaAnimating = false;
+        this.momongaAnimStart = 0;
+        this.momongaAnimPlayerNum = 0;
+        this.momongaAnimFrom = { row: 0, col: 0 };
+        this.momongaAnimTo = { row: 0, col: 0 };
         this.fallAnimating = false;
         this.fallAnimStart = 0;
         this.fallAnimDir = { dr: 0, dc: 0 };
@@ -125,7 +130,7 @@ class Game {
 
     // Consume pending state sync if one exists
     _consumePendingStateSync() {
-        if (this._pendingStateSync && !this.bombAnimating && !this.sniperAnimating && !this.landsharkAnimating && !this.sneakAnimating && !this.fallAnimating) {
+        if (this._pendingStateSync && !this.bombAnimating && !this.sniperAnimating && !this.landsharkAnimating && !this.sneakAnimating && !this.momongaAnimating && !this.fallAnimating) {
             this._applyStateSync(this._pendingStateSync);
             this._pendingStateSync = null;
         }
@@ -1583,11 +1588,16 @@ class Game {
         const fromRow = currentPlayer.row;
         const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
-        animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, row, col, 'move');
-        this.phase = PHASES.ANIMATING;
-        animManager.playerAnims[currentPlayer.playerNum].onComplete = () => {
-            this.endTurn();
-        };
+
+        // Momonga leaf scatter effect
+        this.momongaAnimating = true;
+        this.momongaAnimStart = performance.now();
+        this.momongaAnimPlayerNum = currentPlayer.playerNum;
+        this.momongaAnimFrom = { row: fromRow, col: fromCol };
+        this.momongaAnimTo = { row, col };
+        this.skillTargetTiles = [];
+        this.activeSkillType = null;
+        // Keep phase as SKILL_TARGET (anim renders in MOVE/PLACE case block)
     }
 
     // --- Turn Management ---
@@ -1961,6 +1971,7 @@ class Game {
         if (this.phase === PHASES.ANIMATING) return false;
         if (this.phase === PHASES.START_ANIM) return false;
         if (this.sneakAnimating) return false;
+        if (this.momongaAnimating) return false;
 
         // Hover-menu: skill selection → return to menu (online: disconnect confirm)
         if ((this.phase === PHASES.SKILL_SELECTION || this.phase === PHASES.TURN_ORDER_SELECT) && y < 50) {

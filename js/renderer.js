@@ -4523,6 +4523,119 @@ class Renderer {
         ctx.restore();
     }
 
+    drawMomongaEffect(elapsed, fromPos, toPos, playerNum) {
+        const ctx = this.ctx;
+        const dur = 1800;
+        const p = Math.min(1, elapsed / dur);
+
+        const fromX = fromPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+        const fromY = fromPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+        const toX = toPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+        const toY = toPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+
+        // Generate deterministic leaves using seed-like approach
+        if (!this._momongaLeaves) {
+            this._momongaLeaves = [];
+            for (let i = 0; i < 15; i++) {
+                const seed = i * 7 + 3;
+                this._momongaLeaves.push({
+                    delay: (seed % 30) / 100,
+                    offsetX: ((seed * 13) % 60 - 30),
+                    offsetY: ((seed * 17) % 60 - 30),
+                    rot: ((seed * 23) % 628) / 100,
+                    rotSpeed: ((seed * 31) % 160 - 80) / 10,
+                    size: 5 + (seed % 5),
+                    colorIdx: seed % 5
+                });
+            }
+        }
+        const leafColors = ['#4CAF50', '#8BC34A', '#CDDC39', '#66BB6A', '#90EE90'];
+        const leaves = this._momongaLeaves;
+
+        ctx.save();
+
+        // Ghost at origin fades out
+        if (p < 0.4) {
+            const ghostAlpha = Math.max(0, 1 - p / 0.25);
+            ctx.globalAlpha = ghostAlpha;
+            ctx.beginPath();
+            ctx.arc(fromX, fromY, CELL_SIZE * 0.35, 0, Math.PI * 2);
+            ctx.fillStyle = playerNum === 1 ? COLORS.P1_PIECE : COLORS.P2_PIECE;
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Flying leaves from origin to destination
+        for (const leaf of leaves) {
+            const lp = Math.max(0, Math.min(1, (p - leaf.delay) / 0.6));
+            if (lp <= 0) continue;
+
+            // Ease-in-out
+            const ease = lp < 0.5 ? 2 * lp * lp : 1 - Math.pow(-2 * lp + 2, 2) / 2;
+            const lx = fromX + (toX - fromX) * ease + leaf.offsetX * Math.sin(lp * Math.PI);
+            const ly = fromY + (toY - fromY) * ease + leaf.offsetY * Math.sin(lp * Math.PI * 1.5) - Math.sin(lp * Math.PI) * 40;
+            const alpha = lp < 0.8 ? Math.min(1, lp * 3) : Math.max(0, (1 - lp) * 5);
+            const rot = leaf.rot + lp * leaf.rotSpeed;
+
+            // Draw leaf (rotated ellipse)
+            ctx.save();
+            ctx.globalAlpha = alpha * 0.85;
+            ctx.translate(lx, ly);
+            ctx.rotate(rot);
+            ctx.beginPath();
+            ctx.ellipse(0, 0, leaf.size, leaf.size * 0.4, 0, 0, Math.PI * 2);
+            ctx.fillStyle = leafColors[leaf.colorIdx];
+            ctx.shadowColor = leafColors[leaf.colorIdx];
+            ctx.shadowBlur = 6;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
+        // Player fades in at destination
+        if (p > 0.5) {
+            const fadeIn = Math.min(1, (p - 0.5) / 0.25);
+            ctx.globalAlpha = fadeIn;
+            ctx.beginPath();
+            ctx.arc(toX, toY, CELL_SIZE * 0.35, 0, Math.PI * 2);
+            ctx.fillStyle = playerNum === 1 ? COLORS.P1_PIECE : COLORS.P2_PIECE;
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Landing leaf burst at destination
+        if (p > 0.55 && p < 0.85) {
+            const bp = (p - 0.55) / 0.3;
+            for (let i = 0; i < 8; i++) {
+                const a = (Math.PI * 2 / 8) * i + bp * 0.5;
+                const r = 10 + bp * 30;
+                const lx = toX + Math.cos(a) * r;
+                const ly = toY + Math.sin(a) * r;
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, 0.7 - bp);
+                ctx.translate(lx, ly);
+                ctx.rotate(a + bp * 3);
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 5, 2, 0, 0, Math.PI * 2);
+                ctx.fillStyle = '#90EE90';
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.restore();
+
+        // Clean up leaves when animation ends
+        if (p >= 1) {
+            this._momongaLeaves = null;
+        }
+    }
+
     drawLandsharkEffect(elapsed, fromPos, toPos) {
         const ctx = this.ctx;
         const fx = fromPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;

@@ -2034,8 +2034,8 @@ class Renderer {
         ctx.restore();
 
         // Draw panels
-        this._drawTurnOrderPanel('Player 1', 20, COLORS.P1_PANEL_BG, p1Choice, gameMode !== 'com');
-        this._drawTurnOrderPanel('Player 2', SCREEN_WIDTH - PANEL_WIDTH + 20, COLORS.P2_PANEL_BG, p2Choice, gameMode !== 'com');
+        this._drawTurnOrderPanel('Player 1', 20, COLORS.P1_PANEL_BG, p1Choice, true);
+        this._drawTurnOrderPanel(gameMode === 'com' ? 'COM' : 'Player 2', SCREEN_WIDTH - PANEL_WIDTH + 20, COLORS.P2_PANEL_BG, p2Choice, gameMode !== 'com');
 
         // Center message
         ctx.save();

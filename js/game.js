@@ -447,7 +447,7 @@ class Game {
         this.phase = PHASES.SKILL_SELECTION;
         // In COM mode, trigger COM's skill selection after a delay
         if (mode === 'com' && typeof comPlayer !== 'undefined' && comPlayer) {
-            comPlayer.difficulty = this.comDifficulty || COM_DIFFICULTY.NORMAL;
+            comPlayer.reset();
             comPlayer.executeAfterDelay(() => comPlayer.decideSkillSelection(), 'SKILL_SELECTION');
         }
     }
@@ -2109,33 +2109,11 @@ class Game {
             return true;
         }
 
-        // COM button (center y=470, h=70) — toggle difficulty selector
+        // COM button (center y=470, h=70) — start COM game directly
         if (x >= cx - 150 && x <= cx + 150 && y >= 435 && y <= 505) {
-            this.showDifficultySelect = !this.showDifficultySelect;
+            this.showDifficultySelect = false;
+            this.startGame('com');
             return true;
-        }
-
-        // Difficulty buttons (shown when showDifficultySelect is true)
-        if (this.showDifficultySelect) {
-            const btnW = 90, btnH = 40, gap = 10;
-            const startX = cx - (btnW * 3 + gap * 2) / 2;
-            const btnY = 518;
-
-            if (y >= btnY && y <= btnY + btnH) {
-                if (x >= startX && x <= startX + btnW) {
-                    this.comDifficulty = COM_DIFFICULTY.EASY;
-                    this.showDifficultySelect = false;
-                    this.startGame('com');
-                    return true;
-                }
-                if (x >= startX + btnW + gap && x <= startX + 2 * btnW + gap) {
-                    this.comDifficulty = COM_DIFFICULTY.NORMAL;
-                    this.showDifficultySelect = false;
-                    this.startGame('com');
-                    return true;
-                }
-                // Hard is disabled (Coming Soon)
-            }
         }
 
         // Online Match button (center y=560, h=60)

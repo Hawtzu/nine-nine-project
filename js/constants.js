@@ -124,12 +124,6 @@ const SKILL_CATEGORIES = [
 // (KAMAKURA_PATTERNS is in shared/constants.js)
 
 // --- COM (Computer) Battle ---
-const COM_DIFFICULTY = {
-    EASY: 'easy',
-    NORMAL: 'normal',
-    HARD: 'hard'
-};
-
 const COM_DELAYS = {
     SKILL_SELECTION: 800,
     ROLL: 600,

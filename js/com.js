@@ -106,13 +106,13 @@ class ComPlayer {
                 game.moveMode = DIRECTION_TYPE.DIAGONAL;
                 game.findMovableTiles();
             }
-            game.movePlayer(result.bestMove.row, result.bestMove.col);
+            this._executeMove(game, result.bestMove);
         } else {
             // No valid moves from search — try game's own movable tiles
             this.plannedPlace = null;
 
             if (game.fallTriggerTiles.length > 0) {
-                game.movePlayer(game.fallTriggerTiles[0].row, game.fallTriggerTiles[0].col);
+                this._executeMove(game, game.fallTriggerTiles[0]);
             } else if (game.movableTiles.length > 0) {
                 game.movePlayer(game.movableTiles[0].row, game.movableTiles[0].col);
             } else {
@@ -122,7 +122,7 @@ class ComPlayer {
                 if (game.movableTiles.length > 0) {
                     game.movePlayer(game.movableTiles[0].row, game.movableTiles[0].col);
                 } else if (game.fallTriggerTiles.length > 0) {
-                    game.movePlayer(game.fallTriggerTiles[0].row, game.fallTriggerTiles[0].col);
+                    this._executeMove(game, game.fallTriggerTiles[0]);
                 } else {
                     // Truly blocked — game should have ended at rollDice
                     game.endTurn();
@@ -181,6 +181,40 @@ class ComPlayer {
 
         game.placeObject(bestTile.row, bestTile.col);
         this.plannedPlace = null;
+    }
+
+    // ===== Move Execution =====
+
+    _executeMove(game, tile) {
+        // Check if this tile is a fall trigger (neon border / electromagnet death)
+        const fallTile = game.fallTriggerTiles.find(
+            t => t.row === tile.row && t.col === tile.col
+        );
+
+        if (fallTile) {
+            // Use the same fall animation flow as PvP (game.js handleMovePhaseClick)
+            const currentPlayer = game.getCurrentPlayer();
+            const fromRow = currentPlayer.row;
+            const fromCol = currentPlayer.col;
+            game.pendingFallDir = { dr: fallTile.dr || 0, dc: fallTile.dc || 0 };
+            game.pendingFallPlayerNum = game.currentTurn;
+            game.pendingFallElectromagnet = fallTile.electromagnet || false;
+            currentPlayer.moveTo(fallTile.row, fallTile.col);
+            animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, fallTile.row, fallTile.col, 'move');
+            game.phase = PHASES.ANIMATING;
+            animManager.playerAnims[currentPlayer.playerNum].onComplete = () => {
+                game.fallAnimating = true;
+                game.fallAnimStart = performance.now();
+                game.fallAnimDir = game.pendingFallDir;
+                game.fallAnimPlayerNum = game.pendingFallPlayerNum;
+                game.fallAnimPlayerPos = { row: fallTile.row, col: fallTile.col };
+                game.fallAnimElectromagnet = game.pendingFallElectromagnet;
+                game.fallAnimInitialized = false;
+                game.phase = PHASES.MOVE;
+            };
+        } else {
+            game.movePlayer(tile.row, tile.col);
+        }
     }
 
     // ===== Drill Phase =====

@@ -527,7 +527,7 @@ class GameLogic {
         const skillCostMap = {
             [SPECIAL_SKILLS.DOMINATION]: SKILL_COSTS.domination,
             [SPECIAL_SKILLS.SNIPER]: SKILL_COSTS.sniper,
-            [SPECIAL_SKILLS.HITOKIRI]: SKILL_COSTS.hitokiri,
+            [SPECIAL_SKILLS.LANDSHARK]: SKILL_COSTS.landshark,
             [SPECIAL_SKILLS.CHECKPOINT]: SKILL_COSTS.checkpoint,
             [SPECIAL_SKILLS.SURIASHI]: SKILL_COSTS.suriashi,
             [SPECIAL_SKILLS.MOMONGA]: SKILL_COSTS.momonga,
@@ -677,8 +677,8 @@ class GameLogic {
                 return this.useDomination();
             case SPECIAL_SKILLS.SNIPER:
                 return this.activateSniper();
-            case SPECIAL_SKILLS.HITOKIRI:
-                return this.activateHitokiri();
+            case SPECIAL_SKILLS.LANDSHARK:
+                return this.activateLandshark();
             case SPECIAL_SKILLS.SURIASHI:
                 return this.activateSuriashi();
             case SPECIAL_SKILLS.METEOR:
@@ -796,14 +796,14 @@ class GameLogic {
     }
 
     /**
-     * Activate hitokiri skill.
+     * Activate landshark skill.
      * @returns {boolean}
      */
-    activateHitokiri() {
+    activateLandshark() {
         const currentPlayer = this.getCurrentPlayer();
-        if (!currentPlayer.canAfford(SKILL_COSTS.hitokiri)) return false;
-        if (!this.checkHitokiriCondition()) return false;
-        currentPlayer.deductPoints(SKILL_COSTS.hitokiri);
+        if (!currentPlayer.canAfford(SKILL_COSTS.landshark)) return false;
+        if (!this.checkLandsharkCondition()) return false;
+        currentPlayer.deductPoints(SKILL_COSTS.landshark);
         this.gameOver(this.currentTurn, 'slashed the opponent!');
         return true;
     }
@@ -1063,7 +1063,7 @@ class GameLogic {
         return true;
     }
 
-    checkHitokiriCondition() {
+    checkLandsharkCondition() {
         const currentPlayer = this.getCurrentPlayer();
         const otherPlayer = this.getOtherPlayer();
         const pPos = currentPlayer.getPosition();

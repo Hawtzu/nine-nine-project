@@ -658,6 +658,19 @@ function render(now) {
                 }
             }
 
+            // Landshark slash animation
+            if (game.landsharkAnimating) {
+                const elapsed = now - game.landsharkAnimStart;
+                renderer.drawLandsharkEffect(elapsed, game.landsharkAnimFromPos, game.landsharkAnimToPos);
+
+                // After 2.5 seconds (2s anim + 0.5s buffer), trigger game over
+                if (elapsed >= 2500) {
+                    game.landsharkAnimating = false;
+                    game.gameOver(game.currentTurn, 'slashed the opponent!');
+                    game._consumePendingStateSync();
+                }
+            }
+
             // Control (domination) chain animation
             if (game.controlAnimating) {
                 const elapsed = now - game.controlAnimStart;

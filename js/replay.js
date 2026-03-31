@@ -339,7 +339,7 @@ class ReplayEngine {
                     }
                 }
                 break;
-            // sniper, hitokiri — game_over follows, no position change
+            // sniper, landshark — game_over follows, no position change
         }
     }
 
@@ -431,6 +431,7 @@ class ReplayEngine {
             'checkpoint_teleport': 'Checkpoint (teleport)',
             'domination': 'Control',
             'sniper': 'Sniper',
+            'landshark': 'Landshark',
             'hitokiri': 'Landshark',
             'suriashi': 'Sneak',
             'meteor': 'Meteor Shower',

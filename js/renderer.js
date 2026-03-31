@@ -3418,7 +3418,7 @@ class Renderer {
                 if (skillCosts && a.raw && a.raw.action === 'skill' && a.raw.data) {
                     const costKeyMap = {
                         'checkpoint_place': 'checkpoint', 'checkpoint_teleport': 'checkpoint',
-                        'domination': 'domination', 'sniper': 'sniper', 'hitokiri': 'hitokiri',
+                        'domination': 'domination', 'sniper': 'sniper', 'landshark': 'landshark', 'hitokiri': 'landshark',
                         'suriashi': 'suriashi', 'meteor': 'meteor', 'momonga': 'momonga', 'kamakura': 'kamakura',
                         'electromagnet': 'electromagnet'
                     };
@@ -4433,6 +4433,194 @@ class Renderer {
             ctx.fillText('SNIPER!', BOARD_OFFSET_X + BOARD_SIZE * CELL_SIZE / 2, BOARD_OFFSET_Y + BOARD_SIZE * CELL_SIZE / 2);
             ctx.shadowBlur = 0;
             ctx.restore();
+        }
+    }
+
+    drawLandsharkEffect(elapsed, fromPos, toPos) {
+        const ctx = this.ctx;
+        const fx = fromPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+        const fy = fromPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+        const tx = toPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+        const ty = toPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+        const cx = BOARD_OFFSET_X + BOARD_SIZE * CELL_SIZE / 2;
+        const cy = BOARD_OFFSET_Y + BOARD_SIZE * CELL_SIZE / 2;
+
+        // Phase 1 (0-300ms): Fin emerges from ground and travels from attacker to target
+        if (elapsed < 300) {
+            const t = elapsed / 300;
+            const eased = t * t; // accelerating
+            const finX = fx + (tx - fx) * eased;
+            const finY = fy + (ty - fy) * eased;
+
+            // Ground crack trail
+            ctx.save();
+            ctx.globalAlpha = 0.6 * t;
+            ctx.strokeStyle = '#DC143C';
+            ctx.lineWidth = 3;
+            ctx.shadowColor = '#DC143C';
+            ctx.shadowBlur = 8;
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath();
+            ctx.moveTo(fx, fy);
+            ctx.lineTo(finX, finY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.shadowBlur = 0;
+            ctx.restore();
+
+            // Fin triangle
+            ctx.save();
+            ctx.globalAlpha = 0.5 + 0.5 * t;
+            ctx.fillStyle = '#808080';
+            ctx.strokeStyle = '#DC143C';
+            ctx.lineWidth = 2;
+            const finSize = 12 + 8 * t;
+            ctx.beginPath();
+            ctx.moveTo(finX, finY - finSize);
+            ctx.lineTo(finX - finSize * 0.6, finY + 4);
+            ctx.lineTo(finX + finSize * 0.6, finY + 4);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Helper: draw shark jaw (upper and lower teeth) at target position
+        const drawJaw = (alpha, openAmount) => {
+            const jawWidth = CELL_SIZE * 1.1;
+            const teethCount = 7;
+            const toothW = jawWidth / teethCount;
+            const toothH = CELL_SIZE * 0.4;
+            const jawLeft = tx - jawWidth / 2;
+
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.shadowColor = '#DC143C';
+            ctx.shadowBlur = 8;
+
+            // Upper jaw — teeth pointing down, offset upward by openAmount
+            const upperY = ty - openAmount;
+            // Gum line
+            ctx.fillStyle = '#333333';
+            ctx.fillRect(jawLeft, upperY - toothH * 0.4, jawWidth, toothH * 0.4);
+            // Teeth
+            ctx.fillStyle = '#FFFFFF';
+            ctx.strokeStyle = '#CCCCCC';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < teethCount; i++) {
+                const x = jawLeft + i * toothW + toothW / 2;
+                ctx.beginPath();
+                ctx.moveTo(x - toothW * 0.4, upperY);
+                ctx.lineTo(x, upperY + toothH);
+                ctx.lineTo(x + toothW * 0.4, upperY);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            }
+
+            // Lower jaw — teeth pointing up, offset downward by openAmount
+            const lowerY = ty + openAmount;
+            // Gum line
+            ctx.fillStyle = '#333333';
+            ctx.fillRect(jawLeft, lowerY, jawWidth, toothH * 0.4);
+            // Teeth
+            ctx.fillStyle = '#FFFFFF';
+            ctx.strokeStyle = '#CCCCCC';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < teethCount; i++) {
+                const x = jawLeft + i * toothW + toothW / 2;
+                ctx.beginPath();
+                ctx.moveTo(x - toothW * 0.4, lowerY);
+                ctx.lineTo(x, lowerY - toothH);
+                ctx.lineTo(x + toothW * 0.4, lowerY);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            }
+
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        };
+
+        // Phase 2 (300-600ms): Shark jaw opens then bites shut
+        if (elapsed >= 300 && elapsed < 600) {
+            const t = (elapsed - 300) / 300;
+            const maxOpen = CELL_SIZE * 0.7;
+            let openAmount;
+
+            if (t < 0.33) {
+                // 300-400ms: Jaw appears open
+                const s = t / 0.33;
+                openAmount = maxOpen * s;
+            } else if (t < 0.83) {
+                // 400-550ms: Jaw snaps shut with easing
+                const s = (t - 0.33) / 0.5;
+                const eased = 1 - Math.pow(1 - s, 3); // ease-out cubic
+                openAmount = maxOpen * (1 - eased);
+            } else {
+                // 550-600ms: Hold closed
+                openAmount = 0;
+            }
+
+            drawJaw(0.9, openAmount);
+        }
+
+        // Phase 3 (600-1200ms): Impact flash + closed jaw persists + "LANDSHARK!" text
+        if (elapsed >= 600 && elapsed < 1200) {
+            const t = (elapsed - 600) / 600;
+
+            // Closed jaw persists and fades
+            drawJaw(0.8 * (1 - t * 0.5), 0);
+
+            // Impact flash
+            if (t < 0.3) {
+                const flashT = t / 0.3;
+                ctx.save();
+                ctx.globalAlpha = 0.7 * (1 - flashT);
+                const impGrad = ctx.createRadialGradient(tx, ty, 0, tx, ty, CELL_SIZE * 1.5);
+                impGrad.addColorStop(0, '#FFFFFF');
+                impGrad.addColorStop(0.4, '#DC143C');
+                impGrad.addColorStop(1, 'rgba(220, 20, 60, 0)');
+                ctx.fillStyle = impGrad;
+                ctx.beginPath();
+                ctx.arc(tx, ty, CELL_SIZE * 1.5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // Shockwave ring
+            if (t < 0.6) {
+                const swT = t / 0.6;
+                const swRadius = swT * CELL_SIZE * 2;
+                ctx.save();
+                ctx.globalAlpha = 0.5 * (1 - swT);
+                ctx.strokeStyle = '#DC143C';
+                ctx.lineWidth = 2 * (1 - swT) + 1;
+                ctx.beginPath();
+                ctx.arc(tx, ty, swRadius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // "LANDSHARK!" text
+            const textAppear = Math.min(1, t * 3);
+            const textFade = t > 0.7 ? (t - 0.7) / 0.3 : 0;
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 36px Arial';
+            ctx.fillStyle = '#DC143C';
+            ctx.shadowColor = '#FF0000';
+            ctx.shadowBlur = 15;
+            ctx.globalAlpha = textAppear * (1 - textFade);
+            ctx.fillText('LANDSHARK!', cx, cy);
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+
+        // Phase 4 (1200-2000ms): Jaw fades out
+        if (elapsed >= 1200 && elapsed < 2000) {
+            const t = (elapsed - 1200) / 800;
+            drawJaw(0.4 * (1 - t), 0);
         }
     }
 

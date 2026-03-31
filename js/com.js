@@ -279,7 +279,7 @@ class ComPlayer {
     decideSkillSelection() {
         if (this.game.winner) return;
         const skillScores = {
-            'bomb_skill': 80, 'sniper_skill': 75, 'hitokiri_skill': 70,
+            'bomb_skill': 80, 'sniper_skill': 75, 'landshark_skill': 70,
             'domination_skill': 65, 'meteor_skill': 60, 'checkpoint_skill': 55,
             'kamakura_skill': 50, 'momonga_skill': 50, 'warp_skill': 45,
             'electromagnet_skill': 55, 'ice_skill': 40, 'swamp_skill': 35, 'suriashi_skill': 30
@@ -1081,9 +1081,9 @@ class ComPlayer {
                 return result;
             }
 
-            case SPECIAL_SKILLS.HITOKIRI:
-                if (game.checkHitokiriCondition()) {
-                    game.activateHitokiri();
+            case SPECIAL_SKILLS.LANDSHARK:
+                if (game.checkLandsharkCondition()) {
+                    game.activateLandshark();
                     return true;
                 }
                 return false;

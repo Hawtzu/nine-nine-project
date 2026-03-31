@@ -25,6 +25,8 @@ class Game {
         this.moveMode = DIRECTION_TYPE.CROSS;
         this.sniperAnimating = false;
         this.sniperAnimStart = 0;
+        this.landsharkAnimating = false;
+        this.landsharkAnimStart = 0;
         this.fallAnimating = false;
         this.fallAnimStart = 0;
         this.fallAnimDir = { dr: 0, dc: 0 };
@@ -118,7 +120,7 @@ class Game {
 
     // Consume pending state sync if one exists
     _consumePendingStateSync() {
-        if (this._pendingStateSync && !this.bombAnimating && !this.sniperAnimating && !this.fallAnimating) {
+        if (this._pendingStateSync && !this.bombAnimating && !this.sniperAnimating && !this.landsharkAnimating && !this.fallAnimating) {
             this._applyStateSync(this._pendingStateSync);
             this._pendingStateSync = null;
         }
@@ -404,6 +406,8 @@ class Game {
         this.activeSkillType = null;
         this.sniperAnimating = false;
         this.sniperAnimStart = 0;
+        this.landsharkAnimating = false;
+        this.landsharkAnimStart = 0;
         this.fallAnimating = false;
         this.fallAnimStart = 0;
         this.fallAnimDir = { dr: 0, dc: 0 };
@@ -1017,7 +1021,7 @@ class Game {
         const skillCostMap = {
             [SPECIAL_SKILLS.DOMINATION]: SKILL_COSTS.domination,
             [SPECIAL_SKILLS.SNIPER]: SKILL_COSTS.sniper,
-            [SPECIAL_SKILLS.HITOKIRI]: SKILL_COSTS.hitokiri,
+            [SPECIAL_SKILLS.LANDSHARK]: SKILL_COSTS.landshark,
             [SPECIAL_SKILLS.CHECKPOINT]: SKILL_COSTS.checkpoint,
             [SPECIAL_SKILLS.SURIASHI]: SKILL_COSTS.suriashi,
             [SPECIAL_SKILLS.MOMONGA]: SKILL_COSTS.momonga,
@@ -1220,8 +1224,8 @@ class Game {
                 return this.useDomination();
             case SPECIAL_SKILLS.SNIPER:
                 return this.activateSniper();
-            case SPECIAL_SKILLS.HITOKIRI:
-                return this.activateHitokiri();
+            case SPECIAL_SKILLS.LANDSHARK:
+                return this.activateLandshark();
             case SPECIAL_SKILLS.SURIASHI:
                 return this.activateSuriashi();
             case SPECIAL_SKILLS.METEOR:
@@ -1410,7 +1414,7 @@ class Game {
         return true;
     }
 
-    checkHitokiriCondition() {
+    checkLandsharkCondition() {
         const currentPlayer = this.getCurrentPlayer();
         const otherPlayer = this.getOtherPlayer();
         const pPos = currentPlayer.getPosition();
@@ -1422,13 +1426,19 @@ class Game {
         return false;
     }
 
-    activateHitokiri() {
+    activateLandshark() {
         const currentPlayer = this.getCurrentPlayer();
-        if (!currentPlayer.canAfford(SKILL_COSTS.hitokiri)) return false;
-        if (!this.checkHitokiriCondition()) return false;
-        currentPlayer.deductPoints(SKILL_COSTS.hitokiri);
-        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'hitokiri' });
-        this.gameOver(this.currentTurn, 'slashed the opponent!');
+        if (!currentPlayer.canAfford(SKILL_COSTS.landshark)) return false;
+        if (!this.checkLandsharkCondition()) return false;
+        currentPlayer.deductPoints(SKILL_COSTS.landshark);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'landshark' });
+        // Start landshark animation instead of immediate game over
+        this.landsharkAnimating = true;
+        this.landsharkAnimStart = performance.now();
+        const pPos = currentPlayer.getPosition();
+        const oPos = this.getOtherPlayer().getPosition();
+        this.landsharkAnimFromPos = { row: pPos.row, col: pPos.col };
+        this.landsharkAnimToPos = { row: oPos.row, col: oPos.col };
         return true;
     }
 
@@ -1777,7 +1787,7 @@ class Game {
             // Instant skills: no target tiles to show
             case SPECIAL_SKILLS.DOMINATION:
             case SPECIAL_SKILLS.SNIPER:
-            case SPECIAL_SKILLS.HITOKIRI:
+            case SPECIAL_SKILLS.LANDSHARK:
                 this.activeSkillType = skill;
                 break;
         }
@@ -2406,7 +2416,7 @@ class Game {
             // Queue the sync — apply after current animation completes
             this._pendingStateSync = data;
             // If not animating and not in bomb animation, apply immediately
-            if (this.phase !== PHASES.ANIMATING && !this.bombAnimating && !this.sniperAnimating && !this.fallAnimating) {
+            if (this.phase !== PHASES.ANIMATING && !this.bombAnimating && !this.sniperAnimating && !this.landsharkAnimating && !this.fallAnimating) {
                 this._consumePendingStateSync();
             }
         };
@@ -2663,8 +2673,8 @@ class Game {
         if (x >= panelX && x <= panelX + 200 && y >= 423 && y <= 473) {
             const skill = this.getCurrentPlayer().specialSkill;
             this.activateSkill();
-            // Instant-execute skills (Sniper/Hitokiri/Domination/Checkpoint) end the turn immediately
-            const instantSkills = [SPECIAL_SKILLS.SNIPER, SPECIAL_SKILLS.HITOKIRI, SPECIAL_SKILLS.DOMINATION, SPECIAL_SKILLS.CHECKPOINT];
+            // Instant-execute skills (Sniper/Landshark/Domination/Checkpoint) end the turn immediately
+            const instantSkills = [SPECIAL_SKILLS.SNIPER, SPECIAL_SKILLS.LANDSHARK, SPECIAL_SKILLS.DOMINATION, SPECIAL_SKILLS.CHECKPOINT];
             const endsTurn = instantSkills.includes(skill);
             this._sendOnlineAction({ type: 'activate_skill', endsTurn });
             return true;
@@ -2712,7 +2722,7 @@ class Game {
             this.drillForSurvival = false;
             const skill = this.getCurrentPlayer().specialSkill;
             this.activateSkill();
-            const instantSkills = [SPECIAL_SKILLS.SNIPER, SPECIAL_SKILLS.HITOKIRI, SPECIAL_SKILLS.DOMINATION, SPECIAL_SKILLS.CHECKPOINT];
+            const instantSkills = [SPECIAL_SKILLS.SNIPER, SPECIAL_SKILLS.LANDSHARK, SPECIAL_SKILLS.DOMINATION, SPECIAL_SKILLS.CHECKPOINT];
             this._sendOnlineAction({ type: 'activate_skill', endsTurn: instantSkills.includes(skill) });
             return true;
         }

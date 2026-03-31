@@ -81,10 +81,10 @@ const SETTINGS_CONFIG = [
         defaultValue: 50
     },
     {
-        key: 'hitokiri',
+        key: 'landshark',
         label: 'Landshark Cost',
         target: 'SKILL_COSTS',
-        prop: 'hitokiri',
+        prop: 'landshark',
         min: 0,
         max: 500,
         step: 10,

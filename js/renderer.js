@@ -4438,7 +4438,7 @@ class Renderer {
 
     drawSneakEffect(elapsed, fromPos, toPos, playerNum) {
         const ctx = this.ctx;
-        const dur = 1200;
+        const dur = 1800;
         const p = Math.min(1, elapsed / dur);
 
         const fromX = fromPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
@@ -4467,11 +4467,12 @@ class Renderer {
             const glow = Math.max(0, 1 - age) * 15;
 
             // Outer glow
-            ctx.globalAlpha = alpha * 0.3;
+            ctx.globalAlpha = alpha * 0.4;
             ctx.beginPath();
-            ctx.arc(fp.x, fp.y, 14 + glow, 0, Math.PI * 2);
-            const grad = ctx.createRadialGradient(fp.x, fp.y, 0, fp.x, fp.y, 14 + glow);
+            ctx.arc(fp.x, fp.y, 22 + glow, 0, Math.PI * 2);
+            const grad = ctx.createRadialGradient(fp.x, fp.y, 0, fp.x, fp.y, 22 + glow);
             grad.addColorStop(0, '#DEB887');
+            grad.addColorStop(0.6, 'rgba(222,184,135,0.3)');
             grad.addColorStop(1, 'rgba(222,184,135,0)');
             ctx.fillStyle = grad;
             ctx.fill();
@@ -4483,12 +4484,12 @@ class Renderer {
             ctx.rotate(angle);
 
             ctx.beginPath();
-            ctx.ellipse(-5, -4, 4, 7, 0, 0, Math.PI * 2);
+            ctx.ellipse(-7, -5, 6, 10, 0, 0, Math.PI * 2);
             ctx.fillStyle = '#DEB887';
             ctx.fill();
 
             ctx.beginPath();
-            ctx.ellipse(5, 4, 4, 7, 0, 0, Math.PI * 2);
+            ctx.ellipse(7, 5, 6, 10, 0, 0, Math.PI * 2);
             ctx.fillStyle = '#DEB887';
             ctx.fill();
 

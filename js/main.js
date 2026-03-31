@@ -631,11 +631,13 @@ function render(now) {
             renderer.drawTrails(animManager.trails, now);
             renderer.drawRipples(animManager.ripples, now);
 
-            // Draw players with pulse animation (skip falling player during electrocution)
-            if (!(game.fallAnimating && game.fallAnimPlayerNum === 1)) {
+            // Draw players with pulse animation (skip during fall/sneak animation)
+            if (!(game.fallAnimating && game.fallAnimPlayerNum === 1) &&
+                !(game.sneakAnimating && game.sneakAnimPlayerNum === 1)) {
                 renderer.drawPlayer(game.player1, null, now);
             }
-            if (!(game.fallAnimating && game.fallAnimPlayerNum === 2)) {
+            if (!(game.fallAnimating && game.fallAnimPlayerNum === 2) &&
+                !(game.sneakAnimating && game.sneakAnimPlayerNum === 2)) {
                 renderer.drawPlayer(game.player2, null, now);
             }
 
@@ -693,17 +695,9 @@ function render(now) {
             // Sneak footprint fade animation
             if (game.sneakAnimating) {
                 const elapsed = now - game.sneakAnimStart;
-                const fromPos = {
-                    x: game.sneakAnimFrom.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2,
-                    y: game.sneakAnimFrom.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2
-                };
-                const toPos = {
-                    x: game.sneakAnimTo.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2,
-                    y: game.sneakAnimTo.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2
-                };
-                renderer.drawSneakEffect(elapsed, fromPos, toPos, game.sneakAnimPlayerNum);
+                renderer.drawSneakEffect(elapsed, game.sneakAnimFrom, game.sneakAnimTo, game.sneakAnimPlayerNum);
 
-                if (elapsed >= 1200) {
+                if (elapsed >= 1800) {
                     game.sneakAnimating = false;
                     game.endTurn();
                     game._consumePendingStateSync();

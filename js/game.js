@@ -1484,7 +1484,9 @@ class Game {
         this.sneakAnimPlayerNum = currentPlayer.playerNum;
         this.sneakAnimFrom = { row: fromRow, col: fromCol };
         this.sneakAnimTo = { row, col };
-        this.phase = PHASES.ANIMATING;
+        this.skillTargetTiles = [];
+        this.activeSkillType = null;
+        // Keep phase as SKILL_TARGET (sneak anim renders in MOVE/PLACE case block)
     }
 
     activateMeteor() {
@@ -1958,6 +1960,7 @@ class Game {
         // Block input during animation
         if (this.phase === PHASES.ANIMATING) return false;
         if (this.phase === PHASES.START_ANIM) return false;
+        if (this.sneakAnimating) return false;
 
         // Hover-menu: skill selection → return to menu (online: disconnect confirm)
         if ((this.phase === PHASES.SKILL_SELECTION || this.phase === PHASES.TURN_ORDER_SELECT) && y < 50) {

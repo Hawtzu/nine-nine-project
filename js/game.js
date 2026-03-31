@@ -27,6 +27,11 @@ class Game {
         this.sniperAnimStart = 0;
         this.landsharkAnimating = false;
         this.landsharkAnimStart = 0;
+        this.sneakAnimating = false;
+        this.sneakAnimStart = 0;
+        this.sneakAnimPlayerNum = 0;
+        this.sneakAnimFrom = { row: 0, col: 0 };
+        this.sneakAnimTo = { row: 0, col: 0 };
         this.fallAnimating = false;
         this.fallAnimStart = 0;
         this.fallAnimDir = { dr: 0, dc: 0 };
@@ -120,7 +125,7 @@ class Game {
 
     // Consume pending state sync if one exists
     _consumePendingStateSync() {
-        if (this._pendingStateSync && !this.bombAnimating && !this.sniperAnimating && !this.landsharkAnimating && !this.fallAnimating) {
+        if (this._pendingStateSync && !this.bombAnimating && !this.sniperAnimating && !this.landsharkAnimating && !this.sneakAnimating && !this.fallAnimating) {
             this._applyStateSync(this._pendingStateSync);
             this._pendingStateSync = null;
         }
@@ -278,8 +283,8 @@ class Game {
             case SPECIAL_SKILLS.MOMONGA:
                 this.executeMomonga(row, col);
                 break;
-            case SPECIAL_SKILLS.SURIASHI:
-                this.executeSuriashi(row, col);
+            case SPECIAL_SKILLS.SNEAK:
+                this.executeSneak(row, col);
                 break;
             case SPECIAL_SKILLS.KAMAKURA:
                 this.executeKamakura(row, col);
@@ -1023,7 +1028,7 @@ class Game {
             [SPECIAL_SKILLS.SNIPER]: SKILL_COSTS.sniper,
             [SPECIAL_SKILLS.LANDSHARK]: SKILL_COSTS.landshark,
             [SPECIAL_SKILLS.CHECKPOINT]: SKILL_COSTS.checkpoint,
-            [SPECIAL_SKILLS.SURIASHI]: SKILL_COSTS.suriashi,
+            [SPECIAL_SKILLS.SNEAK]: SKILL_COSTS.sneak,
             [SPECIAL_SKILLS.MOMONGA]: SKILL_COSTS.momonga,
             [SPECIAL_SKILLS.METEOR]: SKILL_COSTS.meteor,
             [SPECIAL_SKILLS.KAMAKURA]: SKILL_COSTS.kamakura,
@@ -1226,8 +1231,8 @@ class Game {
                 return this.activateSniper();
             case SPECIAL_SKILLS.LANDSHARK:
                 return this.activateLandshark();
-            case SPECIAL_SKILLS.SURIASHI:
-                return this.activateSuriashi();
+            case SPECIAL_SKILLS.SNEAK:
+                return this.activateSneak();
             case SPECIAL_SKILLS.METEOR:
                 return this.activateMeteor();
             case SPECIAL_SKILLS.MOMONGA:
@@ -1442,9 +1447,9 @@ class Game {
         return true;
     }
 
-    activateSuriashi() {
+    activateSneak() {
         const currentPlayer = this.getCurrentPlayer();
-        if (!currentPlayer.canAfford(SKILL_COSTS.suriashi)) return false;
+        if (!currentPlayer.canAfford(SKILL_COSTS.sneak)) return false;
 
         const pPos = currentPlayer.getPosition();
         const oPos = this.getOtherPlayer().getPosition();
@@ -1460,23 +1465,26 @@ class Game {
             this.skillTargetTiles.push({ row: r, col: c });
         }
         if (this.skillTargetTiles.length === 0) return false;
-        this.activeSkillType = SPECIAL_SKILLS.SURIASHI;
+        this.activeSkillType = SPECIAL_SKILLS.SNEAK;
         this.phase = PHASES.SKILL_TARGET;
         return true;
     }
 
-    executeSuriashi(row, col) {
+    executeSneak(row, col) {
         const currentPlayer = this.getCurrentPlayer();
-        currentPlayer.deductPoints(SKILL_COSTS.suriashi);
-        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'suriashi', target: { row, col } });
+        currentPlayer.deductPoints(SKILL_COSTS.sneak);
+        if (typeof gameLog !== 'undefined') gameLog.log('skill', { player: this.currentTurn, skill: 'sneak', target: { row, col } });
         const fromRow = currentPlayer.row;
         const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
-        animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, row, col, 'move');
+
+        // Sneak footprint effect
+        this.sneakAnimating = true;
+        this.sneakAnimStart = performance.now();
+        this.sneakAnimPlayerNum = currentPlayer.playerNum;
+        this.sneakAnimFrom = { row: fromRow, col: fromCol };
+        this.sneakAnimTo = { row, col };
         this.phase = PHASES.ANIMATING;
-        animManager.playerAnims[currentPlayer.playerNum].onComplete = () => {
-            this.endTurn();
-        };
     }
 
     activateMeteor() {
@@ -1711,7 +1719,7 @@ class Game {
                 break;
 
             // Targeting skills: compute targets without side effects
-            case SPECIAL_SKILLS.SURIASHI: {
+            case SPECIAL_SKILLS.SNEAK: {
                 const pPos = currentPlayer.getPosition();
                 const oPos = this.getOtherPlayer().getPosition();
                 for (const dir of DIAGONAL_DIRECTIONS) {
@@ -1723,7 +1731,7 @@ class Game {
                     if (st === MARKERS.STONE || st === MARKERS.SNOW) continue;
                     this.skillTargetTiles.push({ row: r, col: c });
                 }
-                this.activeSkillType = SPECIAL_SKILLS.SURIASHI;
+                this.activeSkillType = SPECIAL_SKILLS.SNEAK;
                 break;
             }
             case SPECIAL_SKILLS.METEOR: {
@@ -2767,8 +2775,8 @@ class Game {
             if (tile.row === clickedCell.row && tile.col === clickedCell.col) {
                 this._sendOnlineAction({ type: 'skill_target', row: tile.row, col: tile.col, skillType: this.activeSkillType, p1pts: this.player1.points, p2pts: this.player2.points, endsTurn: true });
                 switch (this.activeSkillType) {
-                    case SPECIAL_SKILLS.SURIASHI:
-                        this.executeSuriashi(tile.row, tile.col);
+                    case SPECIAL_SKILLS.SNEAK:
+                        this.executeSneak(tile.row, tile.col);
                         break;
                     case SPECIAL_SKILLS.METEOR:
                         this.executeMeteor(tile.row, tile.col);

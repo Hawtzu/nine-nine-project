@@ -529,7 +529,7 @@ class GameLogic {
             [SPECIAL_SKILLS.SNIPER]: SKILL_COSTS.sniper,
             [SPECIAL_SKILLS.LANDSHARK]: SKILL_COSTS.landshark,
             [SPECIAL_SKILLS.CHECKPOINT]: SKILL_COSTS.checkpoint,
-            [SPECIAL_SKILLS.SURIASHI]: SKILL_COSTS.suriashi,
+            [SPECIAL_SKILLS.SNEAK]: SKILL_COSTS.sneak,
             [SPECIAL_SKILLS.MOMONGA]: SKILL_COSTS.momonga,
             [SPECIAL_SKILLS.METEOR]: SKILL_COSTS.meteor,
             [SPECIAL_SKILLS.KAMAKURA]: SKILL_COSTS.kamakura,
@@ -679,8 +679,8 @@ class GameLogic {
                 return this.activateSniper();
             case SPECIAL_SKILLS.LANDSHARK:
                 return this.activateLandshark();
-            case SPECIAL_SKILLS.SURIASHI:
-                return this.activateSuriashi();
+            case SPECIAL_SKILLS.SNEAK:
+                return this.activateSneak();
             case SPECIAL_SKILLS.METEOR:
                 return this.activateMeteor();
             case SPECIAL_SKILLS.MOMONGA:
@@ -809,12 +809,12 @@ class GameLogic {
     }
 
     /**
-     * Activate suriashi skill. Sets up skill target tiles.
+     * Activate sneak skill. Sets up skill target tiles.
      * @returns {{ success: boolean, phase: string|null, targets: Array }}
      */
-    activateSuriashi() {
+    activateSneak() {
         const currentPlayer = this.getCurrentPlayer();
-        if (!currentPlayer.canAfford(SKILL_COSTS.suriashi)) return { success: false, phase: null, targets: [] };
+        if (!currentPlayer.canAfford(SKILL_COSTS.sneak)) return { success: false, phase: null, targets: [] };
 
         const pPos = currentPlayer.getPosition();
         const oPos = this.getOtherPlayer().getPosition();
@@ -830,16 +830,16 @@ class GameLogic {
             this.skillTargetTiles.push({ row: r, col: c });
         }
         if (this.skillTargetTiles.length === 0) return { success: false, phase: null, targets: [] };
-        this.activeSkillType = SPECIAL_SKILLS.SURIASHI;
+        this.activeSkillType = SPECIAL_SKILLS.SNEAK;
         return { success: true, phase: PHASES.SKILL_TARGET, targets: this.skillTargetTiles };
     }
 
     /**
-     * Execute suriashi move. Moves player, deducts points, calls endTurn.
+     * Execute sneak move. Moves player, deducts points, calls endTurn.
      */
-    executeSuriashi(row, col) {
+    executeSneak(row, col) {
         const currentPlayer = this.getCurrentPlayer();
-        currentPlayer.deductPoints(SKILL_COSTS.suriashi);
+        currentPlayer.deductPoints(SKILL_COSTS.sneak);
         const fromRow = currentPlayer.row;
         const fromCol = currentPlayer.col;
         currentPlayer.moveTo(row, col);
@@ -975,8 +975,8 @@ class GameLogic {
             case SPECIAL_SKILLS.MOMONGA:
                 this.executeMomonga(row, col);
                 break;
-            case SPECIAL_SKILLS.SURIASHI:
-                this.executeSuriashi(row, col);
+            case SPECIAL_SKILLS.SNEAK:
+                this.executeSneak(row, col);
                 break;
             case SPECIAL_SKILLS.KAMAKURA:
                 this.executeKamakura(row, col);

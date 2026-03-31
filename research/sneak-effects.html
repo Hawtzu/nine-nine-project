@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Sneak Effect Comparison</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #eee; font-family: 'Segoe UI', sans-serif; padding: 20px; }
+  h1 { text-align: center; margin-bottom: 20px; color: #DEB887; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .card {
+    background: #16213e;
+    border: 2px solid #333;
+    border-radius: 12px;
+    padding: 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.3s;
+  }
+  .card:hover { border-color: #DEB887; }
+  .card h3 { color: #DEB887; margin-bottom: 8px; font-size: 16px; }
+  .card p { color: #aaa; font-size: 12px; margin-bottom: 8px; }
+  canvas { background: #0f0f23; border-radius: 8px; display: block; margin: 0 auto; }
+  .hint { text-align: center; color: #888; margin-top: 12px; font-size: 14px; }
+  .grid .card:last-child { grid-column: 2; }
+</style>
+</head>
+<body>
+<h1>Sneak Effect Comparison</h1>
+<p class="hint">Click each card to replay the effect</p>
+<div class="grid">
+  <div class="card" onclick="play(0)">
+    <h3>1. Afterimage (残像)</h3>
+    <p>Move origin leaves a fading ghost, smoke particles scatter</p>
+    <canvas id="c0" width="300" height="300"></canvas>
+  </div>
+  <div class="card" onclick="play(1)">
+    <h3>2. Shadow Split (影分身)</h3>
+    <p>Shadows split to 4 diagonals, real body appears at destination</p>
+    <canvas id="c1" width="300" height="300"></canvas>
+  </div>
+  <div class="card" onclick="play(2)">
+    <h3>3. Smoke Bomb (煙幕)</h3>
+    <p>Smoke puffs at origin, clears to reveal player at destination</p>
+    <canvas id="c2" width="300" height="300"></canvas>
+  </div>
+  <div class="card" onclick="play(3)">
+    <h3>4. Dash Line (ダッシュライン)</h3>
+    <p>Fast diagonal trail line from origin to destination</p>
+    <canvas id="c3" width="300" height="300"></canvas>
+  </div>
+  <div class="card" onclick="play(4)">
+    <h3>5. Footprint Fade (足跡フェード)</h3>
+    <p>Glowing footprints along the path, quickly fade out</p>
+    <canvas id="c4" width="300" height="300"></canvas>
+  </div>
+</div>
+
+<script>
+const CELL = 60;
+const COLS = 5, ROWS = 5;
+const PLAYER_COLOR = '#00bfff';
+const PLAYER_R = 18;
+
+// Origin and destination (diagonal move)
+const FROM = { row: 2, col: 2 };
+const TO   = { row: 1, col: 3 };
+
+const canvases = [];
+const ctxs = [];
+const anims = [null, null, null, null, null];
+
+for (let i = 0; i < 5; i++) {
+  const c = document.getElementById('c' + i);
+  canvases.push(c);
+  ctxs.push(c.getContext('2d'));
+}
+
+function cellCenter(r, c) {
+  return { x: c * CELL + CELL / 2, y: r * CELL + CELL / 2 };
+}
+
+function drawBoard(ctx) {
+  ctx.fillStyle = '#0f0f23';
+  ctx.fillRect(0, 0, 300, 300);
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(c * CELL, r * CELL, CELL, CELL);
+    }
+  }
+}
+
+function drawPlayer(ctx, row, col, alpha = 1, color = PLAYER_COLOR) {
+  const p = cellCenter(row, col);
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, PLAYER_R, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+// ===== Effect 0: Afterimage =====
+function effect0(ctx, t) {
+  drawBoard(ctx);
+  const dur = 1200;
+  const p = t / dur;
+
+  if (p >= 1) { drawPlayer(ctx, TO.row, TO.col); return false; }
+
+  // Afterimage at origin (fades out)
+  if (p < 0.7) {
+    const ghostAlpha = Math.max(0, 1 - p / 0.7) * 0.6;
+    drawPlayer(ctx, FROM.row, FROM.col, ghostAlpha, '#88ccff');
+  }
+
+  // Smoke particles at origin
+  const from = cellCenter(FROM.row, FROM.col);
+  for (let i = 0; i < 12; i++) {
+    const angle = (i / 12) * Math.PI * 2 + p * 2;
+    const dist = p * 40 + Math.sin(i * 1.5) * 10;
+    const px = from.x + Math.cos(angle) * dist;
+    const py = from.y + Math.sin(angle) * dist;
+    const alpha = Math.max(0, 1 - p * 1.3) * 0.5;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(px, py, 4 + p * 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#aabbcc';
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Player fades in at destination
+  if (p > 0.3) {
+    const fadeIn = Math.min(1, (p - 0.3) / 0.5);
+    drawPlayer(ctx, TO.row, TO.col, fadeIn);
+  }
+
+  return true;
+}
+
+// ===== Effect 1: Shadow Split =====
+function effect1(ctx, t) {
+  drawBoard(ctx);
+  const dur = 1400;
+  const p = t / dur;
+
+  if (p >= 1) { drawPlayer(ctx, TO.row, TO.col); return false; }
+
+  const from = cellCenter(FROM.row, FROM.col);
+  const dirs = [[-1,-1],[-1,1],[1,-1],[1,1]];
+
+  // Phase 1: player at origin shrinks (0 - 0.2)
+  if (p < 0.2) {
+    const scale = 1 - p / 0.2;
+    drawPlayer(ctx, FROM.row, FROM.col, scale * 0.8 + 0.2);
+  }
+
+  // Phase 2: shadows fly to 4 diagonals (0.2 - 0.6)
+  if (p >= 0.15 && p < 0.7) {
+    const sp = Math.min(1, (p - 0.15) / 0.45);
+    for (const [dr, dc] of dirs) {
+      const tx = from.x + dr * CELL * sp * 1.2;
+      const ty = from.y + dc * CELL * sp * 1.2;
+      const alpha = Math.max(0, 0.5 - sp * 0.5);
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(tx, ty, PLAYER_R * (1 - sp * 0.5), 0, Math.PI * 2);
+      ctx.fillStyle = '#224';
+      ctx.fill();
+      ctx.strokeStyle = '#446';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Phase 3: real player materializes at destination (0.5 - 1.0)
+  if (p >= 0.5) {
+    const mp = (p - 0.5) / 0.5;
+    // Flash effect
+    if (mp < 0.2) {
+      const to = cellCenter(TO.row, TO.col);
+      ctx.globalAlpha = (1 - mp / 0.2) * 0.6;
+      ctx.beginPath();
+      ctx.arc(to.x, to.y, PLAYER_R * 2, 0, Math.PI * 2);
+      ctx.fillStyle = '#DEB887';
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    drawPlayer(ctx, TO.row, TO.col, Math.min(1, mp * 1.5));
+  }
+
+  return true;
+}
+
+// ===== Effect 2: Smoke Bomb =====
+function effect2(ctx, t) {
+  drawBoard(ctx);
+  const dur = 1500;
+  const p = t / dur;
+
+  if (p >= 1) { drawPlayer(ctx, TO.row, TO.col); return false; }
+
+  const from = cellCenter(FROM.row, FROM.col);
+  const to = cellCenter(TO.row, TO.col);
+
+  // Phase 1: smoke expands at origin (0 - 0.4)
+  if (p < 0.5) {
+    const sp = p / 0.5;
+    // Player shrinks behind smoke
+    if (sp < 0.5) drawPlayer(ctx, FROM.row, FROM.col, 1 - sp * 2);
+    // Smoke puffs
+    for (let i = 0; i < 20; i++) {
+      const angle = (i / 20) * Math.PI * 2;
+      const r = sp * 50 * (0.5 + Math.sin(i * 3 + t * 0.005) * 0.5);
+      const px = from.x + Math.cos(angle) * r;
+      const py = from.y + Math.sin(angle) * r;
+      const size = 8 + sp * 12;
+      const alpha = Math.max(0, 0.7 - sp * 0.5);
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(px, py, size, 0, Math.PI * 2);
+      const g = ctx.createRadialGradient(px, py, 0, px, py, size);
+      g.addColorStop(0, '#aaa');
+      g.addColorStop(1, 'rgba(100,100,100,0)');
+      ctx.fillStyle = g;
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Phase 2: smoke drifts and fades, player appears at destination (0.4 - 1.0)
+  if (p >= 0.4) {
+    const fp = (p - 0.4) / 0.6;
+    // Remaining smoke dissipates
+    if (fp < 0.5) {
+      for (let i = 0; i < 12; i++) {
+        const angle = (i / 12) * Math.PI * 2;
+        const r = 30 + fp * 40;
+        const px = from.x + Math.cos(angle) * r;
+        const py = from.y + Math.sin(angle) * r - fp * 20;
+        const alpha = Math.max(0, 0.4 - fp);
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.arc(px, py, 10 + fp * 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#888';
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Player appears at destination
+    drawPlayer(ctx, TO.row, TO.col, Math.min(1, fp * 2));
+  }
+
+  return true;
+}
+
+// ===== Effect 3: Dash Line =====
+function effect3(ctx, t) {
+  drawBoard(ctx);
+  const dur = 800;
+  const p = t / dur;
+
+  if (p >= 1) { drawPlayer(ctx, TO.row, TO.col); return false; }
+
+  const from = cellCenter(FROM.row, FROM.col);
+  const to = cellCenter(TO.row, TO.col);
+
+  // Phase 1: player at origin (brief)
+  if (p < 0.15) {
+    drawPlayer(ctx, FROM.row, FROM.col);
+    // Charge-up glow
+    const gp = p / 0.15;
+    ctx.globalAlpha = gp * 0.5;
+    ctx.beginPath();
+    ctx.arc(from.x, from.y, PLAYER_R + 10 * gp, 0, Math.PI * 2);
+    ctx.fillStyle = '#DEB887';
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    return true;
+  }
+
+  // Phase 2: dash trail (0.15 - 0.5)
+  const dashP = Math.min(1, (p - 0.15) / 0.35);
+
+  // Trail line
+  const trailEnd = dashP;
+  const trailStart = Math.max(0, dashP - 0.4);
+
+  // Motion blur lines
+  for (let i = 0; i < 5; i++) {
+    const offset = (i - 2) * 3;
+    const s = trailStart;
+    const e = trailEnd;
+    const sx = from.x + (to.x - from.x) * s + offset;
+    const sy = from.y + (to.y - from.y) * s + offset * 0.5;
+    const ex = from.x + (to.x - from.x) * e + offset;
+    const ey = from.y + (to.y - from.y) * e + offset * 0.5;
+    ctx.globalAlpha = 0.3 * (1 - Math.abs(i - 2) / 3);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(ex, ey);
+    ctx.strokeStyle = '#DEB887';
+    ctx.lineWidth = 4 - Math.abs(i - 2);
+    ctx.stroke();
+  }
+
+  // Main trail (bright core)
+  ctx.globalAlpha = Math.max(0, 1 - (p - 0.15) / 0.6);
+  ctx.beginPath();
+  ctx.moveTo(from.x + (to.x - from.x) * trailStart, from.y + (to.y - from.y) * trailStart);
+  ctx.lineTo(from.x + (to.x - from.x) * trailEnd, from.y + (to.y - from.y) * trailEnd);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Speed particles along trail
+  for (let i = 0; i < 8; i++) {
+    const pp = (dashP + i * 0.05) % 1;
+    if (pp > dashP) continue;
+    const px = from.x + (to.x - from.x) * pp;
+    const py = from.y + (to.y - from.y) * pp;
+    const alpha = Math.max(0, 1 - (dashP - pp) * 3);
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.beginPath();
+    ctx.arc(px + (Math.random() - 0.5) * 8, py + (Math.random() - 0.5) * 8, 2, 0, Math.PI * 2);
+    ctx.fillStyle = '#DEB887';
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Player at destination (appears with dash)
+  if (dashP >= 0.7) {
+    const ap = (dashP - 0.7) / 0.3;
+    drawPlayer(ctx, TO.row, TO.col, ap);
+    // Impact burst
+    if (ap < 0.5) {
+      ctx.globalAlpha = (1 - ap * 2) * 0.4;
+      ctx.beginPath();
+      ctx.arc(to.x, to.y, PLAYER_R + 15 * ap, 0, Math.PI * 2);
+      ctx.fillStyle = '#DEB887';
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Afterimage fading at origin
+  if (p < 0.5) {
+    drawPlayer(ctx, FROM.row, FROM.col, Math.max(0, 1 - (p - 0.15) / 0.2), '#446688');
+  }
+
+  return true;
+}
+
+// ===== Effect 4: Footprint Fade =====
+function effect4(ctx, t) {
+  drawBoard(ctx);
+  const dur = 1600;
+  const p = t / dur;
+
+  if (p >= 1) { drawPlayer(ctx, TO.row, TO.col); return false; }
+
+  const from = cellCenter(FROM.row, FROM.col);
+  const to = cellCenter(TO.row, TO.col);
+
+  // Footprint positions (3 steps along diagonal path)
+  const steps = [
+    { x: from.x, y: from.y, t: 0 },
+    { x: from.x + (to.x - from.x) * 0.5, y: from.y + (to.y - from.y) * 0.5, t: 0.15 },
+    { x: to.x, y: to.y, t: 0.3 },
+  ];
+
+  // Draw footprints
+  for (let i = 0; i < steps.length; i++) {
+    const fp = steps[i];
+    if (p < fp.t) continue;
+    const age = (p - fp.t) / 0.7;
+    if (age > 1) continue;
+
+    const alpha = Math.max(0, 1 - age) * 0.8;
+    const glow = Math.max(0, 1 - age) * 15;
+
+    // Glow
+    ctx.globalAlpha = alpha * 0.3;
+    ctx.beginPath();
+    ctx.arc(fp.x, fp.y, 12 + glow, 0, Math.PI * 2);
+    const grad = ctx.createRadialGradient(fp.x, fp.y, 0, fp.x, fp.y, 12 + glow);
+    grad.addColorStop(0, '#DEB887');
+    grad.addColorStop(1, 'rgba(222,184,135,0)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Footprint shape (two ovals like feet)
+    ctx.globalAlpha = alpha;
+    const angle = Math.atan2(to.y - from.y, to.x - from.x);
+    ctx.save();
+    ctx.translate(fp.x, fp.y);
+    ctx.rotate(angle);
+
+    // Left foot
+    ctx.beginPath();
+    ctx.ellipse(-4, -3, 3, 6, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#DEB887';
+    ctx.fill();
+
+    // Right foot
+    ctx.beginPath();
+    ctx.ellipse(4, 3, 3, 6, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#DEB887';
+    ctx.fill();
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // Player movement
+  if (p < 0.15) {
+    drawPlayer(ctx, FROM.row, FROM.col);
+  } else if (p < 0.35) {
+    const mp = (p - 0.15) / 0.2;
+    const cx = from.x + (to.x - from.x) * mp;
+    const cy = from.y + (to.y - from.y) * mp;
+    // Moving player (slightly transparent)
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.arc(cx, cy, PLAYER_R, 0, Math.PI * 2);
+    ctx.fillStyle = PLAYER_COLOR;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  } else {
+    drawPlayer(ctx, TO.row, TO.col);
+  }
+
+  return true;
+}
+
+const effects = [effect0, effect1, effect2, effect3, effect4];
+const startTimes = [0, 0, 0, 0, 0];
+const running = [false, false, false, false, false];
+
+function play(i) {
+  startTimes[i] = performance.now();
+  running[i] = true;
+}
+
+function loop(now) {
+  for (let i = 0; i < 5; i++) {
+    if (running[i]) {
+      const t = now - startTimes[i];
+      const cont = effects[i](ctxs[i], t);
+      if (!cont) running[i] = false;
+    }
+  }
+  requestAnimationFrame(loop);
+}
+
+// Initial draw — show idle state then auto-play all
+for (let i = 0; i < 5; i++) {
+  drawBoard(ctxs[i]);
+  drawPlayer(ctxs[i], FROM.row, FROM.col);
+}
+
+// Auto-play all after short delay
+setTimeout(() => { for (let i = 0; i < 5; i++) play(i); }, 500);
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

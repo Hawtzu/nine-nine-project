@@ -288,6 +288,7 @@ class ReplayEngine {
                 opp.dominationTurnsLeft = 1;
                 break;
             }
+            case 'sneak':
             case 'suriashi':
                 if (data.target) { p.row = data.target.row; p.col = data.target.col; }
                 break;
@@ -433,6 +434,7 @@ class ReplayEngine {
             'sniper': 'Sniper',
             'landshark': 'Landshark',
             'hitokiri': 'Landshark',
+            'sneak': 'Sneak',
             'suriashi': 'Sneak',
             'meteor': 'Meteor Shower',
             'momonga': 'Momonga',

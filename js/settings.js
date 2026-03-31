@@ -71,10 +71,10 @@ const SETTINGS_CONFIG = [
         defaultValue: 110
     },
     {
-        key: 'suriashi',
+        key: 'sneak',
         label: 'Sneak Cost',
         target: 'SKILL_COSTS',
-        prop: 'suriashi',
+        prop: 'sneak',
         min: 0,
         max: 500,
         step: 10,

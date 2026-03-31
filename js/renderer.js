@@ -3419,7 +3419,7 @@ class Renderer {
                     const costKeyMap = {
                         'checkpoint_place': 'checkpoint', 'checkpoint_teleport': 'checkpoint',
                         'domination': 'domination', 'sniper': 'sniper', 'landshark': 'landshark', 'hitokiri': 'landshark',
-                        'suriashi': 'suriashi', 'meteor': 'meteor', 'momonga': 'momonga', 'kamakura': 'kamakura',
+                        'sneak': 'sneak', 'suriashi': 'sneak', 'meteor': 'meteor', 'momonga': 'momonga', 'kamakura': 'kamakura',
                         'electromagnet': 'electromagnet'
                     };
                     const costKey = costKeyMap[a.raw.data.skill];
@@ -4434,6 +4434,92 @@ class Renderer {
             ctx.shadowBlur = 0;
             ctx.restore();
         }
+    }
+
+    drawSneakEffect(elapsed, fromPos, toPos, playerNum) {
+        const ctx = this.ctx;
+        const dur = 1200;
+        const p = Math.min(1, elapsed / dur);
+
+        const fromX = fromPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+        const fromY = fromPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+        const toX = toPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+        const toY = toPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+        const angle = Math.atan2(toY - fromY, toX - fromX);
+
+        // Footprint positions (3 steps along diagonal path)
+        const steps = [
+            { x: fromX, y: fromY, t: 0 },
+            { x: fromX + (toX - fromX) * 0.5, y: fromY + (toY - fromY) * 0.5, t: 0.15 },
+            { x: toX, y: toY, t: 0.3 },
+        ];
+
+        ctx.save();
+
+        // Draw glowing footprints
+        for (let i = 0; i < steps.length; i++) {
+            const fp = steps[i];
+            if (p < fp.t) continue;
+            const age = (p - fp.t) / 0.7;
+            if (age > 1) continue;
+
+            const alpha = Math.max(0, 1 - age) * 0.8;
+            const glow = Math.max(0, 1 - age) * 15;
+
+            // Outer glow
+            ctx.globalAlpha = alpha * 0.3;
+            ctx.beginPath();
+            ctx.arc(fp.x, fp.y, 14 + glow, 0, Math.PI * 2);
+            const grad = ctx.createRadialGradient(fp.x, fp.y, 0, fp.x, fp.y, 14 + glow);
+            grad.addColorStop(0, '#DEB887');
+            grad.addColorStop(1, 'rgba(222,184,135,0)');
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            // Footprint shapes (two ovals)
+            ctx.globalAlpha = alpha;
+            ctx.save();
+            ctx.translate(fp.x, fp.y);
+            ctx.rotate(angle);
+
+            ctx.beginPath();
+            ctx.ellipse(-5, -4, 4, 7, 0, 0, Math.PI * 2);
+            ctx.fillStyle = '#DEB887';
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.ellipse(5, 4, 4, 7, 0, 0, Math.PI * 2);
+            ctx.fillStyle = '#DEB887';
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        // Player ghost at origin (fades out)
+        if (p < 0.4) {
+            const ghostAlpha = Math.max(0, 1 - p / 0.3) * 0.5;
+            ctx.globalAlpha = ghostAlpha;
+            ctx.beginPath();
+            ctx.arc(fromX, fromY, CELL_SIZE * 0.35, 0, Math.PI * 2);
+            ctx.fillStyle = playerNum === 1 ? COLORS.P1_PIECE : COLORS.P2_PIECE;
+            ctx.fill();
+        }
+
+        // Player at destination (fades in)
+        if (p > 0.15) {
+            const fadeIn = Math.min(1, (p - 0.15) / 0.25);
+            ctx.globalAlpha = fadeIn;
+            ctx.beginPath();
+            ctx.arc(toX, toY, CELL_SIZE * 0.35, 0, Math.PI * 2);
+            ctx.fillStyle = playerNum === 1 ? COLORS.P1_PIECE : COLORS.P2_PIECE;
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.restore();
     }
 
     drawLandsharkEffect(elapsed, fromPos, toPos) {

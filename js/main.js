@@ -690,6 +690,26 @@ function render(now) {
                 }
             }
 
+            // Sneak footprint fade animation
+            if (game.sneakAnimating) {
+                const elapsed = now - game.sneakAnimStart;
+                const fromPos = {
+                    x: game.sneakAnimFrom.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2,
+                    y: game.sneakAnimFrom.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2
+                };
+                const toPos = {
+                    x: game.sneakAnimTo.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2,
+                    y: game.sneakAnimTo.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2
+                };
+                renderer.drawSneakEffect(elapsed, fromPos, toPos, game.sneakAnimPlayerNum);
+
+                if (elapsed >= 1200) {
+                    game.sneakAnimating = false;
+                    game.endTurn();
+                    game._consumePendingStateSync();
+                }
+            }
+
             // Bomb explosion animation
             if (game.bombAnimating) {
                 const elapsed = now - game.bombAnimStart;

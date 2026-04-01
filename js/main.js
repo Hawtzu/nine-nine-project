@@ -631,15 +631,17 @@ function render(now) {
             renderer.drawTrails(animManager.trails, now);
             renderer.drawRipples(animManager.ripples, now);
 
-            // Draw players with pulse animation (skip during fall/sneak/momonga animation)
+            // Draw players with pulse animation (skip during fall/sneak/momonga/checkpoint-teleport animation)
             if (!(game.fallAnimating && game.fallAnimPlayerNum === 1) &&
                 !(game.sneakAnimating && game.sneakAnimPlayerNum === 1) &&
-                !(game.momongaAnimating && game.momongaAnimPlayerNum === 1)) {
+                !(game.momongaAnimating && game.momongaAnimPlayerNum === 1) &&
+                !(game.checkpointTeleportAnimating && game.checkpointTeleportAnimPlayerNum === 1)) {
                 renderer.drawPlayer(game.player1, null, now);
             }
             if (!(game.fallAnimating && game.fallAnimPlayerNum === 2) &&
                 !(game.sneakAnimating && game.sneakAnimPlayerNum === 2) &&
-                !(game.momongaAnimating && game.momongaAnimPlayerNum === 2)) {
+                !(game.momongaAnimating && game.momongaAnimPlayerNum === 2) &&
+                !(game.checkpointTeleportAnimating && game.checkpointTeleportAnimPlayerNum === 2)) {
                 renderer.drawPlayer(game.player2, null, now);
             }
 
@@ -713,6 +715,30 @@ function render(now) {
 
                 if (elapsed >= 1800) {
                     game.momongaAnimating = false;
+                    game.endTurn();
+                    game._consumePendingStateSync();
+                }
+            }
+
+            // Checkpoint place shockwave animation
+            if (game.checkpointPlaceAnimating) {
+                const elapsed = now - game.checkpointPlaceAnimStart;
+                renderer.drawCheckpointPlaceEffect(elapsed, game.checkpointPlaceAnimPos, game.checkpointPlaceAnimPlayerNum);
+
+                if (elapsed >= 1500) {
+                    game.checkpointPlaceAnimating = false;
+                    game.endTurn();
+                    game._consumePendingStateSync();
+                }
+            }
+
+            // Checkpoint teleport lightning bolt animation
+            if (game.checkpointTeleportAnimating) {
+                const elapsed = now - game.checkpointTeleportAnimStart;
+                renderer.drawCheckpointTeleportEffect(elapsed, game.checkpointTeleportAnimFrom, game.checkpointTeleportAnimTo, game.checkpointTeleportAnimPlayerNum);
+
+                if (elapsed >= 1800) {
+                    game.checkpointTeleportAnimating = false;
                     game.endTurn();
                     game._consumePendingStateSync();
                 }

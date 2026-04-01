@@ -738,13 +738,24 @@ class GameLogic {
             const fromRow = currentPlayer.row;
             const fromCol = currentPlayer.col;
             currentPlayer.moveTo(cp.row, cp.col);
+            // Destroy surrounding 4-direction stones at checkpoint on teleport
+            const destroyedStones = [];
+            for (const dir of CROSS_DIRECTIONS) {
+                const r = cp.row + dir.dr;
+                const c = cp.col + dir.dc;
+                if (this.board.isValidPosition(r, c) &&
+                    this.board.getTile(r, c) === MARKERS.STONE) {
+                    this.board.setTile(r, c, MARKERS.EMPTY);
+                    destroyedStones.push({ row: r, col: c });
+                }
+            }
             this.endTurn();
             return {
                 success: true,
                 mode: 'teleport',
                 fromRow, fromCol,
                 toRow: cp.row, toCol: cp.col,
-                destroyedStones: []
+                destroyedStones
             };
         } else {
             // Place mode

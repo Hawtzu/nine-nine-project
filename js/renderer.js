@@ -4636,6 +4636,222 @@ class Renderer {
         }
     }
 
+    // Checkpoint Place: Shockwave effect
+    drawCheckpointPlaceEffect(elapsed, pos, playerNum) {
+        const ctx = this.ctx;
+        const dur = 1500;
+        const p = Math.min(1, elapsed / dur);
+
+        const cx = pos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+        const cy = pos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+        const PINK = '#FF1493';
+
+        ctx.save();
+
+        // Quick checkpoint slam flash (0 - 0.2)
+        if (p < 0.25) {
+            const sp = p / 0.2;
+            ctx.globalAlpha = 0.8 * Math.max(0, 1 - sp);
+            ctx.beginPath();
+            ctx.arc(cx, cy, CELL_SIZE * 0.5 * sp, 0, Math.PI * 2);
+            const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, CELL_SIZE * 0.5 * sp);
+            g.addColorStop(0, '#fff');
+            g.addColorStop(1, PINK);
+            ctx.fillStyle = g;
+            ctx.fill();
+        }
+
+        // Primary shockwave (0.15 - 0.7)
+        if (p > 0.15 && p < 0.7) {
+            const wp = (p - 0.15) / 0.55;
+            const radius = CELL_SIZE * 0.5 + wp * CELL_SIZE * 3;
+            ctx.globalAlpha = Math.max(0, 0.8 - wp);
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.strokeStyle = PINK;
+            ctx.lineWidth = 4 * (1 - wp);
+            ctx.shadowColor = PINK;
+            ctx.shadowBlur = 15 * (1 - wp);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Secondary wave
+            if (wp > 0.15) {
+                const w2 = (wp - 0.15) / 0.85;
+                const r2 = CELL_SIZE * 0.5 + w2 * CELL_SIZE * 2.5;
+                ctx.globalAlpha = Math.max(0, 0.5 - w2);
+                ctx.beginPath();
+                ctx.arc(cx, cy, r2, 0, Math.PI * 2);
+                ctx.strokeStyle = '#FF69B4';
+                ctx.lineWidth = 2 * (1 - w2);
+                ctx.stroke();
+            }
+        }
+
+        // Stone destruction particles (0.2 - 0.6)
+        if (p > 0.2 && p < 0.65) {
+            const dp = (p - 0.2) / 0.45;
+            const dirs = [
+                { dr: -1, dc: 0 }, { dr: 1, dc: 0 },
+                { dr: 0, dc: -1 }, { dr: 0, dc: 1 }
+            ];
+            for (const d of dirs) {
+                const sr = pos.row + d.dr;
+                const sc = pos.col + d.dc;
+                if (sr < 0 || sr >= BOARD_SIZE || sc < 0 || sc >= BOARD_SIZE) continue;
+                const sx = sc * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+                const sy = sr * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+                for (let i = 0; i < 4; i++) {
+                    const a = Math.atan2(d.dr, d.dc) + (i - 1.5) * 0.5;
+                    const dist = dp * 22;
+                    const px = sx + Math.cos(a) * dist;
+                    const py = sy + Math.sin(a) * dist;
+                    ctx.globalAlpha = Math.max(0, 0.7 - dp);
+                    ctx.beginPath();
+                    ctx.arc(px, py, 2 + (1 - dp) * 2, 0, Math.PI * 2);
+                    ctx.fillStyle = '#CE93D8';
+                    ctx.fill();
+                }
+            }
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.restore();
+    }
+
+    // Checkpoint Teleport: Lightning Bolt effect
+    drawCheckpointTeleportEffect(elapsed, fromPos, toPos, playerNum) {
+        const ctx = this.ctx;
+        const dur = 1800;
+        const p = Math.min(1, elapsed / dur);
+
+        const fromX = fromPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+        const fromY = fromPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+        const toX = toPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+        const toY = toPos.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+        const PINK = '#FF1493';
+
+        ctx.save();
+
+        // Charge up glow at origin (0 - 0.2)
+        if (p < 0.25) {
+            const cp = p / 0.2;
+            ctx.globalAlpha = cp * 0.6;
+            ctx.beginPath();
+            ctx.arc(fromX, fromY, CELL_SIZE * 0.5 + cp * 5, 0, Math.PI * 2);
+            const g = ctx.createRadialGradient(fromX, fromY, 0, fromX, fromY, CELL_SIZE * 0.5 + cp * 5);
+            g.addColorStop(0, '#fff');
+            g.addColorStop(1, 'rgba(255,20,147,0)');
+            ctx.fillStyle = g;
+            ctx.fill();
+        }
+
+        // Player ghost fading out at origin (0 - 0.35)
+        if (p < 0.35) {
+            const dp = p / 0.3;
+            ctx.globalAlpha = Math.max(0, 1 - dp);
+            ctx.beginPath();
+            ctx.arc(fromX, fromY, CELL_SIZE * 0.35, 0, Math.PI * 2);
+            ctx.fillStyle = playerNum === 1 ? COLORS.P1_PIECE : COLORS.P2_PIECE;
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Lightning bolts (0.15 - 0.65)
+        if (p > 0.15 && p < 0.65) {
+            const lp = (p - 0.15) / 0.5;
+            const alpha = lp < 0.3 ? lp / 0.3 : lp > 0.7 ? Math.max(0, (1 - lp) / 0.3) : 1;
+
+            // Use elapsed as seed for flickering
+            const seed = elapsed * 0.01;
+            const segs = 8;
+
+            // Main white bolt
+            ctx.globalAlpha = alpha * 0.9;
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+            ctx.shadowColor = PINK;
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.moveTo(fromX, fromY);
+            for (let i = 1; i < segs; i++) {
+                const t = i / segs;
+                const mx = fromX + (toX - fromX) * t + Math.sin(seed + i * 2.5) * 15;
+                const my = fromY + (toY - fromY) * t + Math.cos(seed + i * 3.1) * 12;
+                ctx.lineTo(mx, my);
+            }
+            ctx.lineTo(toX, toY);
+            ctx.stroke();
+
+            // Thinner pink bolt
+            ctx.strokeStyle = PINK;
+            ctx.lineWidth = 1.5;
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.moveTo(fromX, fromY);
+            for (let i = 1; i < segs; i++) {
+                const t = i / segs;
+                const mx = fromX + (toX - fromX) * t + Math.sin(seed + 1 + i * 2.5) * 10;
+                const my = fromY + (toY - fromY) * t + Math.cos(seed + 1 + i * 3.1) * 8;
+                ctx.lineTo(mx, my);
+            }
+            ctx.lineTo(toX, toY);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+
+        // Player fades in at destination (0.35 - 0.55)
+        if (p > 0.35) {
+            const ap = Math.min(1, (p - 0.35) / 0.2);
+            ctx.globalAlpha = ap;
+            ctx.beginPath();
+            ctx.arc(toX, toY, CELL_SIZE * 0.35, 0, Math.PI * 2);
+            ctx.fillStyle = playerNum === 1 ? COLORS.P1_PIECE : COLORS.P2_PIECE;
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Electric sparks at destination (0.4 - 0.7)
+        if (p > 0.4 && p < 0.7) {
+            const ip = (p - 0.4) / 0.3;
+            for (let i = 0; i < 6; i++) {
+                const a = (Math.PI * 2 / 6) * i + ip * 2;
+                const r = 10 + ip * 25;
+                const sx = toX + Math.cos(a) * r;
+                const sy = toY + Math.sin(a) * r;
+                ctx.globalAlpha = Math.max(0, 0.8 - ip);
+                ctx.beginPath();
+                ctx.arc(sx, sy, 2, 0, Math.PI * 2);
+                ctx.fillStyle = '#fff';
+                ctx.shadowColor = PINK;
+                ctx.shadowBlur = 5;
+                ctx.fill();
+            }
+            ctx.shadowBlur = 0;
+        }
+
+        // Stone destruction shockwave at destination (0.45 - 0.7)
+        if (p > 0.45 && p < 0.75) {
+            const wp = (p - 0.45) / 0.3;
+            ctx.globalAlpha = Math.max(0, 0.7 - wp);
+            ctx.beginPath();
+            ctx.arc(toX, toY, CELL_SIZE * 0.5 + wp * CELL_SIZE * 2, 0, Math.PI * 2);
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2 * (1 - wp);
+            ctx.shadowColor = PINK;
+            ctx.shadowBlur = 10;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+
+        ctx.globalAlpha = 1;
+        ctx.restore();
+    }
+
     drawLandsharkEffect(elapsed, fromPos, toPos) {
         const ctx = this.ctx;
         const fx = fromPos.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;

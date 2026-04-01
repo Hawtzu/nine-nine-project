@@ -128,7 +128,7 @@ const SETTINGS_CONFIG = [
         min: 0,
         max: 500,
         step: 10,
-        defaultValue: 120
+        defaultValue: 100
     },
     {
         key: 'kamakura',

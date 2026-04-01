@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Checkpoint Effect Comparison</title>
+<style>
+  body { margin: 0; background: #1a1a2e; color: #fff; font-family: 'Segoe UI', sans-serif; display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; padding: 20px; }
+  h1 { width: 100%; text-align: center; color: #FF1493; margin-bottom: 0; }
+  p.subtitle { width: 100%; text-align: center; color: #aaa; margin-top: 5px; }
+  h2.section { width: 100%; text-align: center; color: #FF69B4; margin: 15px 0 5px; font-size: 18px; border-bottom: 1px solid #FF1493; padding-bottom: 5px; }
+  .card { background: #16213e; border: 2px solid #FF1493; border-radius: 12px; padding: 10px; width: 380px; }
+  .card h2 { text-align: center; color: #FF1493; margin: 5px 0; font-size: 16px; }
+  .card p { text-align: center; color: #aaa; font-size: 12px; margin: 2px 0 8px; }
+  canvas { display: block; margin: 0 auto; border-radius: 8px; cursor: pointer; }
+  .hint { text-align: center; color: #666; font-size: 11px; margin-top: 5px; }
+</style>
+</head>
+<body>
+<h1>Checkpoint Effect Comparison</h1>
+<p class="subtitle">設置（100pt）＆テレポート（100pt、周囲4マス破壊）— クリックで再生</p>
+
+<h2 class="section">--- 設置エフェクト (Place) ---</h2>
+
+<!-- Place Effect 1: Pulse Ring -->
+<div class="card">
+  <h2>P1. Pulse Ring（脈動リング）</h2>
+  <p>ピンクのリングが広がって収束、チェックポイント出現</p>
+  <canvas id="p1" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<!-- Place Effect 2: Diamond Seal -->
+<div class="card">
+  <h2>P2. Diamond Seal（ダイヤモンド封印）</h2>
+  <p>回転するダイヤモンドが収束して設置</p>
+  <canvas id="p2" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<!-- Place Effect 3: Shockwave -->
+<div class="card">
+  <h2>P3. Shockwave（衝撃波）</h2>
+  <p>設置と同時に衝撃波が広がり周囲の石を破壊</p>
+  <canvas id="p3" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<h2 class="section">--- テレポートエフェクト (Teleport) ---</h2>
+
+<!-- Teleport Effect 1: Pixel Dissolve -->
+<div class="card">
+  <h2>T1. Pixel Dissolve（ピクセル分解）</h2>
+  <p>粒子に分解→チェックポイントで再構築</p>
+  <canvas id="t1" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<!-- Teleport Effect 2: Portal Warp -->
+<div class="card">
+  <h2>T2. Portal Warp（ポータルワープ）</h2>
+  <p>両地点にポータルが開いてワープ</p>
+  <canvas id="t2" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<!-- Teleport Effect 3: Lightning Bolt -->
+<div class="card">
+  <h2>T3. Lightning Bolt（稲妻転送）</h2>
+  <p>出発地と到着地を稲妻が繋いで転送</p>
+  <canvas id="t3" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<script>
+const CELL = 38;
+const BX = 10, BY = 10;
+const COLS = 9, ROWS = 7;
+const PINK = '#FF1493';
+const P_COLOR = '#4fc3f7';
+const STONE_COLOR = '#9C27B0';
+
+function getPos(row, col) {
+  return { x: BX + col * CELL + CELL / 2, y: BY + row * CELL + CELL / 2 };
+}
+
+function drawBoard(ctx, w, h, stones, checkpoint) {
+  ctx.fillStyle = '#0f0f23';
+  ctx.fillRect(0, 0, w, h);
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.strokeRect(BX + c * CELL, BY + r * CELL, CELL, CELL);
+    }
+  }
+  if (stones) {
+    for (const s of stones) {
+      if (s.destroyed) continue;
+      const p = getPos(s.row, s.col);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, CELL * 0.35, 0, Math.PI * 2);
+      ctx.fillStyle = STONE_COLOR;
+      ctx.fill();
+      ctx.strokeStyle = '#CE93D8';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+  if (checkpoint) {
+    const cp = getPos(checkpoint.row, checkpoint.col);
+    ctx.strokeStyle = PINK;
+    ctx.lineWidth = 3;
+    ctx.shadowColor = PINK;
+    ctx.shadowBlur = 6;
+    ctx.strokeRect(BX + checkpoint.col * CELL + 2, BY + checkpoint.row * CELL + 2, CELL - 4, CELL - 4);
+    ctx.shadowBlur = 0;
+    // Flag icon
+    ctx.fillStyle = PINK;
+    ctx.globalAlpha = 0.5;
+    ctx.fillRect(BX + checkpoint.col * CELL + 8, BY + checkpoint.row * CELL + 6, 22, 14);
+    ctx.globalAlpha = 1;
+    ctx.fillRect(BX + checkpoint.col * CELL + 8, BY + checkpoint.row * CELL + 6, 3, 26);
+  }
+}
+
+function drawPlayer(ctx, row, col, alpha = 1, color = P_COLOR) {
+  const p = getPos(row, col);
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, CELL * 0.35, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('1', p.x, p.y);
+  ctx.globalAlpha = 1;
+}
+
+const DUR = 1800;
+const PLAYER_POS = { row: 3, col: 4 };
+const CP_POS = { row: 3, col: 4 }; // Same as player for place
+// Stones around checkpoint (cross directions)
+const PLACE_STONES = [
+  { row: 2, col: 4, destroyed: false },
+  { row: 4, col: 4, destroyed: false },
+  { row: 3, col: 3, destroyed: false },
+  { row: 3, col: 5, destroyed: false },
+  { row: 2, col: 3, destroyed: false }, // diagonal, NOT destroyed
+];
+
+// ============ Place Effect 1: Pulse Ring ============
+function placeEffect1(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+  const pos = getPos(PLAYER_POS.row, PLAYER_POS.col);
+
+  function draw(now) {
+    if (!start) start = now;
+    const p = Math.min(1, (now - start) / DUR);
+    const stones = PLACE_STONES.map(s => ({ ...s, destroyed: s.destroyed }));
+
+    // Destroy stones at 40%
+    if (p > 0.4) {
+      stones.forEach(s => {
+        if ([2,4].includes(s.row) && s.col === 4) s.destroyed = true;
+        if (s.row === 3 && [3,5].includes(s.col)) s.destroyed = true;
+      });
+    }
+
+    drawBoard(ctx, canvas.width, canvas.height, stones, p > 0.5 ? CP_POS : null);
+    drawPlayer(ctx, PLAYER_POS.row, PLAYER_POS.col);
+
+    // Expanding rings (0 - 0.6)
+    if (p < 0.7) {
+      for (let i = 0; i < 3; i++) {
+        const rp = Math.max(0, (p - i * 0.1) / 0.4);
+        if (rp <= 0 || rp > 1) continue;
+        const radius = 5 + rp * CELL * 1.8;
+        ctx.globalAlpha = Math.max(0, 0.7 - rp) * 0.8;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = PINK;
+        ctx.lineWidth = 3 - rp * 2;
+        ctx.shadowColor = PINK;
+        ctx.shadowBlur = 10;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Central glow at checkpoint appear (0.35 - 0.65)
+    if (p > 0.35 && p < 0.65) {
+      const gp = (p - 0.35) / 0.3;
+      ctx.globalAlpha = gp < 0.5 ? gp * 2 * 0.6 : Math.max(0, (1 - gp) * 2 * 0.6);
+      const g = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, CELL);
+      g.addColorStop(0, PINK);
+      g.addColorStop(1, 'rgba(255,20,147,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, CELL, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // Stone destruction flashes
+    if (p > 0.35 && p < 0.55) {
+      const dp = (p - 0.35) / 0.2;
+      const dirs = [[2,4],[4,4],[3,3],[3,5]];
+      for (const [r,c] of dirs) {
+        const sp = getPos(r, c);
+        ctx.globalAlpha = Math.max(0, 0.8 - dp);
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, 8 + dp * 15, 0, Math.PI * 2);
+        const g = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, 8 + dp * 15);
+        g.addColorStop(0, '#fff');
+        g.addColorStop(1, 'rgba(255,20,147,0)');
+        ctx.fillStyle = g;
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    if (p >= 1) return;
+    requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+// ============ Place Effect 2: Diamond Seal ============
+function placeEffect2(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+  const pos = getPos(PLAYER_POS.row, PLAYER_POS.col);
+
+  function draw(now) {
+    if (!start) start = now;
+    const p = Math.min(1, (now - start) / DUR);
+    const stones = PLACE_STONES.map(s => ({ ...s }));
+    if (p > 0.5) {
+      stones.forEach(s => {
+        if ([2,4].includes(s.row) && s.col === 4) s.destroyed = true;
+        if (s.row === 3 && [3,5].includes(s.col)) s.destroyed = true;
+      });
+    }
+    drawBoard(ctx, canvas.width, canvas.height, stones, p > 0.55 ? CP_POS : null);
+    drawPlayer(ctx, PLAYER_POS.row, PLAYER_POS.col);
+
+    // Rotating diamonds converging (0 - 0.5)
+    if (p < 0.6) {
+      const sp = Math.min(1, p / 0.5);
+      for (let i = 0; i < 4; i++) {
+        const baseAngle = (Math.PI / 2) * i + sp * Math.PI * 3;
+        const dist = CELL * 2.5 * (1 - sp);
+        const dx = pos.x + Math.cos(baseAngle) * dist;
+        const dy = pos.y + Math.sin(baseAngle) * dist;
+        const size = 8 * (0.5 + sp * 0.5);
+
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, sp * 2) * 0.8;
+        ctx.translate(dx, dy);
+        ctx.rotate(sp * Math.PI * 4 + i);
+        ctx.beginPath();
+        ctx.moveTo(0, -size);
+        ctx.lineTo(size * 0.6, 0);
+        ctx.lineTo(0, size);
+        ctx.lineTo(-size * 0.6, 0);
+        ctx.closePath();
+        ctx.fillStyle = PINK;
+        ctx.shadowColor = PINK;
+        ctx.shadowBlur = 8;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.restore();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Convergence flash (0.45 - 0.6)
+    if (p > 0.45 && p < 0.65) {
+      const fp = (p - 0.45) / 0.2;
+      ctx.globalAlpha = fp < 0.5 ? fp * 2 : Math.max(0, 2 - fp * 2);
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 5 + (1 - Math.abs(fp - 0.5) * 2) * 20, 0, Math.PI * 2);
+      const g = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, 25);
+      g.addColorStop(0, '#fff');
+      g.addColorStop(0.5, PINK);
+      g.addColorStop(1, 'rgba(255,20,147,0)');
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    if (p >= 1) return;
+    requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+// ============ Place Effect 3: Shockwave ============
+function placeEffect3(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+  const pos = getPos(PLAYER_POS.row, PLAYER_POS.col);
+
+  function draw(now) {
+    if (!start) start = now;
+    const p = Math.min(1, (now - start) / DUR);
+    const stones = PLACE_STONES.map(s => ({ ...s }));
+    if (p > 0.3) {
+      stones.forEach(s => {
+        if ([2,4].includes(s.row) && s.col === 4) s.destroyed = true;
+        if (s.row === 3 && [3,5].includes(s.col)) s.destroyed = true;
+      });
+    }
+    drawBoard(ctx, canvas.width, canvas.height, stones, p > 0.2 ? CP_POS : null);
+    drawPlayer(ctx, PLAYER_POS.row, PLAYER_POS.col);
+
+    // Quick checkpoint slam (0 - 0.2)
+    if (p < 0.25) {
+      const sp = p / 0.2;
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, CELL * 0.5 * sp, 0, Math.PI * 2);
+      const g = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, CELL * 0.5 * sp);
+      g.addColorStop(0, '#fff');
+      g.addColorStop(1, PINK);
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // Shockwave expanding (0.2 - 0.7)
+    if (p > 0.15 && p < 0.7) {
+      const wp = (p - 0.15) / 0.55;
+      const radius = CELL * 0.5 + wp * CELL * 3;
+      ctx.globalAlpha = Math.max(0, 0.8 - wp);
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = PINK;
+      ctx.lineWidth = 4 * (1 - wp);
+      ctx.shadowColor = PINK;
+      ctx.shadowBlur = 15 * (1 - wp);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+
+      // Second wave
+      if (wp > 0.15) {
+        const w2 = (wp - 0.15) / 0.85;
+        const r2 = CELL * 0.5 + w2 * CELL * 2.5;
+        ctx.globalAlpha = Math.max(0, 0.5 - w2);
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, r2, 0, Math.PI * 2);
+        ctx.strokeStyle = '#FF69B4';
+        ctx.lineWidth = 2 * (1 - w2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Stone shatter particles (0.25 - 0.6)
+    if (p > 0.25 && p < 0.65) {
+      const dp = (p - 0.25) / 0.4;
+      const dirs = [{r:2,c:4,dr:-1,dc:0},{r:4,c:4,dr:1,dc:0},{r:3,c:3,dr:0,dc:-1},{r:3,c:5,dr:0,dc:1}];
+      for (const d of dirs) {
+        const sp = getPos(d.r, d.c);
+        for (let i = 0; i < 4; i++) {
+          const a = Math.atan2(d.dr, d.dc) + (i - 1.5) * 0.5;
+          const dist = dp * 20;
+          const px = sp.x + Math.cos(a) * dist;
+          const py = sp.y + Math.sin(a) * dist;
+          ctx.globalAlpha = Math.max(0, 0.7 - dp);
+          ctx.beginPath();
+          ctx.arc(px, py, 2 + (1 - dp) * 2, 0, Math.PI * 2);
+          ctx.fillStyle = '#CE93D8';
+          ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    if (p >= 1) return;
+    requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+// ============ Teleport configs ============
+const TP_FROM = { row: 1, col: 1 };
+const TP_CP = { row: 3, col: 6 };
+const TP_STONES = [
+  { row: 2, col: 6, destroyed: false },
+  { row: 4, col: 6, destroyed: false },
+  { row: 3, col: 5, destroyed: false },
+  { row: 3, col: 7, destroyed: false },
+  { row: 1, col: 5, destroyed: false }, // far stone, not destroyed
+];
+
+// ============ Teleport Effect 1: Pixel Dissolve ============
+function teleportEffect1(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+  const from = getPos(TP_FROM.row, TP_FROM.col);
+  const to = getPos(TP_CP.row, TP_CP.col);
+  const particles = [];
+  for (let i = 0; i < 30; i++) {
+    particles.push({
+      ox: (Math.random() - 0.5) * CELL * 0.7,
+      oy: (Math.random() - 0.5) * CELL * 0.7,
+      delay: Math.random() * 0.2,
+      speed: 0.8 + Math.random() * 0.4,
+      size: 2 + Math.random() * 3
+    });
+  }
+
+  function draw(now) {
+    if (!start) start = now;
+    const p = Math.min(1, (now - start) / DUR);
+    const stones = TP_STONES.map(s => ({ ...s }));
+    if (p > 0.65) {
+      stones.forEach(s => {
+        if ([2,4].includes(s.row) && s.col === 6) s.destroyed = true;
+        if (s.row === 3 && [5,7].includes(s.col)) s.destroyed = true;
+      });
+    }
+    drawBoard(ctx, canvas.width, canvas.height, stones, TP_CP);
+
+    // Dissolving at origin (0 - 0.4)
+    if (p < 0.45) {
+      const dp = Math.min(1, p / 0.35);
+      drawPlayer(ctx, TP_FROM.row, TP_FROM.col, Math.max(0, 1 - dp));
+    }
+
+    // Particles flying from origin to checkpoint
+    for (const pt of particles) {
+      const pp = Math.max(0, Math.min(1, (p - pt.delay) / (0.6 * pt.speed)));
+      if (pp <= 0 || pp >= 1) continue;
+      const ease = pp < 0.5 ? 2 * pp * pp : 1 - Math.pow(-2 * pp + 2, 2) / 2;
+      const px = from.x + pt.ox * (1 - pp) + (to.x - from.x) * ease;
+      const py = from.y + pt.oy * (1 - pp) + (to.y - from.y) * ease;
+      ctx.globalAlpha = pp < 0.8 ? 0.8 : Math.max(0, (1 - pp) * 5);
+      ctx.beginPath();
+      ctx.arc(px, py, pt.size * (1 - pp * 0.5), 0, Math.PI * 2);
+      ctx.fillStyle = PINK;
+      ctx.shadowColor = PINK;
+      ctx.shadowBlur = 5;
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+
+    // Reassemble at checkpoint (0.5 - 0.8)
+    if (p > 0.5) {
+      const ap = Math.min(1, (p - 0.5) / 0.25);
+      drawPlayer(ctx, TP_CP.row, TP_CP.col, ap);
+      // Flash
+      if (ap < 0.5) {
+        ctx.globalAlpha = (0.5 - ap) * 0.8;
+        ctx.beginPath();
+        ctx.arc(to.x, to.y, 10 + ap * 25, 0, Math.PI * 2);
+        const g = ctx.createRadialGradient(to.x, to.y, 0, to.x, to.y, 10 + ap * 25);
+        g.addColorStop(0, '#fff');
+        g.addColorStop(1, 'rgba(255,20,147,0)');
+        ctx.fillStyle = g;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Stone destruction wave at arrival
+    if (p > 0.6 && p < 0.85) {
+      const wp = (p - 0.6) / 0.25;
+      ctx.globalAlpha = Math.max(0, 0.7 - wp);
+      ctx.beginPath();
+      ctx.arc(to.x, to.y, CELL * 0.5 + wp * CELL * 2, 0, Math.PI * 2);
+      ctx.strokeStyle = PINK;
+      ctx.lineWidth = 2 * (1 - wp);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    if (p >= 1) { drawPlayer(ctx, TP_CP.row, TP_CP.col); return; }
+    requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+// ============ Teleport Effect 2: Portal Warp ============
+function teleportEffect2(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+  const from = getPos(TP_FROM.row, TP_FROM.col);
+  const to = getPos(TP_CP.row, TP_CP.col);
+
+  function drawPortal(cx, cy, progress, opening) {
+    const maxR = CELL * 0.6;
+    const r = opening ? maxR * Math.min(1, progress * 2) : maxR * Math.max(0, 1 - (progress - 0.5) * 2);
+    if (r <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r, r * 0.4, 0, 0, Math.PI * 2);
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, 'rgba(255,20,147,0.8)');
+    g.addColorStop(0.7, 'rgba(255,105,180,0.3)');
+    g.addColorStop(1, 'rgba(255,20,147,0)');
+    ctx.fillStyle = g;
+    ctx.fill();
+    // Spinning ring
+    ctx.strokeStyle = PINK;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r, r * 0.4, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    // Inner sparkles
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI * 2 / 6) * i + progress * 8;
+      const sr = r * 0.6;
+      ctx.globalAlpha = 0.5 + Math.sin(progress * 15 + i) * 0.3;
+      ctx.beginPath();
+      ctx.arc(cx + Math.cos(a) * sr, cy + Math.sin(a) * sr * 0.4, 2, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff';
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function draw(now) {
+    if (!start) start = now;
+    const p = Math.min(1, (now - start) / DUR);
+    const stones = TP_STONES.map(s => ({ ...s }));
+    if (p > 0.65) {
+      stones.forEach(s => {
+        if ([2,4].includes(s.row) && s.col === 6) s.destroyed = true;
+        if (s.row === 3 && [5,7].includes(s.col)) s.destroyed = true;
+      });
+    }
+    drawBoard(ctx, canvas.width, canvas.height, stones, TP_CP);
+
+    // Origin portal (opens 0-0.3, closes 0.6-0.9)
+    if (p < 0.9) drawPortal(from.x, from.y, p, p < 0.5);
+    // Destination portal (opens 0.2-0.5, closes 0.7-1.0)
+    if (p > 0.2) drawPortal(to.x, to.y, p - 0.2, p < 0.6);
+
+    // Player shrinks into origin portal (0 - 0.35)
+    if (p < 0.4) {
+      const sp = Math.min(1, p / 0.35);
+      const scale = Math.max(0, 1 - sp);
+      ctx.globalAlpha = scale;
+      ctx.beginPath();
+      ctx.arc(from.x, from.y, CELL * 0.35 * scale, 0, Math.PI * 2);
+      ctx.fillStyle = P_COLOR;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // Player emerges from destination portal (0.45 - 0.75)
+    if (p > 0.45) {
+      const ep = Math.min(1, (p - 0.45) / 0.25);
+      drawPlayer(ctx, TP_CP.row, TP_CP.col, ep);
+    }
+
+    // Stone destruction shockwave at arrival
+    if (p > 0.6 && p < 0.85) {
+      const wp = (p - 0.6) / 0.25;
+      ctx.globalAlpha = Math.max(0, 0.6 - wp);
+      ctx.beginPath();
+      ctx.arc(to.x, to.y, CELL * 0.3 + wp * CELL * 2, 0, Math.PI * 2);
+      ctx.strokeStyle = PINK;
+      ctx.lineWidth = 3 * (1 - wp);
+      ctx.shadowColor = PINK;
+      ctx.shadowBlur = 10;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+
+    if (p >= 1) { drawPlayer(ctx, TP_CP.row, TP_CP.col); return; }
+    requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+// ============ Teleport Effect 3: Lightning Bolt ============
+function teleportEffect3(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+  const from = getPos(TP_FROM.row, TP_FROM.col);
+  const to = getPos(TP_CP.row, TP_CP.col);
+
+  function drawLightning(ctx, x1, y1, x2, y2, alpha, seed) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = PINK;
+    ctx.shadowBlur = 15;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    const segs = 8;
+    for (let i = 1; i < segs; i++) {
+      const t = i / segs;
+      const mx = x1 + (x2 - x1) * t + (Math.sin(seed + i * 2.5) * 15);
+      const my = y1 + (y2 - y1) * t + (Math.cos(seed + i * 3.1) * 12);
+      ctx.lineTo(mx, my);
+    }
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+
+    // Thinner pink bolt
+    ctx.strokeStyle = PINK;
+    ctx.lineWidth = 1.5;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    for (let i = 1; i < segs; i++) {
+      const t = i / segs;
+      const mx = x1 + (x2 - x1) * t + (Math.sin(seed + 1 + i * 2.5) * 10);
+      const my = y1 + (y2 - y1) * t + (Math.cos(seed + 1 + i * 3.1) * 8);
+      ctx.lineTo(mx, my);
+    }
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function draw(now) {
+    if (!start) start = now;
+    const p = Math.min(1, (now - start) / DUR);
+    const stones = TP_STONES.map(s => ({ ...s }));
+    if (p > 0.5) {
+      stones.forEach(s => {
+        if ([2,4].includes(s.row) && s.col === 6) s.destroyed = true;
+        if (s.row === 3 && [5,7].includes(s.col)) s.destroyed = true;
+      });
+    }
+    drawBoard(ctx, canvas.width, canvas.height, stones, TP_CP);
+
+    // Charge up at origin (0 - 0.2)
+    if (p < 0.25) {
+      const cp2 = p / 0.2;
+      ctx.globalAlpha = cp2 * 0.6;
+      ctx.beginPath();
+      ctx.arc(from.x, from.y, CELL * 0.5 + cp2 * 5, 0, Math.PI * 2);
+      const g = ctx.createRadialGradient(from.x, from.y, 0, from.x, from.y, CELL * 0.5 + cp2 * 5);
+      g.addColorStop(0, '#fff');
+      g.addColorStop(1, 'rgba(255,20,147,0)');
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      drawPlayer(ctx, TP_FROM.row, TP_FROM.col);
+    }
+
+    // Lightning bolts connecting (0.2 - 0.6)
+    if (p > 0.15 && p < 0.65) {
+      const lp = (p - 0.15) / 0.5;
+      const alpha = lp < 0.3 ? lp / 0.3 : lp > 0.7 ? Math.max(0, (1 - lp) / 0.3) : 1;
+      // Multiple bolts with different seeds for flickering
+      drawLightning(ctx, from.x, from.y, to.x, to.y, alpha * 0.9, now * 0.01);
+      drawLightning(ctx, from.x, from.y, to.x, to.y, alpha * 0.5, now * 0.013 + 10);
+    }
+
+    // Player disappears from origin (0.2 - 0.35)
+    if (p < 0.35) {
+      const dp = Math.max(0, (p - 0.2) / 0.15);
+      drawPlayer(ctx, TP_FROM.row, TP_FROM.col, Math.max(0, 1 - dp));
+    }
+
+    // Player appears at destination (0.35 - 0.55)
+    if (p > 0.35) {
+      const ap = Math.min(1, (p - 0.35) / 0.2);
+      drawPlayer(ctx, TP_CP.row, TP_CP.col, ap);
+    }
+
+    // Impact at destination (0.4 - 0.65)
+    if (p > 0.4 && p < 0.7) {
+      const ip = (p - 0.4) / 0.3;
+      // Electric sparks
+      for (let i = 0; i < 6; i++) {
+        const a = (Math.PI * 2 / 6) * i + ip * 2;
+        const r = 10 + ip * 25;
+        const sx = to.x + Math.cos(a) * r;
+        const sy = to.y + Math.sin(a) * r;
+        ctx.globalAlpha = Math.max(0, 0.8 - ip);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 2, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.shadowColor = PINK;
+        ctx.shadowBlur = 5;
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+
+    // Stone destruction wave
+    if (p > 0.45 && p < 0.7) {
+      const wp = (p - 0.45) / 0.25;
+      ctx.globalAlpha = Math.max(0, 0.7 - wp);
+      ctx.beginPath();
+      ctx.arc(to.x, to.y, CELL * 0.5 + wp * CELL * 2, 0, Math.PI * 2);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2 * (1 - wp);
+      ctx.shadowColor = PINK;
+      ctx.shadowBlur = 10;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+
+    if (p >= 1) { drawPlayer(ctx, TP_CP.row, TP_CP.col); return; }
+    requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+// Initialize
+const placeEffects = [placeEffect1, placeEffect2, placeEffect3];
+placeEffects.forEach((fn, i) => {
+  const c = document.getElementById('p' + (i + 1));
+  fn(c);
+  c.addEventListener('click', () => fn(c));
+});
+
+const teleportEffects = [teleportEffect1, teleportEffect2, teleportEffect3];
+teleportEffects.forEach((fn, i) => {
+  const c = document.getElementById('t' + (i + 1));
+  fn(c);
+  c.addEventListener('click', () => fn(c));
+});
+</script>
+</body>
+</html>

@@ -66,7 +66,7 @@ const SKILL_COSTS = {
     momonga: 60,
     swamp: 30,
     warp: 60,
-    checkpoint: 120,
+    checkpoint: 100,
     kamakura: 50,
     electromagnet: 50
 };

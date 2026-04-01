@@ -54,6 +54,15 @@ class Game {
         this.controlAnimStart = 0;
         this.controlAnimTargetPos = { row: 0, col: 0 };
         this.controlAnimInitialized = false;
+        this.checkpointPlaceAnimating = false;
+        this.checkpointPlaceAnimStart = 0;
+        this.checkpointPlaceAnimPlayerNum = 0;
+        this.checkpointPlaceAnimPos = { row: 0, col: 0 };
+        this.checkpointTeleportAnimating = false;
+        this.checkpointTeleportAnimStart = 0;
+        this.checkpointTeleportAnimPlayerNum = 0;
+        this.checkpointTeleportAnimFrom = { row: 0, col: 0 };
+        this.checkpointTeleportAnimTo = { row: 0, col: 0 };
         this.hoveredSkill = null; // skill key hovered in selection screen
         this.skillTabP1 = 0; // active category tab index for P1
         this.skillTabP2 = 0; // active category tab index for P2
@@ -130,7 +139,7 @@ class Game {
 
     // Consume pending state sync if one exists
     _consumePendingStateSync() {
-        if (this._pendingStateSync && !this.bombAnimating && !this.sniperAnimating && !this.landsharkAnimating && !this.sneakAnimating && !this.momongaAnimating && !this.fallAnimating) {
+        if (this._pendingStateSync && !this.bombAnimating && !this.sniperAnimating && !this.landsharkAnimating && !this.sneakAnimating && !this.momongaAnimating && !this.checkpointPlaceAnimating && !this.checkpointTeleportAnimating && !this.fallAnimating) {
             this._applyStateSync(this._pendingStateSync);
             this._pendingStateSync = null;
         }
@@ -1286,11 +1295,22 @@ class Game {
             const fromRow = currentPlayer.row;
             const fromCol = currentPlayer.col;
             currentPlayer.moveTo(cp.row, cp.col);
-            animManager.startMove(currentPlayer.playerNum, fromRow, fromCol, cp.row, cp.col, 'teleport');
-            this.phase = PHASES.ANIMATING;
-            animManager.playerAnims[currentPlayer.playerNum].onComplete = () => {
-                this.endTurn();
-            };
+            // Destroy surrounding 4-direction stones at checkpoint on teleport
+            for (const dir of CROSS_DIRECTIONS) {
+                const r = cp.row + dir.dr;
+                const c = cp.col + dir.dc;
+                if (this.board.isValidPosition(r, c) &&
+                    this.board.getTile(r, c) === MARKERS.STONE) {
+                    this.board.setTile(r, c, MARKERS.EMPTY);
+                }
+            }
+            // Checkpoint teleport lightning bolt effect
+            this.checkpointTeleportAnimating = true;
+            this.checkpointTeleportAnimStart = performance.now();
+            this.checkpointTeleportAnimPlayerNum = currentPlayer.playerNum;
+            this.checkpointTeleportAnimFrom = { row: fromRow, col: fromCol };
+            this.checkpointTeleportAnimTo = { row: cp.row, col: cp.col };
+            // Keep phase as PLACE (anim renders in MOVE/PLACE case block)
         } else {
             // --- Place mode ---
             const pos = currentPlayer.getPosition();
@@ -1299,8 +1319,8 @@ class Game {
             this.board.setCheckpoint(pos.row, pos.col, currentPlayer.playerNum);
             currentPlayer.setCheckpoint(pos.row, pos.col);
             // Destroy surrounding 4-direction stones (cross only)
-            const allDirs = CROSS_DIRECTIONS;
-            for (const dir of allDirs) {
+            const placeAllDirs = CROSS_DIRECTIONS;
+            for (const dir of placeAllDirs) {
                 const r = pos.row + dir.dr;
                 const c = pos.col + dir.dc;
                 if (this.board.isValidPosition(r, c) &&
@@ -1308,7 +1328,12 @@ class Game {
                     this.board.setTile(r, c, MARKERS.EMPTY);
                 }
             }
-            this.endTurn();
+            // Checkpoint place shockwave effect
+            this.checkpointPlaceAnimating = true;
+            this.checkpointPlaceAnimStart = performance.now();
+            this.checkpointPlaceAnimPlayerNum = currentPlayer.playerNum;
+            this.checkpointPlaceAnimPos = { row: pos.row, col: pos.col };
+            // Keep phase as PLACE (anim renders in MOVE/PLACE case block)
         }
         return true;
     }
@@ -1972,6 +1997,8 @@ class Game {
         if (this.phase === PHASES.START_ANIM) return false;
         if (this.sneakAnimating) return false;
         if (this.momongaAnimating) return false;
+        if (this.checkpointPlaceAnimating) return false;
+        if (this.checkpointTeleportAnimating) return false;
 
         // Hover-menu: skill selection → return to menu (online: disconnect confirm)
         if ((this.phase === PHASES.SKILL_SELECTION || this.phase === PHASES.TURN_ORDER_SELECT) && y < 50) {

@@ -320,7 +320,18 @@ class ReplayEngine {
                 }
                 break;
             case 'checkpoint_teleport':
-                if (data.to) { p.row = data.to.row; p.col = data.to.col; }
+                if (data.to) {
+                    p.row = data.to.row; p.col = data.to.col;
+                    // Destroy surrounding 4-direction stones at checkpoint on teleport
+                    for (const dir of CROSS_DIRECTIONS) {
+                        const nr = data.to.row + dir.dr;
+                        const nc = data.to.col + dir.dc;
+                        if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE &&
+                            state.board[nr][nc] === MARKERS.STONE) {
+                            state.board[nr][nc] = MARKERS.EMPTY;
+                        }
+                    }
+                }
                 break;
             case 'kamakura':
                 // Reconstruct which stones to convert from pattern + player position

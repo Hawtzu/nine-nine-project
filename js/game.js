@@ -63,6 +63,10 @@ class Game {
         this.checkpointTeleportAnimPlayerNum = 0;
         this.checkpointTeleportAnimFrom = { row: 0, col: 0 };
         this.checkpointTeleportAnimTo = { row: 0, col: 0 };
+        this.kamakuraAnimating = false;
+        this.kamakuraAnimStart = 0;
+        this.kamakuraAnimPlayerNum = 0;
+        this.kamakuraAnimStones = [];
         this.hoveredSkill = null; // skill key hovered in selection screen
         this.skillTabP1 = 0; // active category tab index for P1
         this.skillTabP2 = 0; // active category tab index for P2
@@ -139,7 +143,7 @@ class Game {
 
     // Consume pending state sync if one exists
     _consumePendingStateSync() {
-        if (this._pendingStateSync && !this.bombAnimating && !this.sniperAnimating && !this.landsharkAnimating && !this.sneakAnimating && !this.momongaAnimating && !this.checkpointPlaceAnimating && !this.checkpointTeleportAnimating && !this.fallAnimating) {
+        if (this._pendingStateSync && !this.bombAnimating && !this.sniperAnimating && !this.landsharkAnimating && !this.sneakAnimating && !this.momongaAnimating && !this.checkpointPlaceAnimating && !this.checkpointTeleportAnimating && !this.kamakuraAnimating && !this.fallAnimating) {
             this._applyStateSync(this._pendingStateSync);
             this._pendingStateSync = null;
         }
@@ -1388,10 +1392,16 @@ class Game {
             for (const s of pattern.stones) {
                 this.board.setSnow(s.row, s.col, 2);
             }
+            // Start freeze flash animation
+            this.kamakuraAnimating = true;
+            this.kamakuraAnimStart = performance.now();
+            this.kamakuraAnimPlayerNum = this.currentTurn;
+            this.kamakuraAnimStones = pattern.stones.map(s => ({ row: s.row, col: s.col }));
+        } else {
+            this.endTurn();
         }
         this.kamakuraPatterns = [];
         this.hoveredKamakuraIndex = null;
-        this.endTurn();
     }
 
     updateKamakuraHover(row, col) {
@@ -1999,6 +2009,7 @@ class Game {
         if (this.momongaAnimating) return false;
         if (this.checkpointPlaceAnimating) return false;
         if (this.checkpointTeleportAnimating) return false;
+        if (this.kamakuraAnimating) return false;
 
         // Hover-menu: skill selection → return to menu (online: disconnect confirm)
         if ((this.phase === PHASES.SKILL_SELECTION || this.phase === PHASES.TURN_ORDER_SELECT) && y < 50) {

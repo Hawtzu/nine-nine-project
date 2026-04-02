@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Kamakura Effect Comparison</title>
+<style>
+  body { margin: 0; background: #1a1a2e; color: #fff; font-family: 'Segoe UI', sans-serif; display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; padding: 20px; }
+  h1 { width: 100%; text-align: center; color: #87CEEB; margin-bottom: 0; }
+  p.subtitle { width: 100%; text-align: center; color: #aaa; margin-top: 5px; }
+  .card { background: #16213e; border: 2px solid #87CEEB; border-radius: 12px; padding: 10px; width: 380px; }
+  .card h2 { text-align: center; color: #87CEEB; margin: 5px 0; font-size: 16px; }
+  .card p { text-align: center; color: #aaa; font-size: 12px; margin: 2px 0 8px; }
+  canvas { display: block; margin: 0 auto; border-radius: 8px; cursor: pointer; }
+  .hint { text-align: center; color: #666; font-size: 11px; margin-top: 5px; }
+</style>
+</head>
+<body>
+<h1>Kamakura Effect Comparison</h1>
+<p class="subtitle">コの字型5石をSnow Blockに変換するスキル（50pt）— クリックで再生</p>
+
+<div class="card">
+  <h2>1. Frost Wave（霜の波動）</h2>
+  <p>中央から冷気の波が広がり、石が順番に凍結</p>
+  <canvas id="c1" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<div class="card">
+  <h2>2. Snow Burst（雪の爆発）</h2>
+  <p>中央から雪の結晶が放射状に飛び散り、各石が白く変わる</p>
+  <canvas id="c2" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<div class="card">
+  <h2>3. Ice Crystal Chain（氷結連鎖）</h2>
+  <p>石が1つずつ連鎖的に凍結、波が伝播していく</p>
+  <canvas id="c3" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<div class="card">
+  <h2>4. Blizzard Swirl（吹雪の渦）</h2>
+  <p>コの字の中心に吹雪の渦が巻き、石を巻き込んで凍結</p>
+  <canvas id="c4" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<div class="card">
+  <h2>5. Freeze Flash（凍結フラッシュ）</h2>
+  <p>全5石が同時にフラッシュして一瞬で凍結、シンプルで力強い</p>
+  <canvas id="c5" width="380" height="300"></canvas>
+  <div class="hint">Click to replay</div>
+</div>
+
+<script>
+const CELL = 38;
+const BOARD_X = 10, BOARD_Y = 10;
+const COLS = 9, ROWS = 7;
+const P_COLOR = '#4fc3f7';
+const STONE_COLOR = '#9C27B0';
+const SNOW_COLOR = '#E0F7FA';
+const ICE_BLUE = '#87CEEB';
+
+// Player at center, U-shape opening upward: bottom-left, left, bottom-right, right, bottom
+// Pattern: player at (3,4), stones form a U opening up
+const PLAYER = { row: 3, col: 4 };
+// U-shape (opening up): bottom row 3 stones + 2 sides
+const STONES = [
+  { row: 4, col: 3 }, // bottom-left
+  { row: 3, col: 3 }, // left
+  { row: 4, col: 5 }, // bottom-right
+  { row: 3, col: 5 }, // right
+  { row: 4, col: 4 }, // bottom-center
+];
+const MIDDLE = { row: 4, col: 4 }; // center of the U base
+
+function drawBoard(ctx, w, h, frozenIndices = []) {
+  ctx.fillStyle = '#0f0f23';
+  ctx.fillRect(0, 0, w, h);
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const x = BOARD_X + c * CELL;
+      const y = BOARD_Y + r * CELL;
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.strokeRect(x, y, CELL, CELL);
+    }
+  }
+  // Draw stones (unfrozen as purple, frozen as snow)
+  for (let i = 0; i < STONES.length; i++) {
+    const s = STONES[i];
+    const x = BOARD_X + s.col * CELL + CELL / 2;
+    const y = BOARD_Y + s.row * CELL + CELL / 2;
+    ctx.beginPath();
+    ctx.arc(x, y, CELL * 0.35, 0, Math.PI * 2);
+    if (frozenIndices.includes(i)) {
+      ctx.fillStyle = SNOW_COLOR;
+      ctx.fill();
+      ctx.strokeStyle = '#B3E5FC';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Snowflake marker
+      ctx.fillStyle = '#4FC3F7';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('❄', x, y);
+    } else {
+      ctx.fillStyle = STONE_COLOR;
+      ctx.fill();
+      ctx.strokeStyle = '#CE93D8';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+}
+
+function drawPlayer(ctx) {
+  const x = BOARD_X + PLAYER.col * CELL + CELL / 2;
+  const y = BOARD_Y + PLAYER.row * CELL + CELL / 2;
+  ctx.beginPath();
+  ctx.arc(x, y, CELL * 0.35, 0, Math.PI * 2);
+  ctx.fillStyle = P_COLOR;
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('1', x, y);
+}
+
+function getPos(row, col) {
+  return { x: BOARD_X + col * CELL + CELL / 2, y: BOARD_Y + row * CELL + CELL / 2 };
+}
+
+// Seeded random for deterministic particles
+function seededRandom(seed) {
+  let s = seed;
+  return function() {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
+const DUR = 1800;
+
+// ============ Effect 1: Frost Wave ============
+function effect1(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+  const center = getPos(MIDDLE.row, MIDDLE.col);
+  const maxRadius = CELL * 2.5;
+
+  function draw(now) {
+    if (!start) start = now;
+    const elapsed = now - start;
+    const p = Math.min(1, elapsed / DUR);
+
+    // Determine which stones are frozen based on distance from center
+    const waveRadius = p * maxRadius * 1.5;
+    const frozen = [];
+    for (let i = 0; i < STONES.length; i++) {
+      const sp = getPos(STONES[i].row, STONES[i].col);
+      const dist = Math.hypot(sp.x - center.x, sp.y - center.y);
+      if (waveRadius > dist + CELL * 0.3) frozen.push(i);
+    }
+
+    drawBoard(ctx, canvas.width, canvas.height, frozen);
+    drawPlayer(ctx);
+
+    // Expanding frost wave rings
+    if (p < 0.8) {
+      const numRings = 3;
+      for (let ring = 0; ring < numRings; ring++) {
+        const ringP = Math.max(0, p - ring * 0.1);
+        const radius = ringP * maxRadius * 1.5;
+        const alpha = Math.max(0, 0.6 - ringP * 0.8);
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(135,206,235,${alpha})`;
+        ctx.lineWidth = 3 - ring;
+        ctx.stroke();
+
+        // Frost glow
+        const grad = ctx.createRadialGradient(center.x, center.y, radius * 0.8, center.x, center.y, radius);
+        grad.addColorStop(0, `rgba(135,206,235,0)`);
+        grad.addColorStop(1, `rgba(135,206,235,${alpha * 0.3})`);
+        ctx.fillStyle = grad;
+        ctx.fill();
+      }
+    }
+
+    // Ice crystal particles along the wave front
+    if (p < 0.9) {
+      const rng = seededRandom(42);
+      const numParticles = 20;
+      for (let i = 0; i < numParticles; i++) {
+        const angle = rng() * Math.PI * 2;
+        const baseR = waveRadius * (0.8 + rng() * 0.4);
+        const px = center.x + Math.cos(angle) * baseR;
+        const py = center.y + Math.sin(angle) * baseR;
+        const size = 2 + rng() * 3;
+        const alpha = Math.max(0, 0.7 - p);
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(angle + elapsed * 0.003);
+        ctx.fillStyle = `rgba(200,230,255,${alpha})`;
+        // Draw small crystal shape
+        ctx.beginPath();
+        ctx.moveTo(0, -size);
+        ctx.lineTo(size * 0.3, 0);
+        ctx.lineTo(0, size);
+        ctx.lineTo(-size * 0.3, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // Freeze flash on each stone when it freezes
+    for (let i = 0; i < STONES.length; i++) {
+      const sp = getPos(STONES[i].row, STONES[i].col);
+      const dist = Math.hypot(sp.x - center.x, sp.y - center.y);
+      const freezeTime = (dist + CELL * 0.3) / (maxRadius * 1.5);
+      const flashP = (p - freezeTime) / 0.15;
+      if (flashP > 0 && flashP < 1) {
+        const alpha = 0.8 * (1 - flashP);
+        const r = CELL * 0.5 * (1 + flashP * 0.5);
+        const grad = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, r);
+        grad.addColorStop(0, `rgba(255,255,255,${alpha})`);
+        grad.addColorStop(1, `rgba(135,206,235,0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    if (elapsed < DUR) requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+// ============ Effect 2: Snow Burst ============
+function effect2(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+  const center = getPos(MIDDLE.row, MIDDLE.col);
+  const rng = seededRandom(123);
+
+  // Generate snowflake particles
+  const particles = [];
+  for (let i = 0; i < 40; i++) {
+    const angle = rng() * Math.PI * 2;
+    const speed = 30 + rng() * 80;
+    const size = 2 + rng() * 4;
+    const rotSpeed = (rng() - 0.5) * 8;
+    // Target: one of the 5 stones
+    const targetIdx = Math.floor(rng() * STONES.length);
+    particles.push({ angle, speed, size, rotSpeed, targetIdx, delay: rng() * 0.2 });
+  }
+
+  function draw(now) {
+    if (!start) start = now;
+    const elapsed = now - start;
+    const p = Math.min(1, elapsed / DUR);
+
+    // Frozen stones: those hit by enough particles
+    const frozen = [];
+    if (p > 0.35) {
+      for (let i = 0; i < STONES.length; i++) {
+        if (p > 0.35 + i * 0.08) frozen.push(i);
+      }
+    }
+
+    drawBoard(ctx, canvas.width, canvas.height, frozen);
+    drawPlayer(ctx);
+
+    // Central burst flash
+    if (p < 0.3) {
+      const flashAlpha = Math.max(0, 0.6 * (1 - p / 0.3));
+      const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, CELL);
+      grad.addColorStop(0, `rgba(255,255,255,${flashAlpha})`);
+      grad.addColorStop(1, `rgba(135,206,235,0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, CELL, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Snow particles flying outward then converging to target stones
+    for (const part of particles) {
+      const pp = Math.max(0, (p - part.delay) / (1 - part.delay));
+      if (pp <= 0 || pp > 0.9) continue;
+
+      const target = getPos(STONES[part.targetIdx].row, STONES[part.targetIdx].col);
+
+      let px, py;
+      if (pp < 0.4) {
+        // Burst outward
+        const burst = pp / 0.4;
+        px = center.x + Math.cos(part.angle) * part.speed * burst;
+        py = center.y + Math.sin(part.angle) * part.speed * burst;
+      } else {
+        // Converge to target stone
+        const conv = (pp - 0.4) / 0.5;
+        const burstX = center.x + Math.cos(part.angle) * part.speed;
+        const burstY = center.y + Math.sin(part.angle) * part.speed;
+        px = burstX + (target.x - burstX) * conv;
+        py = burstY + (target.y - burstY) * conv;
+      }
+
+      const alpha = pp < 0.8 ? 0.8 : 0.8 * (1 - (pp - 0.8) / 0.1);
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(elapsed * part.rotSpeed * 0.001);
+      ctx.fillStyle = `rgba(220,240,255,${alpha})`;
+      // Snowflake shape (6-pointed)
+      drawSnowflake(ctx, part.size);
+      ctx.restore();
+    }
+
+    // Impact glow on stones as they freeze
+    for (let i = 0; i < STONES.length; i++) {
+      const freezeP = (p - (0.35 + i * 0.08)) / 0.15;
+      if (freezeP > 0 && freezeP < 1) {
+        const sp = getPos(STONES[i].row, STONES[i].col);
+        const alpha = 0.7 * (1 - freezeP);
+        const grad = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, CELL * 0.6);
+        grad.addColorStop(0, `rgba(255,255,255,${alpha})`);
+        grad.addColorStop(1, `rgba(135,206,235,0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, CELL * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    if (elapsed < DUR) requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+function drawSnowflake(ctx, size) {
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 3) * i;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(angle) * size, Math.sin(angle) * size);
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 0.3, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ============ Effect 3: Ice Crystal Chain ============
+function effect3(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+  // Chain order: freeze stones one by one in sequence
+  const chainOrder = [0, 4, 2, 1, 3]; // bottom-left → bottom-center → bottom-right → left → right
+  const freezeInterval = DUR / (STONES.length + 2);
+
+  function draw(now) {
+    if (!start) start = now;
+    const elapsed = now - start;
+    const p = Math.min(1, elapsed / DUR);
+
+    const frozen = [];
+    for (let i = 0; i < chainOrder.length; i++) {
+      if (elapsed > (i + 1) * freezeInterval) {
+        frozen.push(chainOrder[i]);
+      }
+    }
+
+    drawBoard(ctx, canvas.width, canvas.height, frozen);
+    drawPlayer(ctx);
+
+    // Draw chain connections (ice beams between sequentially freezing stones)
+    for (let i = 0; i < chainOrder.length - 1; i++) {
+      const startTime = (i + 1) * freezeInterval;
+      const endTime = (i + 2) * freezeInterval;
+      if (elapsed < startTime) continue;
+
+      const from = getPos(STONES[chainOrder[i]].row, STONES[chainOrder[i]].col);
+      const to = getPos(STONES[chainOrder[i + 1]].row, STONES[chainOrder[i + 1]].col);
+      const beamP = Math.min(1, (elapsed - startTime) / (endTime - startTime));
+
+      // Ice beam
+      const midX = from.x + (to.x - from.x) * beamP;
+      const midY = from.y + (to.y - from.y) * beamP;
+      const grad = ctx.createLinearGradient(from.x, from.y, midX, midY);
+      grad.addColorStop(0, `rgba(135,206,235,0.1)`);
+      grad.addColorStop(0.5, `rgba(135,206,235,0.6)`);
+      grad.addColorStop(1, `rgba(255,255,255,0.8)`);
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(midX, midY);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // Sparkles along the beam
+      const rng = seededRandom(i * 100 + Math.floor(elapsed / 50));
+      for (let j = 0; j < 5; j++) {
+        const t = rng() * beamP;
+        const sx = from.x + (to.x - from.x) * t + (rng() - 0.5) * 8;
+        const sy = from.y + (to.y - from.y) * t + (rng() - 0.5) * 8;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 1 + rng() * 2, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(200,230,255,${0.5 + rng() * 0.5})`;
+        ctx.fill();
+      }
+    }
+
+    // Freeze impact on each stone
+    for (let i = 0; i < chainOrder.length; i++) {
+      const freezeTime = (i + 1) * freezeInterval;
+      const flashP = (elapsed - freezeTime) / 200;
+      if (flashP > 0 && flashP < 1) {
+        const sp = getPos(STONES[chainOrder[i]].row, STONES[chainOrder[i]].col);
+        // Expanding ice ring
+        const ringR = CELL * 0.3 + CELL * 0.4 * flashP;
+        const alpha = 0.8 * (1 - flashP);
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, ringR, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(135,206,235,${alpha})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Flash
+        const grad = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, CELL * 0.5);
+        grad.addColorStop(0, `rgba(255,255,255,${alpha * 0.6})`);
+        grad.addColorStop(1, `rgba(135,206,235,0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, CELL * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Overall frost overlay near the end
+    if (p > 0.85) {
+      const overlayAlpha = (p - 0.85) / 0.15 * 0.15;
+      for (const s of STONES) {
+        const sp = getPos(s.row, s.col);
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, CELL * 0.4, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(135,206,235,${overlayAlpha})`;
+        ctx.fill();
+      }
+    }
+
+    if (elapsed < DUR) requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+// ============ Effect 4: Blizzard Swirl ============
+function effect4(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+  const center = getPos(MIDDLE.row, MIDDLE.col);
+  const rng = seededRandom(777);
+
+  // Generate swirl particles
+  const swirlParticles = [];
+  for (let i = 0; i < 50; i++) {
+    swirlParticles.push({
+      angle: rng() * Math.PI * 2,
+      radius: 5 + rng() * 20,
+      speed: 2 + rng() * 4,
+      size: 1 + rng() * 3,
+      yOff: (rng() - 0.5) * 30,
+    });
+  }
+
+  function draw(now) {
+    if (!start) start = now;
+    const elapsed = now - start;
+    const p = Math.min(1, elapsed / DUR);
+
+    // Stones freeze as the blizzard expands (all at once around 60%)
+    const frozen = [];
+    if (p > 0.5) {
+      const freezeP = (p - 0.5) / 0.3;
+      // Freeze from closest to furthest
+      for (let i = 0; i < STONES.length; i++) {
+        const sp = getPos(STONES[i].row, STONES[i].col);
+        const dist = Math.hypot(sp.x - center.x, sp.y - center.y);
+        if (freezeP > dist / (CELL * 3)) frozen.push(i);
+      }
+    }
+
+    drawBoard(ctx, canvas.width, canvas.height, frozen);
+    drawPlayer(ctx);
+
+    // Blizzard swirl effect
+    if (p < 0.9) {
+      const swirlRadius = CELL * 0.5 + p * CELL * 2;
+      const intensity = p < 0.5 ? p / 0.5 : Math.max(0, 1 - (p - 0.7) / 0.2);
+
+      // Swirling snow particles
+      for (const part of swirlParticles) {
+        const angle = part.angle + elapsed * 0.005 * part.speed;
+        const r = part.radius + swirlRadius * (0.3 + 0.7 * p);
+        const px = center.x + Math.cos(angle) * r;
+        const py = center.y + Math.sin(angle) * r * 0.6 + part.yOff * p;
+        const alpha = intensity * 0.7;
+        ctx.beginPath();
+        ctx.arc(px, py, part.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(220,235,255,${alpha})`;
+        ctx.fill();
+      }
+
+      // Central vortex glow
+      const vortexAlpha = intensity * 0.3;
+      const grad = ctx.createRadialGradient(center.x, center.y, 0, center.x, center.y, swirlRadius);
+      grad.addColorStop(0, `rgba(135,206,235,${vortexAlpha})`);
+      grad.addColorStop(0.5, `rgba(173,216,230,${vortexAlpha * 0.5})`);
+      grad.addColorStop(1, `rgba(135,206,235,0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, swirlRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Wind lines
+      for (let i = 0; i < 8; i++) {
+        const lineAngle = (Math.PI * 2 / 8) * i + elapsed * 0.003;
+        const r1 = swirlRadius * 0.3;
+        const r2 = swirlRadius * 0.9;
+        const x1 = center.x + Math.cos(lineAngle) * r1;
+        const y1 = center.y + Math.sin(lineAngle) * r1 * 0.6;
+        const nextAngle = lineAngle + 0.5;
+        const x2 = center.x + Math.cos(nextAngle) * r2;
+        const y2 = center.y + Math.sin(nextAngle) * r2 * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.quadraticCurveTo(
+          center.x + Math.cos(lineAngle + 0.25) * swirlRadius * 1.1,
+          center.y + Math.sin(lineAngle + 0.25) * swirlRadius * 0.7,
+          x2, y2
+        );
+        ctx.strokeStyle = `rgba(200,230,255,${intensity * 0.3})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+
+    // Freeze flash on stones
+    for (let i = 0; i < STONES.length; i++) {
+      const sp = getPos(STONES[i].row, STONES[i].col);
+      const dist = Math.hypot(sp.x - center.x, sp.y - center.y);
+      const freezeTime = 0.5 + (dist / (CELL * 3)) * 0.3;
+      const flashP = (p - freezeTime) / 0.1;
+      if (flashP > 0 && flashP < 1) {
+        const alpha = 0.8 * (1 - flashP);
+        const grad = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, CELL * 0.6);
+        grad.addColorStop(0, `rgba(255,255,255,${alpha})`);
+        grad.addColorStop(1, `rgba(135,206,235,0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, CELL * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    if (elapsed < DUR) requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+// ============ Effect 5: Freeze Flash ============
+function effect5(canvas) {
+  const ctx = canvas.getContext('2d');
+  let start = null;
+
+  function draw(now) {
+    if (!start) start = now;
+    const elapsed = now - start;
+    const p = Math.min(1, elapsed / DUR);
+
+    // All stones freeze at once at 30%
+    const frozen = p > 0.3 ? [0, 1, 2, 3, 4] : [];
+
+    drawBoard(ctx, canvas.width, canvas.height, frozen);
+    drawPlayer(ctx);
+
+    // Pre-flash charge (0-30%): stones glow with increasing intensity
+    if (p < 0.3) {
+      const chargeP = p / 0.3;
+      for (const s of STONES) {
+        const sp = getPos(s.row, s.col);
+        const pulseAlpha = chargeP * 0.5 * (0.5 + 0.5 * Math.sin(elapsed * 0.02));
+        const grad = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, CELL * 0.5);
+        grad.addColorStop(0, `rgba(135,206,235,${pulseAlpha})`);
+        grad.addColorStop(1, `rgba(135,206,235,0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, CELL * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Lines connecting stones, charging up
+      ctx.strokeStyle = `rgba(135,206,235,${chargeP * 0.3})`;
+      ctx.lineWidth = 1;
+      for (let i = 0; i < STONES.length; i++) {
+        for (let j = i + 1; j < STONES.length; j++) {
+          const a = getPos(STONES[i].row, STONES[i].col);
+          const b = getPos(STONES[j].row, STONES[j].col);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Flash moment (30-45%): bright white flash
+    if (p >= 0.28 && p < 0.5) {
+      const flashP = (p - 0.28) / 0.22;
+      // Full screen flash
+      const screenAlpha = flashP < 0.15 ? flashP / 0.15 * 0.4 : 0.4 * (1 - (flashP - 0.15) / 0.85);
+      ctx.fillStyle = `rgba(200,230,255,${screenAlpha})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Individual stone flashes
+      for (const s of STONES) {
+        const sp = getPos(s.row, s.col);
+        const r = CELL * (0.5 + flashP * 0.8);
+        const alpha = 0.9 * (1 - flashP);
+        const grad = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, r);
+        grad.addColorStop(0, `rgba(255,255,255,${alpha})`);
+        grad.addColorStop(0.5, `rgba(135,206,235,${alpha * 0.5})`);
+        grad.addColorStop(1, `rgba(135,206,235,0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Post-flash ice sparkles (45-100%)
+    if (p > 0.45 && p < 0.95) {
+      const sparkleP = (p - 0.45) / 0.5;
+      const rng = seededRandom(Math.floor(elapsed / 80) * 31);
+      for (let i = 0; i < 15; i++) {
+        const stoneIdx = Math.floor(rng() * STONES.length);
+        const sp = getPos(STONES[stoneIdx].row, STONES[stoneIdx].col);
+        const ox = (rng() - 0.5) * CELL * 0.8;
+        const oy = (rng() - 0.5) * CELL * 0.8;
+        const sz = 1 + rng() * 2;
+        const alpha = (1 - sparkleP) * 0.6;
+        ctx.beginPath();
+        ctx.arc(sp.x + ox, sp.y + oy, sz, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(220,240,255,${alpha})`;
+        ctx.fill();
+      }
+    }
+
+    // Frost outline on stones after freeze
+    if (p > 0.35 && p < 0.8) {
+      const frostP = (p - 0.35) / 0.45;
+      for (const s of STONES) {
+        const sp = getPos(s.row, s.col);
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, CELL * 0.4, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(135,206,235,${0.5 * (1 - frostP)})`;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+
+    if (elapsed < DUR) requestAnimationFrame(draw);
+  }
+  start = null;
+  requestAnimationFrame(draw);
+}
+
+// ============ Initialize all canvases ============
+const effects = [effect1, effect2, effect3, effect4, effect5];
+for (let i = 0; i < effects.length; i++) {
+  const canvas = document.getElementById(`c${i + 1}`);
+  effects[i](canvas);
+  canvas.addEventListener('click', () => effects[i](canvas));
+}
+</script>
+</body>
+</html>

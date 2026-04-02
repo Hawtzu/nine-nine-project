@@ -5363,6 +5363,113 @@ class Renderer {
         this.ctx.fillRect(SCREEN_WIDTH - PANEL_WIDTH, 0, PANEL_WIDTH, SCREEN_HEIGHT);
     }
 
+    // Kamakura: Freeze Flash effect (1200ms)
+    drawKamakuraEffect(elapsed, stones, playerNum) {
+        const ctx = this.ctx;
+        const DUR = 1200;
+        const p = Math.min(1, elapsed / DUR);
+
+        // Calculate center of all stones
+        let cx = 0, cy = 0;
+        const stonePositions = stones.map(s => {
+            const x = s.col * CELL_SIZE + BOARD_OFFSET_X + CELL_SIZE / 2;
+            const y = s.row * CELL_SIZE + BOARD_OFFSET_Y + CELL_SIZE / 2;
+            cx += x; cy += y;
+            return { x, y };
+        });
+        cx /= stones.length;
+        cy /= stones.length;
+
+        ctx.save();
+
+        // Phase 1 (0-30%): Charge — stones pulse with increasing ice glow, lines connect them
+        if (p < 0.3) {
+            const chargeP = p / 0.3;
+            // Connecting lines between all stones
+            ctx.strokeStyle = `rgba(135,206,235,${chargeP * 0.4})`;
+            ctx.lineWidth = 1.5;
+            for (let i = 0; i < stonePositions.length; i++) {
+                for (let j = i + 1; j < stonePositions.length; j++) {
+                    ctx.beginPath();
+                    ctx.moveTo(stonePositions[i].x, stonePositions[i].y);
+                    ctx.lineTo(stonePositions[j].x, stonePositions[j].y);
+                    ctx.stroke();
+                }
+            }
+            // Pulsing glow on each stone
+            const pulseAlpha = chargeP * 0.5 * (0.5 + 0.5 * Math.sin(elapsed * 0.025));
+            for (const sp of stonePositions) {
+                const grad = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, CELL_SIZE * 0.5);
+                grad.addColorStop(0, `rgba(135,206,235,${pulseAlpha})`);
+                grad.addColorStop(1, 'rgba(135,206,235,0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(sp.x, sp.y, CELL_SIZE * 0.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Phase 2 (28-50%): Flash — bright white burst on all stones simultaneously
+        if (p >= 0.28 && p < 0.5) {
+            const flashP = (p - 0.28) / 0.22;
+            // Screen-level flash
+            const screenAlpha = flashP < 0.15 ? (flashP / 0.15) * 0.3 : 0.3 * (1 - (flashP - 0.15) / 0.85);
+            ctx.fillStyle = `rgba(200,230,255,${screenAlpha})`;
+            const bx = BOARD_OFFSET_X;
+            const by = BOARD_OFFSET_Y;
+            ctx.fillRect(bx, by, BOARD_SIZE * CELL_SIZE, BOARD_SIZE * CELL_SIZE);
+
+            // Per-stone flash burst
+            for (const sp of stonePositions) {
+                const r = CELL_SIZE * (0.5 + flashP * 0.6);
+                const alpha = 0.9 * (1 - flashP);
+                const grad = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, r);
+                grad.addColorStop(0, `rgba(255,255,255,${alpha})`);
+                grad.addColorStop(0.5, `rgba(135,206,235,${alpha * 0.5})`);
+                grad.addColorStop(1, 'rgba(135,206,235,0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Phase 3 (45-90%): Post-flash sparkles on frozen stones
+        if (p > 0.45 && p < 0.9) {
+            const sparkleP = (p - 0.45) / 0.45;
+            // Deterministic sparkles using elapsed-based seed
+            const seed = Math.floor(elapsed / 60);
+            let s = seed * 16807 % 2147483647;
+            const rng = () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
+            for (let i = 0; i < 20; i++) {
+                const idx = Math.floor(rng() * stonePositions.length);
+                const sp = stonePositions[idx];
+                const ox = (rng() - 0.5) * CELL_SIZE * 0.8;
+                const oy = (rng() - 0.5) * CELL_SIZE * 0.8;
+                const sz = 1 + rng() * 2.5;
+                const alpha = (1 - sparkleP) * 0.7;
+                ctx.beginPath();
+                ctx.arc(sp.x + ox, sp.y + oy, sz, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(220,240,255,${alpha})`;
+                ctx.fill();
+            }
+        }
+
+        // Phase 3b (35-70%): Frost ring outlines fading
+        if (p > 0.35 && p < 0.7) {
+            const frostP = (p - 0.35) / 0.35;
+            for (const sp of stonePositions) {
+                ctx.beginPath();
+                ctx.arc(sp.x, sp.y, CELL_SIZE * 0.42, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(135,206,235,${0.5 * (1 - frostP)})`;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+
+        ctx.restore();
+    }
+
     // パネル背景 + プレイヤーラベル（YOUR TURN なし）
     drawStartPanelsWithLabels(player1, player2, gameMode) {
         this.drawStartPanelsBg();

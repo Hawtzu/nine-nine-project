@@ -744,6 +744,17 @@ function render(now) {
                 }
             }
 
+            // Kamakura freeze flash animation
+            if (game.kamakuraAnimating) {
+                const elapsed = now - game.kamakuraAnimStart;
+                renderer.drawKamakuraEffect(elapsed, game.kamakuraAnimStones, game.kamakuraAnimPlayerNum);
+                if (elapsed >= 1200) {
+                    game.kamakuraAnimating = false;
+                    game.endTurn();
+                    game._consumePendingStateSync();
+                }
+            }
+
             // Bomb explosion animation
             if (game.bombAnimating) {
                 const elapsed = now - game.bombAnimStart;
